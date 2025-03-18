@@ -1,0 +1,46 @@
+library(testthat)
+
+test_that("to2D correctly converts 3D array to 2D data frame", {
+  # Define dimensions
+  species <- 3
+  sites <- 4
+  replicates <- 2
+
+  # Create a sample 3D array
+  set.seed(123)
+  sample_array <- array(
+    data = rpois(species * sites * replicates, lambda = 5),
+    dim = c(species, sites, replicates),
+    dimnames = list(
+      Species = paste("Species", 1:species, sep = "_"),
+      Sites = paste("Site", 1:sites, sep = "_"),
+      Replicates = paste("Replicate", 1:replicates, sep = "_")
+    )
+  )
+
+  # Convert to 2D
+  result <- to2D(sample_array)
+
+  # ✅ Check if result is a data frame
+  expect_s3_class(result, "data.frame")
+
+  # ✅ Check if number of rows matches sites * replicates
+  expect_equal(nrow(result), sites * replicates)
+
+  # ✅ Check if number of columns matches species + 2 (Site and Replicate columns)
+  expect_equal(ncol(result), species + 2)
+
+  # ✅ Check if column names match expected values
+  expected_colnames <- c("Site", "Replicate", paste("Species", 1:species, sep = "_"))
+  expect_equal(colnames(result), expected_colnames)
+
+  # ✅ Check if Site and Replicate columns have the correct data types
+  expect_type(result$Site, "character")
+  expect_type(result$Replicate, "character")
+
+  # ✅ Check if all species columns contain numeric values
+  expect_true(all(sapply(result[ ,3:ncol(result)], is.numeric)))
+
+  # ✅ Check if data structure is consistent
+  print(head(result))  # Debugging print
+})

@@ -1,0 +1,31 @@
+#' Simulate Data from a Zero-Inflated Poisson (ZIP) Distribution
+#'
+#' @param species Number of species.
+#' @param sites Number of sites.
+#' @param replicates Number of replicates.
+#' @param lambda Mean abundance per species-site.
+#' @param zero_inflation_prob_matrix A species-by-sites matrix of zero-inflation probabilities.
+#' @return A 3D array of simulated ZIP counts.
+#' @export
+simulate_zip_data <- function(species, sites, replicates, lambda, zero_inflation_prob_matrix) {
+  if (!all(dim(zero_inflation_prob_matrix) == c(species, sites))) {
+    stop("The zero_inflation_prob_matrix must have dimensions species x sites.")
+  }
+
+  counts <- array(rpois(species * sites * replicates, lambda), dim = c(species, sites, replicates))
+
+  # Apply zero-inflation correctly
+  for (i in 1:replicates) {
+    z <- matrix(rbinom(species * sites, 1, 1 - zero_inflation_prob_matrix),
+                nrow = species, ncol = sites)
+    counts[, , i] <- counts[, , i] * z
+  }
+
+  dimnames(counts) <- list(
+    Species = paste("Species", 1:species, sep = "_"),
+    Sites = paste("Site", 1:sites, sep = "_"),
+    Replicates = paste("Replicate", 1:replicates, sep = "_")
+  )
+
+  return(counts)
+}

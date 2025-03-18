@@ -1,0 +1,19 @@
+Package: eDNAModel
+Type: Package
+Title: eDNA Statistical Modeling for Species Occupancy and Abundance
+Version: 0.1.0
+Authors@R: person("Your", "Name", email = "your.email@example.com", role = c("aut", "cre"))
+Description: Tools for analyzing environmental DNA datasets using species occupancy and abundance models fitted via TMB.
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    TMB,
+    Matrix,
+    gllvm,
+    phyloseq,
+    parallel
+LinkingTo: 
+    TMB, RcppEigen
+RoxygenNote: 7.3.2
+Depends: TMB

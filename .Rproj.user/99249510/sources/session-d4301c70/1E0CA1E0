@@ -1,0 +1,26 @@
+{
+    "id": "1E0CA1E0",
+    "path": "~/Documents/eDNAModel/tests/testthat/test-plot_probabilities.R",
+    "project_path": "tests/testthat/test-plot_probabilities.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1740492374942.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "39,0",
+        "scrollLine": "16"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1740582708,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1740582708855,
+    "read_only": false,
+    "read_only_alternatives": []
+}

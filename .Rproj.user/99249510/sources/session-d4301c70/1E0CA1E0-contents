@@ -1,0 +1,41 @@
+test_that("plot_probabilities returns expected outputs", {
+  # Define test parameters
+  species <- 3
+  sites <- 2
+  replicates <- 4
+  lambda <- 5
+
+  zero_inflation_prob_matrix <- matrix(runif(species * sites, 0.1, 0.5), nrow = species, ncol = sites)
+  simulated_data <- simulate_zip_data(species, sites, replicates, lambda, zero_inflation_prob_matrix)
+  Y <- to2D(simulated_data)
+  prepared_data <- prepare_tmb_data_fit(Y)
+
+  # ✅ Run actual TMB model
+
+
+  # ✅ Pass real `fit` to `plot_probabilities`
+  plot_results <- plot_probabilities(prepared_data$fit, Y)
+
+  # Run the function
+  #result <- plot_probabilities(prepared_data$fit, Y)
+
+  # ✅ Check if the output is a list
+  expect_true(is.list(plot_results), "Result should be a list.")
+
+  # ✅ Check if the list contains expected elements
+  expect_true(all(c("occ.prob", "prob.detect") %in% names(plot_results)), "Missing required elements in output.")
+
+  # ✅ Check that `occ.prob` and `prob.detect` are numeric
+  expect_true(is.numeric(plot_results$occ.prob), "occ.prob should be numeric.")
+  expect_true(is.numeric(plot_results$prob.detect), "prob.detect should be numeric.")
+
+  # ✅ Check that probabilities are within range [0,1]
+  expect_true(all(plot_results$occ.prob >= 0 & plot_results$occ.prob <= 1), "occ.prob should be between 0 and 1.")
+  expect_true(all(plot_results$prob.detect >= 0 & plot_results$prob.detect <= 1), "prob.detect should be between 0 and 1.")
+
+
+})
+
+
+test <- run_TMB_model(...)
+plot_probabilities(test)

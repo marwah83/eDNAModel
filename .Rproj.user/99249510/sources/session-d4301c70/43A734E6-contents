@@ -1,0 +1,18 @@
+# Convert 3D array to 2D data frame
+to2D <- function(array_3d) {
+  species <- dim(array_3d)[1]
+  sites <- dim(array_3d)[2]
+  replicates <- dim(array_3d)[3]
+
+  data_values <- matrix(array_3d, nrow = sites * replicates, ncol = species, byrow = FALSE)
+  site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
+  replicate_column <- rep(dimnames(array_3d)$Replicates, times = sites)
+
+  final_data <- data.frame(
+    Site = site_column,
+    Replicate = replicate_column,
+    data_values
+  )
+  colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
+  return(final_data)
+}

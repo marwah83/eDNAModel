@@ -1,0 +1,26 @@
+{
+    "id": "1A7645CF",
+    "path": "~/Documents/eDNAModel/R/modeling.R",
+    "project_path": "R/modeling.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1740492065239.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "100,0",
+        "scrollLine": "75"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1740583166,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1740583166309,
+    "read_only": false,
+    "read_only_alternatives": []
+}

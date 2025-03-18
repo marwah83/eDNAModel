@@ -1,0 +1,62 @@
+# # install.packages("TMB")  # If not installed
+# # install.packages("Matrix")
+# # install.packages("gllvm")
+# # install.packages("ggplot2")
+# library(usethis)
+# library(TMB)
+# library(Matrix)
+# require(gllvm)
+# library(ggplot2)
+#
+# #create_package("eDNAModel")
+#
+# # Load necessary libraries
+# library(TMB)
+# library(Matrix)
+#
+# ## TMB stuff ##
+ library(TMB)
+ compile("~/Desktop/Diversea/occ.cpp", framework="TMBad", flags="-O0 -g")#Only use flags for debugging
+ dyn.load("~/Desktop/Diversea/occ.so")
+# ## end TMB stuff ##
+#
+# ## Data stuff ##
+# # Data from: https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.13732
+ load("~/Desktop/Diversea/data.Rdata")
+#
+ names(dimnames(y)) <- c("Species",  "Sites", "Replicates")
+#
+
+#' Convert a 3D array to a 2D matrix
+#'
+#' @param array_3d A 3D array with dimensions (Species, Sites, Replicates).
+#' @return A data frame with Site, Replicate, and species data.
+#' @export
+ to2D <- function(array_3d) {
+   # Get dimensions
+   species <- dim(array_3d)[1]
+   sites <- dim(array_3d)[2]
+   replicates <- dim(array_3d)[3]
+
+   # Reshape the data into a 2D matrix
+   data_values <- matrix(array_3d, nrow = sites * replicates, ncol = species, byrow = FALSE)
+
+   # Create Sites and Replicates columns
+   site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
+   replicate_column <- rep(dimnames(array_3d)$Replicates, times = sites)
+
+   # Combine into a data frame
+   final_data <- data.frame(
+     Site = site_column,
+     Replicate = replicate_column,
+     data_values
+   )
+
+   # Set column names for species
+   colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
+
+   return(final_data)
+ }
+
+ Y <- to2D(y)
+

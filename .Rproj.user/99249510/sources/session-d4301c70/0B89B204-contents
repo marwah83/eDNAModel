@@ -1,0 +1,20 @@
+#' Example Usage: Running the TMB Model Pipeline
+#'
+#' @export
+run_example <- function() {
+  species <- 5
+  sites <- 4
+  replicates <- 3
+  lambda <- 5
+  
+  set.seed(123)
+  zero_inflation_prob_matrix <- matrix(runif(species * sites, 0.1, 0.5), nrow = species, ncol = sites)
+  
+  simulated_data <- simulate_zip_data(species, sites, replicates, lambda, zero_inflation_prob_matrix)
+  Y <- to2D(simulated_data)
+  data_list <- prepare_tmb_data_fit(Y)
+  fit_results <- run_TMB_model(data_list)
+  plot_results <- plot_probabilities(fit_results$fit, Y)
+  
+  return(plot_results)
+}

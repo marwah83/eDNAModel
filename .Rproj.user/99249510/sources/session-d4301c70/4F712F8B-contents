@@ -1,0 +1,58 @@
+test_that("TMB model runs and returns expected outputs", {
+
+  # ✅ Define test parameters
+  species <- 3
+  sites <- 2
+  replicates <- 4
+  lambda <- 5
+
+  # ✅ Create a zero-inflation probability matrix
+  zero_inflation_prob_matrix <- matrix(runif(species * sites, 0.1, 0.5),
+                                       nrow = species,
+                                       ncol = sites)
+
+  # ✅ Simulate data
+  simulated_data <- simulate_zip_data(species, sites, replicates, lambda, zero_inflation_prob_matrix)
+
+  # ✅ Convert 3D to 2D
+  Y <- to2D(simulated_data)
+
+  # ✅ Prepare data for TMB
+  prepared_data <- prepare_tmb_data_fit(Y)
+
+  # ✅ Ensure prepared_data contains expected elements
+  expect_true(is.list(prepared_data), "prepared_data should be a list.")
+  expect_true("y" %in% names(prepared_data), "prepared_data should contain 'y'.")
+  expect_true("Xa" %in% names(prepared_data), "prepared_data should contain 'Xa'.")
+  expect_true("Za" %in% names(prepared_data), "prepared_data should contain 'Za'.")
+
+  # ✅ Run the TMB model
+  model_results <- run_TMB_model(prepared_data)
+
+  # ✅ Ensure model_results contains expected elements
+  expect_true(is.list(model_results), "model_results should be a list.")
+  expect_true("fit" %in% names(model_results), "model_results should contain 'fit'.")
+  expect_true("opt" %in% names(model_results), "model_results should contain 'opt'.")
+
+  # ✅ Check model convergence
+  expect_true(model_results$opt$convergence == 0, "Model should converge.")
+
+  # ✅ Run plot_probabilities function
+  plot_results <- plot_probabilities(model_results$fit, Y)
+
+  # ✅ Ensure plot_results contains expected elements
+  expect_true(is.list(plot_results), "plot_results should be a list.")
+  expect_true(all(c("occ.prob", "prob.detect") %in% names(plot_results)), "plot_results should have 'occ.prob' and 'prob.detect'.")
+
+  # ✅ Check that `occ.prob` and `prob.detect` are numeric
+  expect_true(is.numeric(plot_results$occ.prob), "occ.prob should be numeric.")
+  expect_true(is.numeric(plot_results$prob.detect), "prob.detect should be numeric.")
+
+  # ✅ Check that probabilities are within range [0,1]
+  expect_true(all(plot_results$occ.prob >= 0 & plot_results$occ.prob <= 1), "occ.prob values should be between 0 and 1.")
+  expect_true(all(plot_results$prob.detect >= 0 & plot_results$prob.detect <= 1), "prob.detect values should be between 0 and 1.")
+
+  # ✅ Check length consistency
+  expect_equal(length(plot_results$occ.prob), species, "occ.prob length does not match number of species.")
+  expect_equal(length(plot_results$prob.detect), sites, "prob.detect length does not match number of sites.")
+})

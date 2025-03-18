@@ -1,0 +1,70 @@
+library(testthat)
+library(Matrix)
+library(gllvm)
+
+test_that("Model setup produces valid data structures", {
+  
+  # ✅ Load real dataset
+  load("~/Desktop/Diversea/data.Rdata")
+  
+  # ✅ Assign dimension names
+  names(dimnames(y)) <- c("Species", "Sites", "Replicates")
+  
+  # ✅ Convert 3D to 2D
+  Y <- to2D(y)
+  
+  # ✅ Manual Data Preparation (Instead of prepare_tmb_data_fit)
+  y_matrix <- as.matrix(Y[,-c(1:2)])
+  sites_vector <- as.numeric(Y[,1]) - 1
+  ysites_matrix <- as.matrix(aggregate(y_matrix, FUN = sum, list(sites_vector)))[,-1]  # Sum over replicates
+  
+  Xa_matrix <- model.matrix(~ Site, Y)
+  Xo_matrix <- model.matrix(~ 0 + Site, data.frame(Site = as.factor(1:max(as.numeric(Y$Site)))))
+  
+  Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(~ diag(1 | Replicate)), Y)
+  Za_matrix <- Matrix::t(Zalist$Zt)
+  
+  Zo_matrix <- as(matrix(0), "TsparseMatrix")
+  csa_matrix <- Zalist$cs  # Set to single column matrix if no REs
+  cso_matrix <- matrix(0)  # Set to single column matrix if no REs
+  
+  # ✅ Test data structure validity
+  
+  expect_true(is.matrix(y_matrix), "y_matrix should be a matrix")
+  expect_true(is.matrix(ysites_matrix), "ysites_matrix should be a matrix")
+  expect_true(is.matrix(Xa_matrix), "Xa_matrix should be a matrix")
+  expect_true(is.matrix(Xo_matrix), "Xo_matrix should be a matrix")
+  expect_true(is.numeric(sites_vector), "sites_vector should be numeric")
+  
+  # ✅ Check matrix dimensions
+  expect_equal(nrow(y_matrix), nrow(Y), info = "y_matrix rows should match Y")
+  expect_equal(ncol(y_matrix), length(unique(dimnames(y)[[1]])), info = "y_matrix columns should match species")
+  
+  expect_equal(nrow(ysites_matrix), length(unique(sites_vector)), 
+               info = "ysites_matrix rows should match unique sites")
+  expect_equal(ncol(ysites_matrix), ncol(y_matrix), 
+               info = "ysites_matrix should have same columns as y_matrix")
+  
+  expect_equal(nrow(Xa_matrix), nrow(Y), info = "Xa_matrix rows should match Y")
+  expect_equal(nrow(Xo_matrix), length(unique(sites_vector)), 
+               info = "Xo_matrix rows should match unique sites")
+  
+  expect_true(is(Za_matrix, "CsparseMatrix"), "Za_matrix should be a sparse matrix")
+  expect_true(is(Zo_matrix, "TsparseMatrix"), "Zo_matrix should be a sparse matrix")
+  
+  # ✅ Check non-NULL values
+  expect_true(!is.null(y_matrix), "y_matrix should not be NULL")
+  expect_true(!is.null(ysites_matrix), "ysites_matrix should not be NULL")
+  expect_true(!is.null(Xa_matrix), "Xa_matrix should not be NULL")
+  expect_true(!is.null(Xo_matrix), "Xo_matrix should not be NULL")
+  expect_true(!is.null(sites_vector), "sites_vector should not be NULL")
+  
+  # ✅ Check matrix dimensions are non-zero
+  expect_gt(nrow(y_matrix), 0, "y_matrix should have rows")
+  expect_gt(ncol(y_matrix), 0, "y_matrix should have columns")
+  expect_gt(nrow(Xa_matrix), 0, "Xa_matrix should have rows")
+  expect_gt(ncol(Xa_matrix), 0, "Xa_matrix should have columns")
+  expect_gt(nrow(Xo_matrix), 0, "Xo_matrix should have rows")
+  expect_gt(ncol(Xo_matrix), 0, "Xo_matrix should have columns")
+  
+})

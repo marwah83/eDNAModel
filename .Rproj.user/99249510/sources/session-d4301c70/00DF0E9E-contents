@@ -1,0 +1,25 @@
+
+#' Plot Occupancy and Detection Probabilities
+#'
+#' @param fit A fitted TMB model.
+#' @param Y The data frame containing the original species-site-replicate data.
+#' @return A list of probabilities.
+#' @export
+
+plot_probabilities <- function(fit, Y) {
+  # Get occurrence probabilities (1 - logistic transformation of eta_o)
+
+  occup.prob <- (1-plogis(fit$report(fit$env$last.par.best)$etao))
+  #abundance mean
+  lambda <- exp(fit$report(fit$env$last.par.best)$etaa)
+  #prob. detect. at site
+  prob.detect <- 1-occup.prob*as.matrix(aggregate(exp(-lambda), FUN=prod, list(fit$env$data$sites+1)))[,-1]
+
+  # Plot the histograms for both occurrence and detection probabilities
+  par(mfrow = c(1, 2))  # Set up the plotting area for two plots
+  hist(occup.prob, main = "occupancy probability", xlab="")
+  hist(prob.detect, main = "probability of detection", xlab="")
+
+  # Return the probabilities for further use
+  return(list(occ.prob = occup.prob, prob.detect = prob.detect))
+}

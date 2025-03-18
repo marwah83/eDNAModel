@@ -1,0 +1,30 @@
+test_that("to2D correctly converts 3D array to 2D data frame", {
+  # Create a sample 3D array
+  sample_array <- array(1:24, dim = c(3, 2, 4))  # 3 species, 2 sites, 4 replicates
+  dimnames(sample_array) <- list(
+    Species = c("A", "B", "C"),
+    Sites = c("X", "Y"),
+    Replicates = c("R1", "R2", "R3", "R4")
+  )
+
+  # Run the function
+  result <- to2D(sample_array)
+
+  # ✅ Check if the output is a data frame
+  expect_s3_class(result, "data.frame")
+
+  # ✅ Check the number of rows: Sites × Replicates
+  expect_equal(nrow(result), 2 * 4)  # 2 Sites × 4 Replicates = 8 rows
+
+  # ✅ Check the number of columns: Site, Replicate + Species columns
+  expect_equal(ncol(result), 2 + 3)  # 2 (Site & Replicate) + 3 (Species) = 5 columns
+
+  # ✅ Check if column names are correctly assigned
+  expect_equal(colnames(result), c("Site", "Replicate", "A", "B", "C"))
+
+  # ✅ Check if site names match the expected values
+  expect_equal(unique(result$Site), c("X", "Y"))
+
+  # ✅ Check if replicate names match the expected values
+  expect_equal(unique(result$Replicate), c("R1", "R2", "R3", "R4"))
+})

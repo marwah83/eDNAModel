@@ -1,0 +1,22 @@
+test_that("run_example executes without errors and returns probabilities", {
+  # Run the function
+  result <- tryCatch(
+    run_example(),
+    error = function(e) NULL
+  )
+  
+  # ✅ Check if the function returns a list
+  expect_true(is.list(result))
+  
+  # ✅ Ensure the list contains expected elements
+  expect_true("occ.prob" %in% names(result))
+  expect_true("prob.detect" %in% names(result))
+  
+  # ✅ Check that `occ.prob` and `prob.detect` are numeric
+  expect_true(is.numeric(result$occ.prob))
+  expect_true(is.numeric(result$prob.detect))
+  
+  # ✅ Ensure probabilities are between 0 and 1
+  expect_true(all(result$occ.prob >= 0 & result$occ.prob <= 1))
+  expect_true(all(result$prob.detect >= 0 & result$prob.detect <= 1))
+})

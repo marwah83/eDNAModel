@@ -20,14 +20,17 @@ jobs:
       - name: Install remotes package
         run: Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
 
+      - name: Install phyloseq manually
+        run: Rscript -e 'BiocManager::install("phyloseq", ask=FALSE, update=TRUE)'
+
       - name: Install rcmdcheck manually
         run: Rscript -e 'remotes::install_cran("rcmdcheck", repos="https://cloud.r-project.org")'
 
-      - name: Verify rcmdcheck installation
-        run: Rscript -e 'if (!requireNamespace("rcmdcheck", quietly = TRUE)) stop("rcmdcheck is still missing!")'
-
       - name: Install package dependencies
         run: Rscript -e 'remotes::install_deps(dependencies = TRUE)'
+
+      - name: Verify phyloseq installation
+        run: Rscript -e 'if (!requireNamespace("phyloseq", quietly = TRUE)) stop("phyloseq is still missing!")'
 
       - name: Run R CMD check
         run: Rscript -e 'rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning")'

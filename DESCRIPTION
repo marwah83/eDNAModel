@@ -15,5 +15,7 @@ Imports:
     parallel
 LinkingTo: 
     TMB, RcppEigen
+Suggests:
+    rcmdcheck
 RoxygenNote: 7.3.2
 Depends: TMB

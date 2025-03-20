@@ -7,7 +7,7 @@
 #'
 #' @return A 3D array with dimensions (Species x Sites x Replicates).
 #'
-@examples
+#' @examples
 #' \dontrun{
 #' # Load a phyloseq object and convert it to a 3D data array
 #' data_array <- data_array_phyloseq("~/Desktop/Diversea/longdataexample.RDS")

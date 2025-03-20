@@ -16,7 +16,6 @@ Imports:
 LinkingTo: 
     TMB, RcppEigen
 Suggests:
-    rcmdcheck
-    testthat (>= 3.0.0)
+    rcmdcheck,
+    testthat (>= 3.0.0) 
 RoxygenNote: 7.3.2
-Depends: TMB

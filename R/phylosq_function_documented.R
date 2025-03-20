@@ -13,7 +13,7 @@
 #' }
 #'
 #' @export
-phylosq_function_documented <- function(phyloseq_path, verbose = TRUE) {
+data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {
   
   # ✅ Load phyloseq object
   physeq <- readRDS(phyloseq_path)

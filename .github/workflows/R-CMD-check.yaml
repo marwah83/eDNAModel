@@ -38,6 +38,10 @@ jobs:
       - name: Run R CMD check
         run: Rscript -e 'rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning")'
 
+      - name: Install testthat
+        run: Rscript -e 'install.packages("testthat", repos="https://cloud.r-project.org")'
+
+
       - name: Upload Check Results
         uses: actions/upload-artifact@v4
         with:

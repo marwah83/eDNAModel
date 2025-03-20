@@ -17,11 +17,14 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
 
-      - name: Install remotes package
-        run: Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
+      - name: Install BiocManager
+        run: Rscript -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
 
       - name: Install phyloseq manually
         run: Rscript -e 'BiocManager::install("phyloseq", ask=FALSE, update=TRUE)'
+
+      - name: Install remotes package
+        run: Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
 
       - name: Install rcmdcheck manually
         run: Rscript -e 'remotes::install_cran("rcmdcheck", repos="https://cloud.r-project.org")'
@@ -41,3 +44,4 @@ jobs:
           name: r-cmd-check-results
           path: check
           if-no-files-found: ignore
+

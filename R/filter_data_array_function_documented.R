@@ -10,13 +10,13 @@
 #' @return A filtered 3D data array.
 #'
 #' @examples
-#' \dontrun{
-#' # Step 1: Generate a 3D data array from a phyloseq object
-#' data_array <- phylosq_function_documented("~/path/to/phyloseq_object.RDS")
-#'
-#' # Step 2: Filter the data array
+#' @examples
+#' # Example usage
+#' # Load a phyloseq object and convert it to a 3D data array
+#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+#' 
+#' # Apply the filtering function
 #' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")
-#' }
 #'
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {

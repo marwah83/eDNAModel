@@ -9,8 +9,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Load a phyloseq object and convert it to a 3D data array
-#' data_array <- phylosq_function_documented("~/path/to/phyloseq_object.RDS")
+#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
 #' }
 #'
 #' @export

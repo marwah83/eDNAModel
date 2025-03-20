@@ -14,12 +14,15 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
-      - name: Install dependencies
+      - name: Install remotes and rcmdcheck
         run: Rscript -e 'install.packages("remotes"); remotes::install_cran("rcmdcheck")'
 
 
       - name: Install package dependencies
         run: Rscript -e 'remotes::install_deps(dependencies = TRUE)'
+
+      - name: Install rcmdcheck
+        run: Rscript -e 'install.packages("rcmdcheck")'
 
       - name: Run R CMD check
         run: Rscript -e 'rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning")'
@@ -27,5 +30,6 @@ jobs:
       - name: Upload Check Results
         uses: actions/upload-artifact@v4
         with:
-          if-no-files-found: ignore
+          name: r-cmd-check-results
           path: check
+          if-no-files-found: ignore

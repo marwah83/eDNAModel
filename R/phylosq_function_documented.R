@@ -7,10 +7,15 @@
 #'
 #' @return A 3D array with dimensions (Species x Sites x Replicates).
 #'
-#' @examples
+@examples
 #' \dontrun{
-#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+#' # Load a phyloseq object and convert it to a 3D data array
+#' data_array <- data_array_phyloseq("~/Desktop/Diversea/longdataexample.RDS")
+#'
+#' # Now use this data_array with the filter function
+#' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")
 #' }
+#'
 #'
 #' @export
 data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {

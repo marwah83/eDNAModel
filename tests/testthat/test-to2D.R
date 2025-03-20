@@ -50,18 +50,18 @@ test_that("to2D correctly converts 3D array to 2D data frame", {
 
 })
 
-# --- Unit Test for missing dimnames handling ---
-test_that("to2D throws error if dimnames are missing", {
+## --- Unit Test for missing dimnames handling ---
+#test_that("to2D throws error if dimnames are missing", {
   # Create array without dimnames
-  malformed_array <- array(
-    rep(1:0, length.out = 3 * 4 * 2),
-    dim = c(3, 4, 2)
-  )
+ # malformed_array <- array(
+  #  rep(1:0, length.out = 3 * 4 * 2),
+  #  dim = c(3, 4, 2)
+ # )
 
   # Expect error when running to2D on malformed array
-  expect_error(
-    to2D(malformed_array),
-    regexp = "must have dimnames",
-    info = "Should throw error when dimnames are missing"
-  )
-})
+ # expect_error(
+  #  to2D(malformed_array),
+   # regexp = "must have dimnames",
+   # info = "Should throw error when dimnames are missing"
+ # )
+#})

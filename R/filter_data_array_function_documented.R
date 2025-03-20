@@ -1,17 +1,23 @@
 #' Filter Data Array Function
 #'
-#' Filter a 3D data array (Species x Sites x Replicates) by removing species and sites with zero sums,
+#' Filters a 3D data array (Species x Sites x Replicates) by removing species and sites with zero sums,
 #' and species with total counts less than a specified threshold.
 #'
 #' @param data_array A 3D array (Species x Sites x Replicates).
 #' @param min_species_sum Minimum total count threshold to keep a species. Default is 30.
-#' @param save_path Path to save the filtered data array as an .Rdata file. Default is "datanew_filtered.Rdata". Use NULL to avoid saving.
+#' @param save_path Path to save the filtered data array as an .Rdata file. Default is "filtered_data.Rdata". Use NULL to avoid saving.
 #'
 #' @return A filtered 3D data array.
+#'
 #' @examples
-#' # Example usage
-#' input_data <- array(runif(3 * 4 * 5), dim = c(3, 4, 5))
-#' filtered_array <- filter_data_array(input_data, min_species_sum = 30, save_path = "filtered_data.Rdata")
+#' \dontrun{
+#' # Step 1: Generate a 3D data array from a phyloseq object
+#' data_array <- phylosq_function_documented("~/path/to/phyloseq_object.RDS")
+#'
+#' # Step 2: Filter the data array
+#' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")
+#' }
+#'
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   

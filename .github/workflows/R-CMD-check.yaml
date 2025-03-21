@@ -1,10 +1,10 @@
-name: R-CMD-check  # Workflow Name
+name: R-CMD-check
 
-on: [push, pull_request]  # Runs on every push or pull request
+on: [push, pull_request]
 
 jobs:
   R-CMD-check:
-    runs-on: ubuntu-latest  # Use the latest Ubuntu server
+    runs-on: ubuntu-latest
     name: Run R CMD check
 
     steps:
@@ -17,39 +17,30 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
 
-      - name: Install BiocManager
-        run: Rscript -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
+      - name: Install required R packages (CRAN + Bioconductor)
+        run: |
+          install.packages("BiocManager", repos = "https://cloud.r-project.org")
+          BiocManager::install("phyloseq", ask = FALSE, update = TRUE)
+          install.packages(c("TMB", "Matrix", "gllvm", "rcmdcheck", "testthat"), repos = "https://cloud.r-project.org")
+        shell: Rscript {0}
 
-      - name: Install phyloseq manually
-        run: Rscript -e 'BiocManager::install("phyloseq", ask=FALSE, update=TRUE)'
-
-      - name: Install remotes package
-        run: Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
-
-      - name: Install rcmdcheck manually
-        run: Rscript -e 'remotes::install_cran("rcmdcheck", repos="https://cloud.r-project.org")'
-
-      - name: Install package dependencies
-        run: Rscript -e 'remotes::install_deps(dependencies = TRUE)'
-
-      - name: Verify phyloseq installation
-        run: Rscript -e 'if (!requireNamespace("phyloseq", quietly = TRUE)) stop("phyloseq is still missing!")'
+      - name: Verify that phyloseq is installed
+        run: |
+          if (!requireNamespace("phyloseq", quietly = TRUE)) {
+            stop("❌ phyloseq did not install properly!")
+          } else {
+            message("✅ phyloseq installed successfully.")
+          }
+        shell: Rscript {0}
 
       - name: Run R CMD check
-        run: Rscript -e 'rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning")'
-
-      - name: Install testthat
-        run: Rscript -e 'install.packages("testthat", repos="https://cloud.r-project.org")'
-      - name: Install dependencies
         run: |
-          install.packages("BiocManager")
-          BiocManager::install("phyloseq")
-          install.packages(c("TMB", "Matrix", "gllvm", "rcmdcheck", "testthat"))
+          rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning", check_dir = "check")
+        shell: Rscript {0}
 
-      - name: Upload Check Results
+      - name: Upload check results
         uses: actions/upload-artifact@v4
         with:
-          name: r-cmd-check-results
+          name: R-CMD-check-results
           path: check
           if-no-files-found: ignore
-

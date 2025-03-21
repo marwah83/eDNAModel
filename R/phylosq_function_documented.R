@@ -13,10 +13,10 @@
 #' }
 #'
 #' @export
-data_array_phyloseq <- function("Data/longdataexample.RDS", verbose = TRUE) {
+data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {
   
   # ✅ Load phyloseq object
-  physeq <- readRDS("Data/longdataexample.RDS")
+  physeq <- readRDS(phyloseq_path)
   if (verbose) message("✅ Phyloseq object loaded successfully.")
 
   # ✅ Extract OTU Table (Species x Samples)

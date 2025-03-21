@@ -7,12 +7,13 @@ Description: Tools for analyzing environmental DNA datasets using species occupa
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
-Imports: 
+Imports:
     TMB,
     Matrix,
     gllvm,
     phyloseq,
-    parallel
+    methods,
+    stats
 LinkingTo: 
     TMB, RcppEigen
 Suggests:

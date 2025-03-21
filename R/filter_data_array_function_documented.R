@@ -13,7 +13,7 @@
 #' @examples
 #' # Example usage
 #' # Load a phyloseq object and convert it to a 3D data array
-#' data_array <- data_array_phyloseq("~/Data/longdataexample.RDS")
+#' data_array <- data_array_phyloseq("/Data/longdataexample.RDS")
 #' 
 #' # Apply the filtering function
 #' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")

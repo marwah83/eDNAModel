@@ -9,11 +9,11 @@
 #'
 #' @examples
 #' \dontrun{
-#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+#' data_array <- data_array_phyloseq("~/Desktop/Diversea/phyloseq_object.RDS")
 #' }
 #'
 #' @export
-data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {
+data_array_phyloseq <- function("Data/phyloseq_object.RDS", verbose = TRUE) {
   
   # ✅ Load phyloseq object
   physeq <- readRDS(phyloseq_path)

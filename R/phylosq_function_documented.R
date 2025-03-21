@@ -9,14 +9,14 @@
 #'
 #' @examples
 #' \dontrun{
-#' data_array <- data_array_phyloseq("~/Desktop/Diversea/phyloseq_object.RDS")
+#' data_array <- data_array_phyloseq("Data/longdataexample.RDS")
 #' }
 #'
 #' @export
-data_array_phyloseq <- function("Data/phyloseq_object.RDS", verbose = TRUE) {
+data_array_phyloseq <- function("Data/longdataexample.RDS", verbose = TRUE) {
   
   # ✅ Load phyloseq object
-  physeq <- readRDS(phyloseq_path)
+  physeq <- readRDS("Data/longdataexample.RDS")
   if (verbose) message("✅ Phyloseq object loaded successfully.")
 
   # ✅ Extract OTU Table (Species x Samples)

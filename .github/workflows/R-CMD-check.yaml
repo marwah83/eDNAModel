@@ -42,9 +42,9 @@ jobs:
         run: Rscript -e 'install.packages("testthat", repos="https://cloud.r-project.org")'
       - name: Install dependencies
         run: |
-             install.packages("BiocManager")
-             BiocManager::install("phyloseq")
-             install.packages(c("TMB", "Matrix", "gllvm", "rcmdcheck", "testthat"))
+          install.packages("BiocManager")
+          BiocManager::install("phyloseq")
+          install.packages(c("TMB", "Matrix", "gllvm", "rcmdcheck", "testthat"))
 
       - name: Upload Check Results
         uses: actions/upload-artifact@v4

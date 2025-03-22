@@ -16,12 +16,7 @@
 #' @examples
 #' \dontrun{
 #' # Create mock data
-#' data_array <- array(sample(0:5, 3 * 4 * 2, replace = TRUE),
-#'                     dim = c(3, 4, 2),
-#'                     dimnames = list(Species = paste0("Sp", 1:3),
-#'                                     Sites = paste0("S", 1:4),
-#'                                     Replicates = paste0("R", 1:2)))
-#'
+#' 
 #' # Filter it
 #' filtered_array <- filter_data_array(data_array, min_species_sum = 5, save_path = NULL)
 #' }

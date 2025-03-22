@@ -13,7 +13,7 @@
 #'
 library(TMB)
 
-run_full_TMB <- function(data_array_filtered_0) {
+run_full_TMB <- function(data_array_filtered) {
 
   ## TMB stuff ##
 

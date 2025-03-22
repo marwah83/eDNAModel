@@ -18,11 +18,11 @@
 #' # Create mock data
 #' data_array0 <- data_array_phyloseq("Data/longdataexample.RDS")
 #' # Filter it
-#' filtered_array <- filter_data_array(data_array, min_species_sum = 5, save_path = NULL)
+#' filtered_array <- filter_data_array(data_array0, min_species_sum = 5, save_path = NULL)
 #' }
 #'
 #' @export
-filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
+filter_data_array <- function(data_array_Phylo, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   
   # ============================================
   # ✅ Validate Input

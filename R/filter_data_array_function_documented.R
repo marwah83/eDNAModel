@@ -22,7 +22,7 @@
 #' }
 #'
 #' @export
-filter_data_array <- function(data_array_Phylo, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
+filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   
   # ============================================
   # ✅ Validate Input

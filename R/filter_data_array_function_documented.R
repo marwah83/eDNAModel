@@ -8,6 +8,15 @@
 #' @param save_path Path to save the filtered data array as an .Rdata file. Default is "filtered_data.Rdata". Use NULL to avoid saving.
 #'
 #' @return A filtered 3D data array.
+#' 
+#' @examples
+#'
+#' \dontrun{
+#' # Create mock data
+#' data_array <- data_array_phyloseq("Data/longdataexample.RDS")
+#' # Filter it
+#' filtered_array <- filter_data_array(data_array, min_species_sum = 5, save_path = NULL)
+#' }
 #'
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {

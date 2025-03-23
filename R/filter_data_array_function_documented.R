@@ -16,9 +16,9 @@
 #' @examples
 #' \dontrun{
 #' # Create mock data
-#' data_array0 <- data_array_phyloseq("Data/longdataexample.RDS")
+#' data_array <- data_array_phyloseq("Data/longdataexample.RDS")
 #' # Filter it
-#' filtered_array <- filter_data_array(data_array0, min_species_sum = 5, save_path = NULL)
+#' filtered_array <- filter_data_array(data_array, min_species_sum = 5, save_path = NULL)
 #' }
 #'
 #' @export

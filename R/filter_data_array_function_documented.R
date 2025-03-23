@@ -9,18 +9,6 @@
 #'
 #' @return A filtered 3D data array.
 #'
-#' @examples
-#' @examples
-#' # Example usage
-#' # Load a phyloseq object and convert it to a 3D data array
-#' @examples
-#' \dontrun{
-#' # Create mock data
-#' data_array <- data_array_phyloseq("Data/longdataexample.RDS")
-#' # Filter it
-#' filtered_array <- filter_data_array(data_array, min_species_sum = 5, save_path = NULL)
-#' }
-#'
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   

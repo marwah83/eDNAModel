@@ -8,28 +8,28 @@
 #' @param save_path Path to save the filtered data array as an .Rdata file. Default is "filtered_data.Rdata". Use NULL to avoid saving.
 #'
 #' @return A filtered 3D data array.
-#' 
 #' @examples
-#' # Create a mock 3D data array (Species x Sites x Replicates)
-#' set.seed(123)
-#' data_array <- array(
-#'   data = sample(0:10, size = 3 * 4 * 2, replace = TRUE),
+#' # Minimal example with dummy data
+#' dummy_array <- array(
+#'   rep(1:0, length.out = 3 * 4 * 2),
 #'   dim = c(3, 4, 2),
 #'   dimnames = list(
 #'     Species = paste0("Sp", 1:3),
-#'     Sites = paste0("Site", 1:4),
+#'     Sites = paste0("S", 1:4),
 #'     Replicates = paste0("R", 1:2)
 #'   )
 #' )
+#' filtered <- filter_data_array(dummy_array, min_species_sum = 2, save_path = NULL)
 #'
-#' # Apply the filter with a minimum species sum threshold
-#' filtered_array <- filter_data_array(data_array, min_species_sum = 10, save_path = NULL)
-#'
-#' # View dimensions of the result
-#' dim(filtered_array)
+#' # \dontrun{} example using phyloseq:
+#' \dontrun{
+#' phyloseq_data <- readRDS("Data/phyloseq_object.RDS")
+#' data_array <- data_array_phyloseq(phyloseq_data)
+#' filtered_array <- filter_data_array(data_array)
+#' }
 #'
 #' @export
-filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
+filter_data_array <- function(data_array, min_species_sum = 30, save_path = NULL) {
   
   # ============================================
   # ✅ Validate Input

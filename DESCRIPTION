@@ -19,5 +19,8 @@ LinkingTo:
 Suggests:
     rcmdcheck,
     testthat (>= 3.0.0),
-    covr
+    covr,
+    knitr,
+    rmarkdown
 RoxygenNote: 7.3.2
+VignetteBuilder: knitr

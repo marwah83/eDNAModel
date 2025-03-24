@@ -11,8 +11,7 @@
 #' @return List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
 #' @export
 #'
-library(TMB)
-
+#' @name run_full_TMB
 run_full_TMB <- function(data_array_filtered) {
 
   ## TMB stuff ##

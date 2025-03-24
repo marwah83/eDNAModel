@@ -1,15 +1,11 @@
 name: test-coverage
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: [push, pull_request]
 
 jobs:
-  test-coverage:
+  R-CMD-check:
     runs-on: ${{ matrix.config.os }}
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+    name: ${{ matrix.config.os }} (R ${{ matrix.config.r }})
 
     strategy:
       fail-fast: false
@@ -17,62 +13,51 @@ jobs:
         config:
           - {os: macOS-latest, r: 'release'}
           - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest, r: 'release'}
           - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
 
     env:
-      RSPM: ${{ secrets.GITHUB_TOKEN }}
-      R_KEEP_PKG_SOURCE: yes
+      R_KEEP_PKG_SOURCE: yes        
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - uses: r-lib/actions/setup-pandoc@v2
+      - name: Set up Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
 
-      - uses: r-lib/actions/setup-r@v2
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
-          extra-repositories: "https://inla.r-inla-download.org/R/testing"
 
-      - name: Install system dependencies on macOS (X11, GDAL)
+      - name: Install system dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev libglu1-mesa-dev
+
+      - name: Install system dependencies (macOS only)
         if: runner.os == 'macOS'
         run: |
           brew install --cask xquartz
-          brew install pkg-config
-          brew install proj@9
-          brew install gdal
+          brew install pkg-config proj@9 gdal
 
-      - name: Install system dependencies on Linux (GL)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -y && sudo apt-get install -y libglu1-mesa-dev
-
-      - name: Install sessioninfo
-        run: install.packages("sessioninfo")
-        shell: Rscript {0}
-
-      - name: Install covr
-        if: runner.os == 'Linux'
-        run: install.packages("covr")
-        shell: Rscript {0}
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - name: Install R package dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
         with:
           dependencies: '"all"'
           extra-packages: |
             rcmdcheck
-            testthat
             covr
-            sessioninfo
+            BiocManager
 
-      - name: Session Info
+      - name: Install Bioconductor packages
         run: |
-          options(width = 100)
-          pkgs <- installed.packages()[, "Package"]
-          sessioninfo::session_info(pkgs, include_base = TRUE)
+          if (!requireNamespace("phyloseq", quietly = TRUE)) {
+            BiocManager::install("phyloseq", ask = FALSE, update = TRUE)
+          }
         shell: Rscript {0}
 
       - name: Run R CMD check
@@ -80,13 +65,20 @@ jobs:
           rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning", check_dir = "check")
         shell: Rscript {0}
 
-      - name: Run test coverage and report to Codecov
-        if: runner.os == 'Linux'
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show testthat output (if any)
+        if: always()
         run: |
-          R CMD INSTALL .
-          covr::codecov()
+          find check -name 'testthat.Rout*' -exec cat '{}' \; || true
+        shell: bash
+
+      - name: Install the package (Linux only)
+        if: runner.os == 'Linux'
+        run: R CMD INSTALL .
+        shell: bash
+
+      - name: Run test coverage and upload to Codecov (Linux only)
+        if: runner.os == 'Linux'
+        run: covr::codecov()
         shell: Rscript {0}
 
       - name: Show testthat output (if any)

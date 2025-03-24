@@ -8,7 +8,7 @@
 #' @return A 3D array with dimensions (Species x Sites x Replicates).
 #'
 #' @examples
-#' data_array <- data_array_phyloseq("https://github.com/marwah83/eDNAModel/blob/main/Data/longdataexample.RDS")
+#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
 #'
 #' @export
 data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {

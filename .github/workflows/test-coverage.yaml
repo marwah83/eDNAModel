@@ -89,14 +89,16 @@ jobs:
           covr::codecov()
         shell: Rscript {0}
 
-      - name: Show testthat output
+      - name: Show testthat output (if any)
         if: always()
         run: find check -name 'testthat.Rout*' -exec cat '{}' \; || true
         shell: bash
 
+
       - name: Upload check results
         uses: actions/upload-artifact@v4
         with:
-          name: R-CMD-check-results
+          name: R-CMD-check-results-${{ matrix.config.os }}
           path: check
           if-no-files-found: ignore
+

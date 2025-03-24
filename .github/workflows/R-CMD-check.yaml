@@ -70,13 +70,7 @@ jobs:
         run: |
           find check -name 'testthat.Rout*' -exec cat '{}' \; || true
         shell: bash
-
-      - name: Upload check results
-        uses: actions/upload-artifact@v4
-        with:
-          name: R-CMD-check-results
-          path: check
-          if-no-files-found: ignore
+        
 
       - name: Install the package (Linux only)
         if: runner.os == 'Linux'

@@ -9,7 +9,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' data_array0 <- data_array_phyloseq("Data/longdataexample.RDS")
+#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
 #' }
 #'
 #' @export

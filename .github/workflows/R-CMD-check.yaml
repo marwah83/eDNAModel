@@ -71,6 +71,7 @@ jobs:
       - name: Upload check results
         uses: actions/upload-artifact@v4
         with:
-          name: R-CMD-check-results
+          name: R-CMD-check-results-${{ matrix.config.os }}
           path: check
           if-no-files-found: ignore
+

@@ -137,7 +137,9 @@ run_full_TMB <- function(data_array_filtered) {
   any_violations <- any(ysites[occup.prob[,] > 0.8] == 0)
   all_correct <- all(ysites[occup.prob[,] < 0.8] == 0)
 
-NA
+
+  message(" Final TMB model fitting completed.")
+
 
   return(list(
     optimization = opt2,

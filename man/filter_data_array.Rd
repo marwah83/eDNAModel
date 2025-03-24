@@ -28,4 +28,10 @@ data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
 # Apply the filtering function
 filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
 
+ data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+ if (file.exists(data_path)) {
+   data_array <- data_array_phyloseq(data_path)
+   filtered_array <- filter_data_array(data_array)
+ }
+
 }

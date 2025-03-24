@@ -19,7 +19,9 @@ This function reads a phyloseq object and converts it into a 3D array (Species x
 }
 \examples{
 \dontrun{
-data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+ data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
 }
 
 }
+
+

@@ -26,5 +26,6 @@ and species with total counts less than a specified threshold.
 }
 \examples{
 # Example usage
-filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")
+data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
 }

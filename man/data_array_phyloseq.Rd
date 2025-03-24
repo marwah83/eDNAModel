@@ -18,7 +18,11 @@ A 3D array with dimensions (Species x Sites x Replicates).
 Converts a phyloseq object into a 3D data array (Species x Sites x Replicates).
 }
 \examples{
-data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
-data_array <- data_array_phyloseq(data_path)
+
+\dontrun{
+ data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+ data_array <- data_array_phyloseq(data_path)
+
+}
 
 }

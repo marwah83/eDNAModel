@@ -21,6 +21,8 @@ Suggests:
     testthat (>= 3.0.0),
     covr,
     knitr,
-    rmarkdown
-RoxygenNote: 7.3.2
+    rmarkdown,
+    covr
 VignetteBuilder: knitr
+RoxygenNote: 7.3.2
+

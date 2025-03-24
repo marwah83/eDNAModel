@@ -15,10 +15,10 @@ to2D <- function(array_3d) {
       is.null(dimnames(array_3d)$Species) ||
       is.null(dimnames(array_3d)$Sites) ||
       is.null(dimnames(array_3d)$Replicates)) {
-    stop("❌ data_array_filtered must have dimnames: 'Species', 'Sites', 'Replicates'.")
+    stop(" data_array_filtered must have dimnames: 'Species', 'Sites', 'Replicates'.")
   }
 
-  # ✅ Extract and parse site names to numeric
+  #  Extract and parse site names to numeric
   site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
   site_column_numeric <- as.numeric(gsub("\\D", "", site_column))  # Extract digits safely
 
@@ -34,9 +34,9 @@ to2D <- function(array_3d) {
   # Name species columns properly
   colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
 
-  # ✅ Optional: check for NAs in site parsing and warn
+  #  Optional: check for NAs in site parsing and warn
   if (any(is.na(final_data$Site))) {
-    warning("⚠️ Some site names could not be parsed to numeric. Check the 'Sites' dimnames formatting.")
+    warning(" Some site names could not be parsed to numeric. Check the 'Sites' dimnames formatting.")
   }
 
   return(final_data)

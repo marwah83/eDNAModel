@@ -9,24 +9,12 @@
 #'
 #' @return A filtered 3D data array.
 #' @examples
-#' # Minimal example with dummy data
-#' dummy_array <- array(
-#'   rep(1:0, length.out = 3 * 4 * 2),
-#'   dim = c(3, 4, 2),
-#'   dimnames = list(
-#'     Species = paste0("Sp", 1:3),
-#'     Sites = paste0("S", 1:4),
-#'     Replicates = paste0("R", 1:2)
-#'   )
-#' )
-#' filtered <- filter_data_array(dummy_array, min_species_sum = 2, save_path = NULL)
+#' # Example usage
+#' # Load a phyloseq object and convert it to a 3D data array
+#' data_array <- data_array_phyloseq("~/Desktop/Diversea/longdataexample.RDS")
 #'
-#' # \dontrun{} example using phyloseq:
-#' \dontrun{
-#' phyloseq_data <- readRDS("Data/phyloseq_object.RDS")
-#' data_array <- data_array_phyloseq(phyloseq_data)
-#' filtered_array <- filter_data_array(data_array)
-#' }
+#' # Apply the filtering function
+#' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = "filtered_data.Rdata")
 #'
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = NULL) {

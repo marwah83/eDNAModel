@@ -67,6 +67,7 @@ jobs:
       - name: Show testthat output (if any)
         if: always()
         run: find check -name 'testthat.Rout*' -exec cat '{}' \; || true
+        shell: bash
 
       - name: Upload check results
         uses: actions/upload-artifact@v4

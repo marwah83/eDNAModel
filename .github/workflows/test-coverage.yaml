@@ -98,7 +98,7 @@ jobs:
       - name: Upload check results
         uses: actions/upload-artifact@v4
         with:
-          name: R-CMD-check-results-${{ matrix.config.os }}
+          name: R-CMD-check-results-${{ matrix.config.os }}-${{ github.run_number }}
           path: check
           if-no-files-found: ignore
 

@@ -26,6 +26,6 @@ and species with total counts less than a specified threshold.
 }
 \examples{
 # Example usage
-data_array <- data_array_phyloseq("Data/longdataexample.RDS")
+data_array <- data_array_phyloseq("https://github.com/marwah83/eDNAModel/blob/main/Data/longdataexample.RDS")
 filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
 }

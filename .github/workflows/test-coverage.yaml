@@ -45,10 +45,12 @@ jobs:
           }
         shell: Rscript {0}
 
+      - name: Install the package
+        run: R CMD INSTALL .
+        shell: bash
+
       - name: Run test coverage and report to Codecov
-        run: |
-          R CMD INSTALL .
-          covr::codecov()
+        run: covr::codecov()
         shell: Rscript {0}
 
       - name: Upload coverage report

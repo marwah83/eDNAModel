@@ -1,0 +1,72 @@
+---
+title: "Using eDNAModel"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using eDNAModel}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(eDNAModel)
+```
+
+## Introduction
+
+The `eDNAModel` package provides a pipeline to analyze environmental DNA (eDNA) data for species occupancy and abundance modeling using TMB.
+
+This vignette demonstrates:
+
+1. Loading a phyloseq object
+2. Converting to a 3D array
+3. Filtering the array
+4. Running the TMB pipeline
+
+---
+
+## Load a phyloseq object
+
+We'll use an example `.RDS` file located in `inst/extdata/`.
+
+```{r load-data, eval = FALSE}
+phyloseq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+data_array <- data_array_phyloseq(phyloseq_path)
+```
+
+---
+
+## Filter the 3D Data Array
+
+We remove species with all-zero counts, sites with all-zero counts, and rare species.
+
+```{r filter-data, eval = FALSE}
+filtered_array <- filter_data_array(data_array, min_species_sum = 30)
+```
+
+---
+
+## Run the Full TMB Pipeline
+
+Fit the statistical model to the filtered array:
+
+```{r run-tmb, eval = FALSE}
+result <- run_full_TMB_pipeline(filtered_array)
+```
+
+You can extract model output such as slopes, intercepts, and model fit metrics from `result`.
+
+---
+
+## Summary
+
+This vignette showed how to:
+
+- Convert phyloseq data to 3D array
+- Filter the array
+- Run TMB model pipeline
+
+Explore the `eDNAModel` documentation for further customization and model diagnostics.

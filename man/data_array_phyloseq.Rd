@@ -15,13 +15,10 @@ data_array_phyloseq(phyloseq_path, verbose = TRUE)
 A 3D array with dimensions (Species x Sites x Replicates).
 }
 \description{
-This function reads a phyloseq object and converts it into a 3D array (Species x Sites x Replicates).
+Converts a phyloseq object into a 3D data array (Species x Sites x Replicates).
 }
 \examples{
-\dontrun{
- data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
-}
+data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+data_array <- data_array_phyloseq(data_path)
 
 }
-
-

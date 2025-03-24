@@ -18,7 +18,7 @@
 #' }
 
 #' @export
-filter_data_array <- function(data_array, min_species_sum = 30, save_path = NULL) {
+filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   
   # ============================================
   # ✅ Validate Input

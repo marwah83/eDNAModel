@@ -131,7 +131,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
       warning(" Could not save filtered data: ", e$message)
     })
   } else {
-    message("ℹ️ No save path provided. Filtered data not saved to file.")
+    message(" No save path provided. Filtered data not saved to file.")
   }
 
   #  Return filtered array

@@ -8,9 +8,7 @@
 #' @return A 3D array with dimensions (Species x Sites x Replicates).
 #'
 #' @examples
-#' \dontrun{
-#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
-#' }
+#' data_array <- data_array_phyloseq("Data/longdataexample.RDS")
 #'
 #' @export
 data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {

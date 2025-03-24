@@ -10,9 +10,7 @@
 #' @param data_array_filtered Filtered 3D data array ready for TMB model fitting.
 #' @return List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
 #' @export
-#'
-library(TMB)
-
+#'@name run_full_TMB
 run_full_TMB <- function(data_array_filtered) {
 
   ## TMB stuff ##
@@ -139,7 +137,7 @@ run_full_TMB <- function(data_array_filtered) {
   any_violations <- any(ysites[occup.prob[,] > 0.8] == 0)
   all_correct <- all(ysites[occup.prob[,] < 0.8] == 0)
 
-  message("✅ Final TMB model fitting completed.")
+NA
 
   return(list(
     optimization = opt2,

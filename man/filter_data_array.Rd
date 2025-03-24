@@ -4,28 +4,28 @@
 \alias{filter_data_array}
 \title{Filter Data Array Function}
 \usage{
-filter_data_array(
-  data_array,
-  min_species_sum = 30,
-  save_path = "datanew_filtered.Rdata"
-)
+filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
 }
 \arguments{
 \item{data_array}{A 3D array (Species x Sites x Replicates).}
 
 \item{min_species_sum}{Minimum total count threshold to keep a species. Default is 30.}
 
-\item{save_path}{Path to save the filtered data array as an .Rdata file. Default is "datanew_filtered.Rdata". Use NULL to avoid saving.}
+\item{save_path}{Path to save the filtered data array as an .Rdata file. Default is "filtered_data.Rdata". Use NULL to avoid saving.}
 }
 \value{
 A filtered 3D data array.
 }
 \description{
-Filter a 3D data array (Species x Sites x Replicates) by removing species and sites with zero sums,
+Filters a 3D data array (Species x Sites x Replicates) by removing species and sites with zero sums,
 and species with total counts less than a specified threshold.
 }
 \examples{
 # Example usage
+# Load a phyloseq object and convert it to a 3D data array
 data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
+
+# Apply the filtering function
 filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
+
 }

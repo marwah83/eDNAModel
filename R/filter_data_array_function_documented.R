@@ -8,14 +8,15 @@
 #' @param save_path Path to save the filtered data array as an .Rdata file. Default is "filtered_data.Rdata". Use NULL to avoid saving.
 #'
 #' @return A filtered 3D data array.
-#' @examples
+#' 
 #' # Example usage
-#' # Load a phyloseq object and convert it to a 3D data array
-#' data_array <- data_array_phyloseq("~/path/to/phyloseq_object.RDS")
-#'
-#' # Apply the filtering function
-#' filtered_array <- filter_data_array(data_array, min_species_sum = 30, save_path = NULL)
-#'
+#' @examples
+#' data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+#' if (file.exists(data_path)) {
+#'   data_array <- data_array_phyloseq(data_path)
+#'   filtered_array <- filter_data_array(data_array)
+#' }
+
 #' @export
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = NULL) {
   

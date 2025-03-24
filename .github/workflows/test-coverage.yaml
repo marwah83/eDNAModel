@@ -3,19 +3,15 @@ name: test-coverage
 on: [push, pull_request]
 
 jobs:
-  R-CMD-check:
+  test-coverage:
     runs-on: ${{ matrix.config.os }}
-    name: ${{ matrix.config.os }} (R ${{ matrix.config.r }})
+    name: Test Coverage on ${{ matrix.config.os }} (R ${{ matrix.config.r }})
 
     strategy:
       fail-fast: false
       matrix:
         config:
-          - {os: macOS-latest, r: 'release'}
-          - {os: windows-latest, r: 'release'}
           - {os: ubuntu-latest, r: 'release'}
-          - {os: ubuntu-latest, r: 'oldrel-1'}
-          - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
 
     env:
       R_KEEP_PKG_SOURCE: yes        
@@ -24,31 +20,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Pandoc
-        uses: r-lib/actions/setup-pandoc@v2
-
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ matrix.config.r }}
-          http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
-      - name: Install system dependencies (Linux only)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update -y && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev libglu1-mesa-dev
-
-      - name: Install system dependencies (macOS only)
-        if: runner.os == 'macOS'
-        run: |
-          brew install --cask xquartz
-          brew install pkg-config proj@9 gdal
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
 
       - name: Install R package dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           dependencies: '"all"'
           extra-packages: |
+            covr
             rcmdcheck
             BiocManager
 
@@ -59,20 +45,15 @@ jobs:
           }
         shell: Rscript {0}
 
-      - name: Run R CMD check
+      - name: Run test coverage and report to Codecov
         run: |
-          rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning", check_dir = "check")
+          R CMD INSTALL .
+          covr::codecov()
         shell: Rscript {0}
 
-      - name: Show testthat output (if any)
+      - name: Upload coverage report
         if: always()
-        run: find check -name 'testthat.Rout*' -exec cat '{}' \; || true
-        shell: bash
-
-      - name: Upload check results
         uses: actions/upload-artifact@v4
         with:
-          name: R-CMD-check-results-${{ matrix.config.os }}-${{ github.run_number }}
-          path: check
-          if-no-files-found: ignore
-
+          name: coverage-results-${{ github.run_number }}
+          path: .  # or specify the coverage file directory if saved

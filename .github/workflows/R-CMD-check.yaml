@@ -66,7 +66,8 @@ jobs:
 
       - name: Show testthat output (if any)
         if: always()
-        run: find check -name 'testthat.Rout*' -exec cat '{}' \; || true
+        run: |
+          find check -name 'testthat.Rout*' -exec cat '{}' \; || true
         shell: bash
 
       - name: Upload check results
@@ -75,4 +76,3 @@ jobs:
           name: R-CMD-check-results-${{ matrix.config.os }}-${{ github.run_number }}
           path: check
           if-no-files-found: ignore
-

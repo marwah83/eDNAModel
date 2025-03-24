@@ -21,7 +21,7 @@
 filter_data_array <- function(data_array, min_species_sum = 30, save_path = "datanew_filtered.Rdata") {
   
   # ============================================
-  # ✅ Validate Input
+  #  Validate Input
   # ============================================
   if (!is.array(data_array) || length(dim(data_array)) != 3) {
     stop(" Error: `data_array` must be a 3D array (Species x Sites x Replicates).")
@@ -40,7 +40,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   replicate_names <- dimnames(data_array)$Replicates
 
   # ============================================
-  # ✅ Step 1: Remove species with all zero counts
+  #  Step 1: Remove species with all zero counts
   # ============================================
   species_sums <- apply(data_array, 1, sum)
   species_to_keep <- species_sums > 0
@@ -53,7 +53,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   message(" Removed all-zero species. Remaining species: ", length(species_names_filtered))
 
   # ============================================
-  # ✅ Step 2: Remove sites with all zero counts
+  #  Step 2: Remove sites with all zero counts
   # ============================================
   site_sums <- apply(data_array, 2, sum)
   sites_to_keep <- site_sums > 0
@@ -66,7 +66,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   message(" Removed all-zero sites. Remaining sites: ", length(site_names_filtered))
 
   # ============================================
-  # ✅ Step 3: Remove rare species (below min_species_sum)
+  #  Step 3: Remove rare species (below min_species_sum)
   # ============================================
   species_sums_after_site_filter <- apply(data_array, 1, sum)
   species_to_keep_final <- species_sums_after_site_filter >= min_species_sum
@@ -79,7 +79,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   message(" Removed species with total counts <", min_species_sum, ". Remaining species: ", dim(data_array_filtered)[1])
 
   # ============================================
-  # ✅ Preserve Dimension Names (if available)
+  #  Preserve Dimension Names (if available)
   # ============================================
   dimnames(data_array_filtered) <- list(
     Species = species_names_final,
@@ -88,7 +88,7 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   )
 
   # ============================================
-  # ✅ Validation Checks
+  #  Validation Checks
   # ============================================
   message("\n Performing validation checks...")
 
@@ -116,13 +116,13 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   }
 
   # ============================================
-  # ✅ Final Summary
+  #  Final Summary
   # ============================================
   message("\n Final 3D data array structure (Species x Sites x Replicates): ", paste(dim(data_array_filtered), collapse = " x "))
   nonzero_count_final <- sum(data_array_filtered != 0, na.rm = TRUE)
   message(" Total number of non-zero entries: ", nonzero_count_final)
 
-  # ✅ Save filtered array if path provided
+  #  Save filtered array if path provided
   if (!is.null(save_path)) {
     tryCatch({
       save(data_array_filtered, file = save_path)
@@ -134,6 +134,6 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
     message("ℹ️ No save path provided. Filtered data not saved to file.")
   }
 
-  # ✅ Return filtered array
+  #  Return filtered array
   return(data_array_filtered)
 }

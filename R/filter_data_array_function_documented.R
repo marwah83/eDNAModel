@@ -24,10 +24,10 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   # ✅ Validate Input
   # ============================================
   if (!is.array(data_array) || length(dim(data_array)) != 3) {
-    stop("❌ Error: `data_array` must be a 3D array (Species x Sites x Replicates).")
+    stop(" Error: `data_array` must be a 3D array (Species x Sites x Replicates).")
   }
 
-  message("✅ Starting data filtering process...")
+  message(" Starting data filtering process...")
 
   # Extract dimensions for reference
   species_count <- dim(data_array)[1]
@@ -45,12 +45,12 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   species_sums <- apply(data_array, 1, sum)
   species_to_keep <- species_sums > 0
 
-  if (!any(species_to_keep)) stop("❌ No species left after removing all-zero species!")
+  if (!any(species_to_keep)) stop(" No species left after removing all-zero species!")
 
   data_array <- data_array[species_to_keep, , , drop = FALSE]
   species_names_filtered <- species_names[species_to_keep]
 
-  message("✅ Removed all-zero species. Remaining species: ", length(species_names_filtered))
+  message(" Removed all-zero species. Remaining species: ", length(species_names_filtered))
 
   # ============================================
   # ✅ Step 2: Remove sites with all zero counts
@@ -58,12 +58,12 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   site_sums <- apply(data_array, 2, sum)
   sites_to_keep <- site_sums > 0
 
-  if (!any(sites_to_keep)) stop("❌ No sites left after removing all-zero sites!")
+  if (!any(sites_to_keep)) stop(" No sites left after removing all-zero sites!")
 
   data_array <- data_array[, sites_to_keep, , drop = FALSE]
   site_names_filtered <- site_names[sites_to_keep]
 
-  message("✅ Removed all-zero sites. Remaining sites: ", length(site_names_filtered))
+  message(" Removed all-zero sites. Remaining sites: ", length(site_names_filtered))
 
   # ============================================
   # ✅ Step 3: Remove rare species (below min_species_sum)
@@ -71,12 +71,12 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   species_sums_after_site_filter <- apply(data_array, 1, sum)
   species_to_keep_final <- species_sums_after_site_filter >= min_species_sum
 
-  if (!any(species_to_keep_final)) warning("⚠️ No species meet the minimum count threshold of ", min_species_sum, ". Array may be empty.")
+  if (!any(species_to_keep_final)) warning(" No species meet the minimum count threshold of ", min_species_sum, ". Array may be empty.")
 
   data_array_filtered <- data_array[species_to_keep_final, , , drop = FALSE]
   species_names_final <- species_names_filtered[species_to_keep_final]
 
-  message("✅ Removed species with total counts <", min_species_sum, ". Remaining species: ", dim(data_array_filtered)[1])
+  message(" Removed species with total counts <", min_species_sum, ". Remaining species: ", dim(data_array_filtered)[1])
 
   # ============================================
   # ✅ Preserve Dimension Names (if available)
@@ -90,45 +90,45 @@ filter_data_array <- function(data_array, min_species_sum = 30, save_path = "dat
   # ============================================
   # ✅ Validation Checks
   # ============================================
-  message("\n✅ Performing validation checks...")
+  message("\n Performing validation checks...")
 
   # CHECK 1: All-zero species removed
   species_total_sums <- apply(data_array_filtered, 1, sum)
   if (any(species_total_sums == 0)) {
-    warning("❌ Some species (rows) with all zeros still remain!")
+    warning(" Some species (rows) with all zeros still remain!")
   } else {
-    message("✅ All-zero species (rows) successfully removed.")
+    message(" All-zero species (rows) successfully removed.")
   }
 
   # CHECK 2: All-zero sites removed
   site_total_sums <- apply(data_array_filtered, 2, sum)
   if (any(site_total_sums == 0)) {
-    warning("❌ Some sites (columns) with all zeros still remain!")
+    warning(" Some sites (columns) with all zeros still remain!")
   } else {
-    message("✅ All-zero sites (columns) successfully removed.")
+    message(" All-zero sites (columns) successfully removed.")
   }
 
   # CHECK 3: Rare species with total sum < threshold removed
   if (any(species_total_sums < min_species_sum)) {
-    warning("❌ Some species (rows) with total counts <", min_species_sum, " still remain!")
+    warning(" Some species (rows) with total counts <", min_species_sum, " still remain!")
   } else {
-    message("✅ All species (rows) with total counts <", min_species_sum, " successfully removed.")
+    message(" All species (rows) with total counts <", min_species_sum, " successfully removed.")
   }
 
   # ============================================
   # ✅ Final Summary
   # ============================================
-  message("\n✅ Final 3D data array structure (Species x Sites x Replicates): ", paste(dim(data_array_filtered), collapse = " x "))
+  message("\n Final 3D data array structure (Species x Sites x Replicates): ", paste(dim(data_array_filtered), collapse = " x "))
   nonzero_count_final <- sum(data_array_filtered != 0, na.rm = TRUE)
-  message("✅ Total number of non-zero entries: ", nonzero_count_final)
+  message(" Total number of non-zero entries: ", nonzero_count_final)
 
   # ✅ Save filtered array if path provided
   if (!is.null(save_path)) {
     tryCatch({
       save(data_array_filtered, file = save_path)
-      message("✅ Filtered data saved as '", save_path, "'.")
+      message(" Filtered data saved as '", save_path, "'.")
     }, error = function(e) {
-      warning("⚠️ Could not save filtered data: ", e$message)
+      warning(" Could not save filtered data: ", e$message)
     })
   } else {
     message("ℹ️ No save path provided. Filtered data not saved to file.")

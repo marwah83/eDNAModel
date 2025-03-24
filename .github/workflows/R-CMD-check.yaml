@@ -36,7 +36,7 @@ jobs:
 
       - name: Install system dependencies (Linux only)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev libglu1-mesa-dev
+        run: sudo apt-get update -y && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev libglu1-mesa-dev
 
       - name: Install system dependencies (macOS only)
         if: runner.os == 'macOS'
@@ -50,7 +50,6 @@ jobs:
           dependencies: '"all"'
           extra-packages: |
             rcmdcheck
-            covr
             BiocManager
 
       - name: Install Bioconductor packages
@@ -63,23 +62,6 @@ jobs:
       - name: Run R CMD check
         run: |
           rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning", check_dir = "check")
-        shell: Rscript {0}
-
-      - name: Show testthat output (if any)
-        if: always()
-        run: |
-          find check -name 'testthat.Rout*' -exec cat '{}' \; || true
-        shell: bash
-        
-
-      - name: Install the package (Linux only)
-        if: runner.os == 'Linux'
-        run: R CMD INSTALL .
-        shell: bash
-
-      - name: Run test coverage and upload to Codecov (Linux only)
-        if: runner.os == 'Linux'
-        run: covr::codecov()
         shell: Rscript {0}
 
       - name: Show testthat output (if any)

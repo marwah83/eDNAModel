@@ -1,28 +1,24 @@
-#' Full TMB Pipeline with Results Extraction (Complete & Preserved Code)
+#' Run Full TMB Model
 #'
-#' This function runs a full TMB model fitting pipeline and returns occupancy, lambda, and detection probabilities.
+#' Fits a hierarchical multi-species occupancy-abundance model using TMB,
+#' with support for covariate formulas and random effects.
 #'
-#' @useDynLib eDNAModel, .registration = TRUE
-#' @importFrom TMB MakeADFun
-#' @importFrom TMB openmp
-#' @import Matrix
+#' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
+#' @param covariate_data A data frame containing covariates for model matrices.
+#' @param a.formula A formula for the abundance (observation) model (default `~ site + (1 | replicate)`).
+#' @param o.formula A formula for the occurrence (occupancy) model (default `~ site`).
 #'
-#' @param data_array_filtered Filtered 3D data array ready for TMB model fitting.
-#' @return List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
+#' @return A list containing the fitted TMB object and optimization result.
 #' @export
-#'
-#' @name run_full_TMB
-run_full_TMB <- function(data_array_filtered) {
+#'@name run_full_TMB
+run_full_TMB <- function(data_array_filtered,
+                         covariate_data,
+                         a.formula = ~ 1,
+                         o.formula = ~ 1) {
 
-  ## TMB stuff ##
-
-  #compile("~/Desktop/Diversea/occ.cpp", framework = "TMBad", flags = "-O0 -g") # Only use flags for debugging
-  #dyn.load("~/Desktop/Diversea/occ.so")
-  ## end TMB stuff ##
-
-  ## Data processing ##
-  y <- data_array_filtered
-
+  ## -------------------------------
+  ## Helper: Convert 3D array to long
+  ## -------------------------------
   to2D <- function(array_3d) {
     species <- dim(array_3d)[1]
     sites <- dim(array_3d)[2]
@@ -30,26 +26,39 @@ run_full_TMB <- function(data_array_filtered) {
     data_values <- matrix(array_3d, nrow = sites * replicates, ncol = species, byrow = FALSE)
     site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
     replicate_column <- rep(dimnames(array_3d)$Replicates, times = sites)
-    final_data <- data.frame(Site = site_column, Replicate = replicate_column, data_values)
+    final_data <- data.frame(site = factor(site_column), replicate = factor(replicate_column), data_values)
     colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
     return(final_data)
   }
 
-  Y <- to2D(y)
-  ## End Data ##
+  ## -------------------------------
+  ## Prepare data
+  ## -------------------------------
+  Y_long <- to2D(data_array_filtered)
+  y <- as.matrix(Y_long[, -(1:2)])  # Remove site & replicate columns
+  x <- covariate_data
 
-  ## Modeling ##
-  y <- as.matrix(Y[,-c(1:2)])
-  sites <- as.numeric(Y[,1]) - 1
-  ysites <- as.matrix(aggregate(y, FUN = sum, list(sites)))[,-1]
-  Xa <- model.matrix(~Site, Y)
-  Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(~diag(1|Replicate)), Y)
-  csa <- Zalist$cs
+  sites <- as.numeric(x$site) - 1
+  ysites <- as.matrix(stats::aggregate(y, FUN = sum, by = list(sites)))[, -1]
+
+  ## -------------------------------
+  ## Model matrices
+  ## -------------------------------
+  Xa <- model.matrix(a.formula, x)
+  Xo <- model.matrix(o.formula, x)
+
+  ## Random effects for abundance
+  Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), x)
   Za <- Matrix::t(Zalist$Zt)
-  Xo <- model.matrix(~0 + Site, data.frame(Site = as.factor(1:max(as.numeric(Y$Site)))))
+  csa <- Zalist$cs
+
+  ## No random effects for occupancy
   Zo <- as(matrix(0), "TsparseMatrix")
   cso <- matrix(0)
 
+  ## -------------------------------
+  ## TMB model setup
+  ## -------------------------------
   family <- 1
   linka <- 0
   linko <- 1
@@ -66,14 +75,30 @@ run_full_TMB <- function(data_array_filtered) {
   corso <- 0
 
   maplist <- list()
-  #TMB::openmp(parallel::detectCores() - 1, autopar = TRUE, DLL = "eDNAModel")
 
-  fit <- MakeADFun(
-    data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = as(matrix(0), "TsparseMatrix"), Zo = as(matrix(0), "TsparseMatrix"),
-                family = family, sites = sites, csa = matrix(0), cso = matrix(0), NTrials = NTrials, linka = linka, linko = linko),
-    parameters = list(Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo, logphi = logphi, logsda = logsda, corsa = corsa, logsdo = logsdo, corso = corso),
-    DLL = "eDNAModel", map = maplist
+  fit <- TMB::MakeADFun(
+    data = list(
+      Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
+      Za = Za, Zo = Zo,
+      family = family, sites = sites,
+      csa = csa, cso = cso,
+      NTrials = NTrials,
+      linka = linka, linko = linko
+    ),
+    parameters = list(
+      Ba = Ba, Bo = Bo,
+      Ua = Ua, Uo = Uo,
+      logphi = logphi,
+      logsda = logsda,
+      corsa = corsa,
+      logsdo = logsdo,
+      corso = corso
+    ),
+    DLL = "eDNAModel",
+    map = maplist
   )
+
+  ## Optimization
   opt <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B", control = list(trace = 1, maxit = 5000))
 
   ## ADD THIS PART EXACTLY AS YOU PROVIDED ##

@@ -159,8 +159,8 @@ run_full_TMB <- function(data_array_filtered) {
   prob.detect <- 1-occup.prob*as.matrix(aggregate(exp(-lambda), FUN=prod, list(sites+1)))[,-1]
   
   #let's check this is correct
-  any(ysites[occup.prob[,]>0.8]==0) # NOPE, everything with large occup. prob. has counts larger than 0
-  all(ysites[occup.prob[,]<0.8]==0) # YUP, everything with small occup. prob. has count 0
+ any_violations <- any(ysites[occup.prob[,] > 0.8] == 0)
+  all_correct <- all(ysites[occup.prob[,] < 0.8] == 0)
   
   message(" Final TMB model fitting completed.")
 

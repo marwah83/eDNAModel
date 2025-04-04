@@ -16,9 +16,9 @@ run_full_TMB(
 
 \item{covariate_data}{A data frame containing covariates for model matrices.}
 
-\item{a.formula}{A formula for the abundance (observation) model (default `~ site + (1 | replicate)`).}
+\item{a.formula}{A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.}
 
-\item{o.formula}{A formula for the occurrence (occupancy) model (default `~ site`).}
+\item{o.formula}{A formula for the occupancy model. Default is \code{~ site}.}
 }
 \value{
 A list containing the fitted TMB object and optimization result.

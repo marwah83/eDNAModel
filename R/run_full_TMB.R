@@ -181,10 +181,7 @@ run_full_TMB <- function(data_array_filtered,
     return(list(
       optimization = opt2,
       occupancy_probability = occup.prob,
-      lambda = lambda,
       detection_probability = prob.detect,
-      check_large_occupancy = any_violations,
-      check_small_occupancy = all_correct
     ))
     
   }

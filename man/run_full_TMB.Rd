@@ -2,16 +2,28 @@
 % Please edit documentation in R/run_full_TMB.R
 \name{run_full_TMB}
 \alias{run_full_TMB}
-\title{Full TMB Pipeline with Results Extraction (Complete & Preserved Code)}
+\title{Run Full TMB Model}
 \usage{
-run_full_TMB(data_array_filtered)
+run_full_TMB(
+  data_array_filtered,
+  covariate_data,
+  a.formula = ~site + (1 | replicate),
+  o.formula = ~site
+)
 }
 \arguments{
-\item{data_array_filtered}{Filtered 3D data array ready for TMB model fitting.}
+\item{data_array_filtered}{A 3D array (Species x Sites x Replicates) after filtering.}
+
+\item{covariate_data}{A data frame containing covariates for model matrices.}
+
+\item{a.formula}{A formula for the abundance (observation) model (default `~ site + (1 | replicate)`).}
+
+\item{o.formula}{A formula for the occurrence (occupancy) model (default `~ site`).}
 }
 \value{
-List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
+A list containing the fitted TMB object and optimization result.
 }
 \description{
-This function runs a full TMB model fitting pipeline and returns occupancy, lambda, and detection probabilities.
+Fits a hierarchical multi-species occupancy-abundance model using TMB,
+with support for covariate formulas and random effects.
 }

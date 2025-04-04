@@ -1,7 +1,8 @@
 # eDNAModel
 The eDNAModel package is designed for fitting occupancy models to environmental DNA (eDNA) data. It takes as input a three-dimensional array containing species-by-site-by-replicate detection data, reflecting the hierarchical structure typical of eDNA surveys. Estimating two key components: the probability that a species is present at a site (occupancy probability) and the probability of detecting the species given it is present (detection probability). The package supports the inclusion of covariates for both occupancy and detection processes, making it a valuable tool for assessing species distributions, habitat associations, and monitoring biodiversity through eDNA.
 
-######################################################################################################################################################
+############################################################################################################
+
  That typical R syntax model formulae can be used to flexibly model detection/occupancy OTUs in a mixed modelling framework as a function of covariates (either continuous or categorical) and grouping variables, as either fixed effects or random effects. For example in the case of PCR replicate within sample, sample is obviously a random effect, however if others are performing experiments with repeated measures over time of different treatments etc there may be other relevant random effects. The more flexible this is the more usable for either bespoke experiments, time-series data, nested designs etc
  
  This is essentially covered by the above, and so perhaps redundant, but the ability to define the relevant grouping level at which the detection/occupancy estimates and their uncertainty are delivered (i.e. site, group of sites in a location etc etc) is essential..

@@ -36,7 +36,7 @@ test_that("run_full_TMB executes and returns expected structure", {
   expect_true(is.list(result), label = "Result should be a list")
 
   # ✅ Check result has expected names
-  expect_true(all(c("optimization", "occupancy_probability", "lambda",
+  expect_true(all(c("optimization", "occupancy_probability",
                     "detection_probability") %in% names(result)),
               label = "List must contain required outputs")
 

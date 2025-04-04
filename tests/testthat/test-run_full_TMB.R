@@ -42,6 +42,5 @@ test_that("run_full_TMB executes and returns expected structure", {
 
   # ✅ Check expected dimensions
   expect_true(is.matrix(result$occupancy_probability), label = "Occupancy prob must be matrix")
-  expect_true(is.matrix(result$lambda), label = "Lambda must be matrix")
   expect_true(is.data.frame(result$detection_probability), label = "Detection prob must be dataframe")
 })

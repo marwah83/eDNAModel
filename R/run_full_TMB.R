@@ -5,8 +5,8 @@
 #'
 #' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
 #' @param covariate_data A data frame containing covariates for model matrices.
-#' @param a.formula A formula for the abundance (observation) model (default `~ 1`).
-#' @param o.formula A formula for the occurrence (occupancy) model (default `~ 1`).
+#' @param a.formula A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.
+#' @param o.formula A formula for the occupancy model. Default is \code{~ site}.
 #'
 #' @return A list containing the fitted TMB object and optimization result.
 #' @export

@@ -25,7 +25,7 @@ test_that("run_full_TMB executes and returns expected structure", {
   # ✅ Suppress warnings from compilation or TMB internals
   result <- suppressWarnings(
     run_full_TMB(
-      filter_data_array = mock_data_array,
+      data_array_filtered = mock_data_array,
       covariate_data = covariate_data,
       a.formula = ~ site + (1 | replicate),
       o.formula = ~ site

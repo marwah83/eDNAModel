@@ -5,14 +5,14 @@
 \title{Run Full TMB Model}
 \usage{
 run_full_TMB(
-  filter_data_array,
+  data_array_filtered,
   covariate_data,
   a.formula = ~site + (1 | replicate),
   o.formula = ~site
 )
 }
 \arguments{
-\item{filter_data_array}{A 3D array (Species x Sites x Replicates) after filtering.}
+\item{data_array_filtered}{A 3D array (Species x Sites x Replicates) after filtering.}
 
 \item{covariate_data}{A data frame containing covariates for model matrices.}
 

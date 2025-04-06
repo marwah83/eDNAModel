@@ -3,7 +3,7 @@
 #' Fits a hierarchical multi-species occupancy-abundance model using TMB,
 #' with support for covariate formulas and random effects.
 #'
-#' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
+#' @param filter_data_array A 3D array (Species x Sites x Replicates) after filtering.
 #' @param covariate_data A data frame containing covariates for model matrices.
 #' @param a.formula A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.
 #' @param o.formula A formula for the occupancy model. Default is \code{~ site}.
@@ -15,8 +15,6 @@ run_full_TMB <- function(filter_data_array,
                          a.formula = ~ site + (1 | replicate),
                          o.formula = ~ site) {
   
-    TMB::compile("src/eDNAModel.cpp")
-    dyn.load(TMB::dynlib("src/eDNAModel"))
   
   to2D <- function(array_3d) {
       # Get dimensions
@@ -106,8 +104,8 @@ run_full_TMB <- function(filter_data_array,
     
     #TMB::openmp(parallel::detectCores()-1,autopar=TRUE, DLL = "occ")
     #setwd("~/Documents/eDNAModel/eDNAModel")
-    #TMB::compile("src/eDNAModel.cpp")
-    #dyn.load(TMB::dynlib("src/eDNAModel"))
+    TMB::compile("src/eDNAModel.cpp")
+    dyn.load(TMB::dynlib("src/eDNAModel"))
     
     
     

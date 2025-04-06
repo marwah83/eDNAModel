@@ -104,8 +104,8 @@ run_full_TMB <- function(data_array_filtered,
     
     #TMB::openmp(parallel::detectCores()-1,autopar=TRUE, DLL = "occ")
     #setwd("~/Documents/eDNAModel/eDNAModel")
-    TMB::compile("src/eDNAModel.cpp")
-    dyn.load(TMB::dynlib("src/eDNAModel"))
+    #TMB::compile("src/eDNAModel.cpp")
+    #dyn.load(TMB::dynlib("src/eDNAModel"))
     
     
     

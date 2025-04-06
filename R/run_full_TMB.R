@@ -10,7 +10,7 @@
 #'
 #' @return A list containing the fitted TMB object and optimization result.
 #' @export
-run_full_TMB <- function(data_array_filtered,
+run_full_TMB <- function(filter_data_array,
                          covariate_data,
                          a.formula = ~ site + (1 | replicate),
                          o.formula = ~ site) {
@@ -41,14 +41,14 @@ run_full_TMB <- function(data_array_filtered,
       return(final_data)
     }
     
-    Y<- to2D(data_array_filtered)
+    Y<- to2D(filter_data_array)
     
     # Inspect dimensions
-    dim(data_array_filtered)
+    dim(filter_data_array)
     # [1] n_species n_sites n_replicates
     
-    n_sites <- dim(data_array_filtered)[2]
-    n_replicates <- dim(data_array_filtered)[3]
+    n_sites <- dim(filter_data_array)[2]
+    n_replicates <- dim(filter_data_array)[3]
     
     # Construct covariate_data to match row count of Y = n_sites * n_replicates
     covariate_data <- data.frame(
@@ -58,7 +58,7 @@ run_full_TMB <- function(data_array_filtered,
     
     
     
-    Y<- to2D(data_array_filtered)
+    #Y<- to2D(filter_data_array)
     y <- as.matrix(Y[, -(1:2)])
     x <- covariate_data
   

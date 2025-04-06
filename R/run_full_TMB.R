@@ -15,7 +15,10 @@ run_full_TMB <- function(filter_data_array,
                          a.formula = ~ site + (1 | replicate),
                          o.formula = ~ site) {
   
-    to2D <- function(array_3d) {
+    TMB::compile("src/eDNAModel.cpp")
+    dyn.load(TMB::dynlib("src/eDNAModel"))
+  
+  to2D <- function(array_3d) {
       # Get dimensions
       species <- dim(array_3d)[1]
       sites <- dim(array_3d)[2]

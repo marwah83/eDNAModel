@@ -15,33 +15,7 @@ run_full_TMB <- function(data_array_filtered,
                          a.formula = ~ 1,
                          o.formula = ~ 1, linko = 1, linka = 0, family = 1, Ntrials = matrix(0), control = list(maxit = 10e3, trace = 1)) {
   
-  
-  to2D <- function(array_3d) {
-      # Get dimensions
-      species <- dim(array_3d)[1]
-      sites <- dim(array_3d)[2]
-      replicates <- dim(array_3d)[3]
-      
-      # Reshape the data into a 2D matrix
-      data_values <- matrix(array_3d, nrow = sites * replicates, ncol = species, byrow = FALSE)
-      
-      # Create Sites and Replicates columns
-      site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
-      replicate_column <- rep(dimnames(array_3d)$Replicates, times = sites)
-      
-      # Combine into a data frame
-      final_data <- data.frame(
-        Site = site_column,
-        Replicate = replicate_column,
-        data_values
-      )
-      
-      # Set column names for species
-      colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
-      
-      return(final_data)
-    }
-    
+   
     Y<- to2D(data_array_filtered)
     
     # Inspect dimensions

@@ -25,7 +25,7 @@ run_full_TMB <- function(data_array_filtered,
     n_sites <- dim(data_array_filtered)[2]
     n_replicates <- dim(data_array_filtered)[3]    
     
-    Y<- to2D(data_array_filtered)
+    #Y<- to2D(data_array_filtered)
     y <- as.matrix(Y[, -(1:2)])
     
     sites = as.numeric(Y[,1])-1

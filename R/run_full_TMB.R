@@ -4,16 +4,16 @@
 #' with support for covariate formulas and random effects.
 #'
 #' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
-#' @param covariate_data A data frame containing covariates for model matrices.
+#' @param X A data frame containing covariates for model matrices.
 #' @param a.formula A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.
 #' @param o.formula A formula for the occupancy model. Default is \code{~ site}.
 #'
 #' @return A list containing the fitted TMB object and optimization result.
 #' @export
 run_full_TMB <- function(data_array_filtered,
-                         covariate_data,
-                         a.formula = ~ site + (1 | replicate),
-                         o.formula = ~ site) {
+                         X,
+                         a.formula = ~ 1,
+                         o.formula = ~ 1, linko = 1, linka = 0, family = 1, Ntrials = matrix(0), control = list(maxit = 10e3, trace = 1)) {
   
   
   to2D <- function(array_3d) {
@@ -49,39 +49,42 @@ run_full_TMB <- function(data_array_filtered,
     # [1] n_species n_sites n_replicates
     
     n_sites <- dim(data_array_filtered)[2]
-    n_replicates <- dim(data_array_filtered)[3]
-    
-    # Construct covariate_data to match row count of Y = n_sites * n_replicates
-    covariate_data <- data.frame(
-      site = factor(rep(1:n_sites, each = n_replicates)),
-      replicate = factor(rep(1:n_replicates, times = n_sites))
-    )
-    
-    
+    n_replicates <- dim(data_array_filtered)[3]    
     
     Y<- to2D(data_array_filtered)
     y <- as.matrix(Y[, -(1:2)])
-    x <- covariate_data
-  
-    a.formula = ~ site + (1 | replicate)
-    o.formula = ~ site
     
-    
-    y <- as.matrix(Y[,-c(1:2)])
     sites = as.numeric(Y[,1])-1
     ysites <- as.matrix(aggregate(y,FUN=sum,list(sites)))[,-1]#sum over replicates
-    Xa <- model.matrix(~ site, covariate_data)
-    Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), covariate_data)
+    Xa <- model.matrix(gllvm:::nobars1_(a.formula), X)
+    if(gllvm:::anyBars(a.formula)){
+    Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), X)
     csa <- Zalist$cs # set to single column matrix if no REs
     Za <- Matrix::t(Zalist$Zt)
-    Xo <- model.matrix(o.formula, covariate_data)
+    }else{
+    Za = as(matrix(0), "TsparseMatrix")
+    csa = matrix(0)
+    }
+    
+    # Here create a new Xocc at the site-level
+    
+    #
+    Xo <- model.matrix(gllvm:::nobars1_(o.formula), Xocc) # This is a problem: here the  X should be at the site-level
+    if(gllvm:::anyBars(o.formula)){
+    Zolist <- gllvm:::mkReTrms1(gllvm:::findbars1(o.formula), Xocc)
+    cso <- Zolist$cs # set to single column matrix if no REs
+    Zo <- Matrix::t(Zolist$Zt)
+    }else{
     Zo <- as(matrix(0), "TsparseMatrix")
     cso <- matrix(0)# set to single column matrix if no REs
+    }
     
-    family = 1#0 is ZIP, 1 is ZINB, 2 is BINOM with Ntrials
-    linka = 0 # abundance link function; 0 = log, 1 = logit,  2 = probit, 3 = cloglog
-    linko = 1 # occupancy link function; 0 = log, 1 = logit,  2 = probit, 3 = cloglog
-    NTrials = matrix(0)  # nrow(y) by ncol(y) matrix of size for binomial. should separately be specified with family = 2
+    # Add defensive programming for family still
+    #family = 1#0 is ZIP, 1 is ZINB, 2 is BINOM with Ntrials
+    # Add defensive coding for linka and linko here to check that linka is one of 0,1,2,3 and linko  is one of 1,2
+    # linka = 0 # abundance link function; 0 = log, 1 = logit,  2 = probit, 3 = cloglog
+    # linko = 1 # occupancy link function; 1 = logit,  2 = probit
+    # add defensive coding on NTrials
     
     # Readying "parameters" component TMB list function
     Ba = matrix(0,nrow=ncol(Xa),ncol=ncol(y))
@@ -92,7 +95,7 @@ run_full_TMB <- function(data_array_filtered,
     logsda <- rep(0,nrow(Ua))
     corsa <- rep(1e-5,nrow(csa))
     logsdo <- rep(0, nrow(Uo))
-    corso <- 0
+    corso <- rep(1e-5, nrow(cso))
     
     # get some starting values
     # map formatted like this makes the model into u_i + b_j for eta^a and u_i for etaa^o
@@ -106,14 +109,12 @@ run_full_TMB <- function(data_array_filtered,
     #setwd("~/Documents/eDNAModel/eDNAModel")
     #TMB::compile("src/eDNAModel.cpp")
     #dyn.load(TMB::dynlib("src/eDNAModel"))
-    
-    
-    
+     
     fit <- TMB::MakeADFun(data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = as(matrix(0), "TsparseMatrix"), Zo = as(matrix(0),"TsparseMatrix"), family = family,sites = sites, csa = matrix(0), cso = matrix(0), NTrials = NTrials, linka = linka, linko = linko),
                           parameters = list(Ba=Ba, Bo=Bo, Ua=Ua, Uo=Uo, logphi=logphi, logsda = logsda, corsa = corsa, logsdo = logsdo, corso = corso),
                           DLL = "eDNAModel",
                           map = maplist)
-    opt <- optim(fit$par, fit$fn, fit$gr, method="L-BFGS-B", control = list(trace = 1, maxit =5000)) # optimize
+    opt <- optim(fit$par, fit$fn, fit$gr, method="L-BFGS-B", control = list(trace = control$trace, maxit = 5e3)) # optimize
     
     Bas <- opt$par[names(opt$par) == "Ba"]
     Ba2 <- matrix(Bas, nrow = ncol(Xa))
@@ -154,7 +155,7 @@ run_full_TMB <- function(data_array_filtered,
       map = maplist
     )
     
-    opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B", control = list(trace = 1, maxit = 1e6))
+    opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B", control = list(trace = control$trace, maxit = control$maxit))
     
     site_ids <- as.numeric(sites)
     etao <- fit$report(fit$env$last.par.best)$etao
@@ -166,8 +167,9 @@ run_full_TMB <- function(data_array_filtered,
     
     prob.detect <- 1 - occup.prob_site * lambda_prod
     
-    hist(occup.prob, main = "occupancy probability", xlab="")
-    hist(unlist(prob.detect), main = "Probability of Detection", xlab = "")
+    #Separate plotting into its own function
+    #hist(occup.prob, main = "occupancy probability", xlab="")
+    #hist(unlist(prob.detect), main = "Probability of Detection", xlab = "")
     
     #let's check this is correct
     #any(ysites[occup.prob[,]>0.8]==0) # NOPE, everything with large occup. prob. has counts larger than 0
@@ -175,14 +177,12 @@ run_full_TMB <- function(data_array_filtered,
     
     #any_violations <- any(ysites[occup.prob[,] > 0.8] == 0)
     #all_correct <- all(ysites[occup.prob[,] < 0.8] == 0)
-    
-    
-    message(" Final TMB model fitting completed.")
-    
-    return(list(
+
+    return(list(start = opt, 
       optimization = opt2,
       occupancy_probability = occup.prob,
-      detection_probability = prob.detect
+      detection_probability = prob.detect,
+      TMBobj = fit
     ))
     
   }

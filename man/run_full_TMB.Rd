@@ -6,7 +6,7 @@
 \usage{
 run_full_TMB(
   data_array_filtered,
-  covariate_data,
+  X,
   a.formula = ~site + (1 | replicate),
   o.formula = ~site
 )
@@ -14,7 +14,7 @@ run_full_TMB(
 \arguments{
 \item{data_array_filtered}{A 3D array (Species x Sites x Replicates) after filtering.}
 
-\item{covariate_data}{A data frame containing covariates for model matrices.}
+\item{X}{A data frame containing covariates for model matrices.}
 
 \item{a.formula}{A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.}
 

@@ -11,14 +11,17 @@
 #' @param family Distribution: 0 = ZIP, 1 = ZINB, 2 = Binomial.
 #' @param Ntrials Matrix of trials for Binomial models.
 #' @param control Optimization control list.
-#'
+#' @param data_array_filtered Filtered 3D data array ready for TMB model fitting.
+#' @return List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
+#' @importFrom(methods, as)
+#' @importFrom(stats, aggregate, model.matrix, optim, plogis)
 #' @return A list with optimization results, fitted TMB object, and estimated probabilities.
 #' @export
 #' @useDynLib eDNAModel, .registration = TRUE
 #' @importFrom TMB MakeADFun
 #' @importFrom TMB openmp
 #' @import Matrix
-
+#' Run Full TMB Model
 run_full_TMB <- function(data_array_filtered,
                          X,
                          a.formula = ~1,
@@ -27,19 +30,26 @@ run_full_TMB <- function(data_array_filtered,
                          linka = 0,
                          family = 1,
                          Ntrials = matrix(0),
+                         offset = NULL,
                          control = list(maxit = 10e3, trace = 1)) {
 
+  # Convert to 2D
   Y <- to2D(data_array_filtered)
   y <- as.matrix(Y[, -(1:2)])
   sites <- as.numeric(Y[, 1]) - 1
   ysites <- as.matrix(aggregate(y, FUN = sum, list(sites)))[, -1]
 
+  # Validate inputs
   if (!linko %in% c(1, 2)) stop("linko must be 1 (logit) or 2 (probit)")
   if (!linka %in% c(0, 1, 2, 3)) stop("linka must be 0 (log), 1 (logit), 2 (probit), or 3 (cloglog)")
   if (!family %in% c(0, 1, 2)) stop("family must be 0 (ZIP), 1 (ZINB), or 2 (Binomial)")
   if (!is.matrix(Ntrials)) stop("Ntrials must be a matrix")
 
-  # Abundance model matrices
+  if (is.null(offset)) {
+    offset <- matrix(0, ncol = ncol(y), nrow = nrow(y))
+  }
+
+  # Abundance design matrix
   Xa <- model.matrix(gllvm:::nobars1_(a.formula), X)
   if (gllvm:::anyBars(a.formula)) {
     Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), X)
@@ -50,11 +60,12 @@ run_full_TMB <- function(data_array_filtered,
     csa <- matrix(0)
   }
 
-  # Occupancy model matrices
+  # Occupancy design matrix
   site_levels <- sort(unique(sites))
   row_matches <- match(site_levels, sites)
   Xocc <- X[row_matches, , drop = FALSE]
-  if (nrow(Xocc) != length(site_levels)) stop("Mismatch between site-level covariates and unique site IDs")
+
+  if (nrow(Xocc) != length(site_levels)) stop("Mismatch in site-level covariates.")
 
   Xo <- model.matrix(gllvm:::nobars1_(o.formula), Xocc)
   if (gllvm:::anyBars(o.formula)) {
@@ -66,11 +77,11 @@ run_full_TMB <- function(data_array_filtered,
     cso <- matrix(0)
   }
 
-  # Starting parameters
+  # Initial parameters
   Ba <- matrix(0, nrow = ncol(Xa), ncol = ncol(y))
   Bo <- matrix(0, nrow = ncol(Xo), ncol = ncol(y))
-  Ua <- matrix(0)
-  Uo <- matrix(0)
+  Ua <- if (ncol(Za) > 0) matrix(0, nrow = ncol(Za), ncol = ncol(y)) else matrix(0)
+  Uo <- if (ncol(Zo) > 0) matrix(0, nrow = ncol(Zo), ncol = ncol(y)) else matrix(0)
   logphi <- rep(0, ncol(y))
   logsda <- rep(0, nrow(Ua))
   corsa <- rep(1e-5, nrow(csa))
@@ -79,49 +90,39 @@ run_full_TMB <- function(data_array_filtered,
 
   maplist <- list()
 
-  # Initial TMB object
+  # Step 1: Initial Fit
   fit <- TMB::MakeADFun(
-    data = list(
-      Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
-      Za = Za, Zo = Zo, family = family, sites = sites,
-      csa = csa, cso = cso, NTrials = Ntrials,
-      linka = linka, linko = linko
-    ),
-    parameters = list(
-      Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo,
-      logphi = logphi, logsda = logsda, corsa = corsa,
-      logsdo = logsdo, corso = corso
-    ),
+    data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
+                Za = Za, Zo = Zo, family = family, sites = sites,
+                csa = csa, cso = cso, NTrials = Ntrials,
+                linka = linka, linko = linko, offset = offset),
+    parameters = list(Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo,
+                      logphi = logphi, logsda = logsda, corsa = corsa,
+                      logsdo = logsdo, corso = corso),
     DLL = "eDNAModel",
     map = maplist
   )
 
-  # First optimization
   opt <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
                control = list(trace = control$trace, maxit = control$maxit))
 
-  # Reconstruct estimates for second run
+  # Rebuild parameters
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
   Bo2 <- matrix(opt$par[names(opt$par) == "Bo"], nrow = ncol(Xo))
-
-  Ua <- if (nrow(Za) > 1) matrix(0, nrow = ncol(Za), ncol = ncol(y)) else matrix(0)
-  Uo <- if (nrow(Zo) > 1) matrix(0, nrow = ncol(Zo), ncol = ncol(y)) else matrix(0)
-
-  logsda <- rep(0, nrow(Ua))
-  corsa <- rep(1e-5, nrow(csa))
-  logsdo <- rep(0, nrow(Uo))
-  corso <- rep(1e-5, nrow(cso))
   logphi <- opt$par[names(opt$par) == "logphi"]
 
-  random <- NULL
-  if (nrow(Za) > 1) random <- c(random, "Ua")
-  if (nrow(Zo) > 1) random <- c(random, "Uo")
+  Ua <- if (ncol(Za) > 0) matrix(0, nrow = ncol(Za), ncol = ncol(y)) else matrix(0)
+  Uo <- if (ncol(Zo) > 0) matrix(0, nrow = ncol(Zo), ncol = ncol(y)) else matrix(0)
 
-  # Final TMB fit
+  random <- NULL
+  if (ncol(Za) > 0) random <- c(random, "Ua")
+  if (ncol(Zo) > 0) random <- c(random, "Uo")
+
+  # Step 2: Final Fit with estimated fixed effects
   fit <- TMB::MakeADFun(
     data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = Za, Zo = Zo,
                 family = family, sites = sites, csa = csa, cso = cso,
-                NTrials = Ntrials, linka = linka, linko = linko),
+                NTrials = Ntrials, linka = linka, linko = linko, offset = offset),
     parameters = list(Ba = Ba2, Bo = Bo2, Ua = Ua, Uo = Uo, logphi = logphi,
                       logsda = logsda, corsa = corsa, logsdo = logsdo, corso = corso),
     random = random,
@@ -133,23 +134,18 @@ run_full_TMB <- function(data_array_filtered,
   opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
                 control = list(trace = control$trace, maxit = control$maxit))
 
-  # Occupancy & Detection probability calculation
+  # Probabilities
   etao <- fit$report(fit$env$last.par.best)$etao
   occup.prob <- 1 - plogis(etao)
-
-  occup.prob_site <- occup.prob  # Already site-level?
-
   lambda_matrix <- matrix(exp(fit$report(fit$env$last.par.best)$etaa), ncol = ncol(occup.prob))
-  site_ids <- as.numeric(sites)
-  lambda_prod <- aggregate(exp(-lambda_matrix), by = list(site = site_ids), FUN = prod)[, -1]
-
-  prob.detect <- 1 - occup.prob_site * lambda_prod
+  lambda_prod <- aggregate(exp(-lambda_matrix), by = list(site = sites), FUN = prod)[, -1]
+  prob.detect <- 1 - occup.prob * lambda_prod
 
   out <- list(
     start = opt,
     optimization = opt2,
-    occupancy_probability = as.matrix(occup.prob),        # Ensures matrix
-    detection_probability = as.data.frame(prob.detect),   # Ensures dataframe
+    occupancy_probability = as.matrix(occup.prob),
+    detection_probability = as.data.frame(prob.detect),
     TMBobj = fit
   )
   class(out) <- "eDNAModel"

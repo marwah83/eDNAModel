@@ -29,22 +29,6 @@ library(Matrix)
 library(TMB)
 ```
 
-```{r compile-tmb-model, include=FALSE, eval=interactive()}
-# Compile and load the TMB model only in interactive sessions
-# This is to avoid recompilation during CRAN checks or non-interactive builds
-
-# Path to the model
-model_path <- system.file("src", "eDNAModel.cpp", package = "eDNAModel")
-
-# If running locally or developing
-if (file.exists(model_path)) {
-  TMB::compile(model_path)
-  dyn.load(TMB::dynlib(model_path))
-} else {
-  warning("TMB model not found. Ensure eDNAModel.cpp exists in /src/")
-}
-```
-
 
 ## Introduction
 

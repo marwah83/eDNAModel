@@ -6,24 +6,38 @@
 \usage{
 run_full_TMB(
   data_array_filtered,
-  covariate_data,
-  a.formula = ~site + (1 | replicate),
-  o.formula = ~site
+  X,
+  a.formula = ~1,
+  o.formula = ~1,
+  linko = 1,
+  linka = 0,
+  family = 1,
+  Ntrials = matrix(0),
+  control = list(maxit = 10000, trace = 1)
 )
 }
 \arguments{
 \item{data_array_filtered}{A 3D array (Species x Sites x Replicates) after filtering.}
 
-\item{covariate_data}{A data frame containing covariates for model matrices.}
+\item{X}{A data frame containing covariates for model matrices.}
 
-\item{a.formula}{A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.}
+\item{a.formula}{Formula for the abundance model.}
 
-\item{o.formula}{A formula for the occupancy model. Default is \code{~ site}.}
+\item{o.formula}{Formula for the occupancy model.}
+
+\item{linko}{Link function for occupancy: 1 = logit, 2 = probit.}
+
+\item{linka}{Link function for abundance: 0 = log, 1 = logit, 2 = probit, 3 = cloglog.}
+
+\item{family}{Distribution: 0 = ZIP, 1 = ZINB, 2 = Binomial.}
+
+\item{Ntrials}{Matrix of trials for Binomial models.}
+
+\item{control}{Optimization control list.}
 }
 \value{
-A list containing the fitted TMB object and optimization result.
+A list with optimization results, fitted TMB object, and estimated probabilities.
 }
 \description{
-Fits a hierarchical multi-species occupancy-abundance model using TMB,
-with support for covariate formulas and random effects.
+Fits a hierarchical multi-species occupancy-abundance model using TMB...
 }

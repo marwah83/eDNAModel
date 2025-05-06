@@ -2,6 +2,7 @@
 #'
 #' @param array_3d A 3D array with dimensions (Species, Sites, Replicates) and appropriate dimnames.
 #' @return A data frame with columns: Site (numeric), Replicate, Species1, Species2, ..., SpeciesN
+#' @export
 to2D <- function(array_3d) {
   # Extract dimensions
   species <- dim(array_3d)[1]

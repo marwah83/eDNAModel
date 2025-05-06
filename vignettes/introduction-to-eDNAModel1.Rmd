@@ -98,7 +98,7 @@ class(model_small) <- "eDNAModel"
 
 ```
 
-```{r summary, echo=FALSE}
+```{r sum1, echo=FALSE}
 summary_output <- summary(model_small)
 head(summary_output)
 

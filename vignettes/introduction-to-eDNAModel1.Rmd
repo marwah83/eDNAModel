@@ -71,7 +71,6 @@ We remove species with all-zero counts, sites with all-zero counts, and rare spe
 
 ```{r input, eval = FALSE}
 Y_small <- to2D(filtered_array)
-
 X_small <- Y_small[, c("Site", "Replicate")]
 X_small$Site <- factor(X_small$Site)
 X_small$Replicate <- factor(X_small$Replicate)
@@ -95,6 +94,7 @@ model_small <- run_full_TMB(
   linka = 0,  # log
   family = 1  # ZINB
 )
+class(model_small) <- "eDNAModel" 
 
 ```
 

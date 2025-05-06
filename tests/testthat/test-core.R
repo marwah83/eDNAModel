@@ -1,7 +1,7 @@
 library(testthat)
 library(eDNAModel)
 
-test_that("summary_TMB_model returns valid data.frame", {
+test_that("summary returns valid data.frame", {
   # Mock data array
   array <- array(sample(0:5, 3 * 4 * 2, replace = TRUE),
                  dim = c(3, 4, 2),
@@ -19,7 +19,7 @@ test_that("summary_TMB_model returns valid data.frame", {
   model <- run_full_TMB(array, X, ~ Site, ~ Site, linko = 1, linka = 0, family = 1)
   
   # Test summary
-  smry <- summary_TMB_model(model)
+  smry <- summary(model)
   expect_s3_class(smry, "data.frame")
   expect_true(all(c("parameter", "estimate", "sd") %in% colnames(smry)))
 })

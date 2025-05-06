@@ -4,7 +4,7 @@
 \alias{summary.eDNAModel}
 \title{Summary of TMB Model Coefficients}
 \usage{
-\method{summary}{eDNAModel}(model)
+summary.eDNAModel(model)
 }
 \arguments{
 \item{model}{Output from run_full_TMB}

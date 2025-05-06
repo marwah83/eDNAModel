@@ -162,4 +162,4 @@ run_full_TMB <- function(data_array_filtered,
   class(out) <- "eDNAModel"
   return(out)
 }
-}
+

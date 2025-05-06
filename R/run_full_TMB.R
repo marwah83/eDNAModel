@@ -1,136 +1,111 @@
 #' Run Full TMB Model
 #'
-#' Fits a hierarchical multi-species occupancy-abundance model using TMB,
-#' with support for covariate formulas and random effects.
+#' Fits a hierarchical multi-species occupancy-abundance model using TMB...
 #'
 #' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
-#' @param covariate_data A data frame containing covariates for model matrices.
-#' @param a.formula A formula for the abundance model. Default is \code{~ site + (1 | replicate)}.
-#' @param o.formula A formula for the occupancy model. Default is \code{~ site}.
+#' @param X A data frame containing covariates for model matrices.
+#' @param a.formula Formula for the abundance model.
+#' @param o.formula Formula for the occupancy model.
+#' @param linko Link function for occupancy: 1 = logit, 2 = probit.
+#' @param linka Link function for abundance: 0 = log, 1 = logit, 2 = probit, 3 = cloglog.
+#' @param family Distribution: 0 = ZIP, 1 = ZINB, 2 = Binomial.
+#' @param Ntrials Matrix of trials for Binomial models.
+#' @param control Optimization control list.
 #'
-#' @return A list containing the fitted TMB object and optimization result.
+#' @return A list with optimization results, fitted TMB object, and estimated probabilities.
 #' @export
+#' @useDynLib eDNAModel, .registration = TRUE
+#' @importFrom TMB MakeADFun
+#' @importFrom TMB openmp
+#' @import Matrix
+
 run_full_TMB <- function(data_array_filtered,
-                         covariate_data,
-                         a.formula = ~ site + (1 | replicate),
-                         o.formula = ~ site) {
+                         X,
+                         a.formula = ~1,
+                         o.formula = ~1,
+                         linko = 1,
+                         linka = 0,
+                         family = 1,
+                         Ntrials = matrix(0),
+                         control = list(maxit = 10e3, trace = 1)) {
 
-  to2D <- function(array_3d) {
-    # Get dimensions
-    species <- dim(array_3d)[1]
-    sites <- dim(array_3d)[2]
-    replicates <- dim(array_3d)[3]
+  Y <- to2D(data_array_filtered)
+  y <- as.matrix(Y[, -(1:2)])
+  sites <- as.numeric(Y[, 1]) - 1
+  ysites <- as.matrix(aggregate(y, FUN = sum, list(sites)))[, -1]
 
-    # Reshape the data into a 2D matrix
-    data_values <- matrix(array_3d, nrow = sites * replicates, ncol = species, byrow = FALSE)
+  if (!linko %in% c(1, 2)) stop("linko must be 1 (logit) or 2 (probit)")
+  if (!linka %in% c(0, 1, 2, 3)) stop("linka must be 0 (log), 1 (logit), 2 (probit), or 3 (cloglog)")
+  if (!family %in% c(0, 1, 2)) stop("family must be 0 (ZIP), 1 (ZINB), or 2 (Binomial)")
+  if (!is.matrix(Ntrials)) stop("Ntrials must be a matrix")
 
-    # Create Sites and Replicates columns
-    site_column <- rep(dimnames(array_3d)$Sites, each = replicates)
-    replicate_column <- rep(dimnames(array_3d)$Replicates, times = sites)
-
-    # Combine into a data frame
-    final_data <- data.frame(
-      Site = site_column,
-      Replicate = replicate_column,
-      data_values
-    )
-
-    # Set column names for species
-    colnames(final_data)[3:(2 + species)] <- dimnames(array_3d)$Species
-
-    return(final_data)
+  # Abundance model matrices
+  Xa <- model.matrix(gllvm:::nobars1_(a.formula), X)
+  if (gllvm:::anyBars(a.formula)) {
+    Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), X)
+    Za <- Matrix::t(Zalist$Zt)
+    csa <- Zalist$cs
+  } else {
+    Za <- as(matrix(0), "TsparseMatrix")
+    csa <- matrix(0)
   }
 
-  Y<- to2D(data_array_filtered)
+  # Occupancy model matrices
+  site_levels <- sort(unique(sites))
+  row_matches <- match(site_levels, sites)
+  Xocc <- X[row_matches, , drop = FALSE]
+  if (nrow(Xocc) != length(site_levels)) stop("Mismatch between site-level covariates and unique site IDs")
 
-  # Inspect dimensions
-  dim(data_array_filtered)
-  # [1] n_species n_sites n_replicates
+  Xo <- model.matrix(gllvm:::nobars1_(o.formula), Xocc)
+  if (gllvm:::anyBars(o.formula)) {
+    Zolist <- gllvm:::mkReTrms1(gllvm:::findbars1(o.formula), Xocc)
+    Zo <- Matrix::t(Zolist$Zt)
+    cso <- Zolist$cs
+  } else {
+    Zo <- as(matrix(0), "TsparseMatrix")
+    cso <- matrix(0)
+  }
 
-  n_sites <- dim(data_array_filtered)[2]
-  n_replicates <- dim(data_array_filtered)[3]
+  # Starting parameters
+  Ba <- matrix(0, nrow = ncol(Xa), ncol = ncol(y))
+  Bo <- matrix(0, nrow = ncol(Xo), ncol = ncol(y))
+  Ua <- matrix(0)
+  Uo <- matrix(0)
+  logphi <- rep(0, ncol(y))
+  logsda <- rep(0, nrow(Ua))
+  corsa <- rep(1e-5, nrow(csa))
+  logsdo <- rep(0, nrow(Uo))
+  corso <- rep(1e-5, nrow(cso))
 
-  # Construct covariate_data to match row count of Y = n_sites * n_replicates
-  covariate_data <- data.frame(
-    site = factor(rep(1:n_sites, each = n_replicates)),
-    replicate = factor(rep(1:n_replicates, times = n_sites))
+  maplist <- list()
+
+  # Initial TMB object
+  fit <- TMB::MakeADFun(
+    data = list(
+      Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
+      Za = Za, Zo = Zo, family = family, sites = sites,
+      csa = csa, cso = cso, NTrials = Ntrials,
+      linka = linka, linko = linko
+    ),
+    parameters = list(
+      Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo,
+      logphi = logphi, logsda = logsda, corsa = corsa,
+      logsdo = logsdo, corso = corso
+    ),
+    DLL = "eDNAModel",
+    map = maplist
   )
 
+  # First optimization
+  opt <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+               control = list(trace = control$trace, maxit = control$maxit))
 
+  # Reconstruct estimates for second run
+  Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
+  Bo2 <- matrix(opt$par[names(opt$par) == "Bo"], nrow = ncol(Xo))
 
-  Y<- to2D(data_array_filtered)
-  y <- as.matrix(Y[, -(1:2)])
-  x <- covariate_data
-
-  a.formula = ~ site + (1 | replicate)
-  o.formula = ~ site
-
-
-  y <- as.matrix(Y[,-c(1:2)])
-  sites = as.numeric(Y[,1])-1
-  ysites <- as.matrix(aggregate(y,FUN=sum,list(sites)))[,-1]#sum over replicates
-  Xa <- model.matrix(~ site, covariate_data)
-  Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), covariate_data)
-  csa <- Zalist$cs # set to single column matrix if no REs
-  Za <- Matrix::t(Zalist$Zt)
-  Xo <- model.matrix(o.formula, covariate_data)
-  Zo <- as(matrix(0), "TsparseMatrix")
-  cso <- matrix(0)# set to single column matrix if no REs
-
-  family = 1#0 is ZIP, 1 is ZINB, 2 is BINOM with Ntrials
-  linka = 0 # abundance link function; 0 = log, 1 = logit,  2 = probit, 3 = cloglog
-  linko = 1 # occupancy link function; 0 = log, 1 = logit,  2 = probit, 3 = cloglog
-  NTrials = matrix(0)  # nrow(y) by ncol(y) matrix of size for binomial. should separately be specified with family = 2
-
-  # Readying "parameters" component TMB list function
-  Ba = matrix(0,nrow=ncol(Xa),ncol=ncol(y))
-  Bo = matrix(0,nrow=ncol(Xo),ncol=ncol(y))
-  Ua = matrix(0)
-  Uo = matrix(0)
-  logphi=rep(0,ncol(y))
-  logsda <- rep(0,nrow(Ua))
-  corsa <- rep(1e-5,nrow(csa))
-  logsdo <- rep(0, nrow(Uo))
-  corso <- 0
-
-  # get some starting values
-  # map formatted like this makes the model into u_i + b_j for eta^a and u_i for etaa^o
-  # this should probably be interpreted via a formula interface in terms of an interaction with a species covariate
-  # so that absence of an interaction gives a community-level effect
-  # We could also do it without this, but this might speed things up a little later
-  maplist = list(Ba = factor(c(rbind(1:ncol(y),replicate(ncol(y),1:(nrow(Ba)-1)+ncol(y))))), Bo=factor(rep(1:nrow(Ba),times=ncol(y))))
-  maplist <- list() # just keeping map empty for now
-
-  #TMB::openmp(parallel::detectCores()-1,autopar=TRUE, DLL = "occ")
-  #setwd("~/Documents/eDNAModel/eDNAModel")
-  #TMB::compile("src/eDNAModel.cpp")
-  #dyn.load(TMB::dynlib("src/eDNAModel"))
-
-
-
-  fit <- TMB::MakeADFun(data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = as(matrix(0), "TsparseMatrix"), Zo = as(matrix(0),"TsparseMatrix"), family = family,sites = sites, csa = matrix(0), cso = matrix(0), NTrials = NTrials, linka = linka, linko = linko),
-                        parameters = list(Ba=Ba, Bo=Bo, Ua=Ua, Uo=Uo, logphi=logphi, logsda = logsda, corsa = corsa, logsdo = logsdo, corso = corso),
-                        DLL = "eDNAModel",
-                        map = maplist)
-  opt <- optim(fit$par, fit$fn, fit$gr, method="L-BFGS-B", control = list(trace = 1, maxit =5000)) # optimize
-
-  Bas <- opt$par[names(opt$par) == "Ba"]
-  Ba2 <- matrix(Bas, nrow = ncol(Xa))
-
-  Bos <- opt$par[names(opt$par) == "Bo"]
-  Bo2 <- matrix(Bos, nrow = ncol(Xo))
-
-  if (nrow(Za) > 1) {
-    Ua <- matrix(0, nrow = ncol(Za), ncol = ncol(y))
-  } else {
-    Ua <- matrix(0)
-  }
-
-  if (nrow(Zo) > 1) {
-    Uo <- matrix(0, nrow = ncol(Zo), ncol = ncol(y))
-  } else {
-    Uo <- matrix(0)
-  }
+  Ua <- if (nrow(Za) > 1) matrix(0, nrow = ncol(Za), ncol = ncol(y)) else matrix(0)
+  Uo <- if (nrow(Zo) > 1) matrix(0, nrow = ncol(Zo), ncol = ncol(y)) else matrix(0)
 
   logsda <- rep(0, nrow(Ua))
   corsa <- rep(1e-5, nrow(csa))
@@ -142,9 +117,11 @@ run_full_TMB <- function(data_array_filtered,
   if (nrow(Za) > 1) random <- c(random, "Ua")
   if (nrow(Zo) > 1) random <- c(random, "Uo")
 
+  # Final TMB fit
   fit <- TMB::MakeADFun(
-    data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = Za, Zo = Zo, family = family, sites = sites,
-                csa = csa, cso = cso, NTrials = NTrials, linka = linka, linko = linko),
+    data = list(Y = y, Ysites = ysites, Xa = Xa, Xo = Xo, Za = Za, Zo = Zo,
+                family = family, sites = sites, csa = csa, cso = cso,
+                NTrials = Ntrials, linka = linka, linko = linko),
     parameters = list(Ba = Ba2, Bo = Bo2, Ua = Ua, Uo = Uo, logphi = logphi,
                       logsda = logsda, corsa = corsa, logsdo = logsdo, corso = corso),
     random = random,
@@ -153,37 +130,28 @@ run_full_TMB <- function(data_array_filtered,
     map = maplist
   )
 
-  opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B", control = list(trace = 1, maxit = 1e6))
+  opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+                control = list(trace = control$trace, maxit = control$maxit))
 
-  site_ids <- as.numeric(sites)
+  # Occupancy & Detection probability calculation
   etao <- fit$report(fit$env$last.par.best)$etao
   occup.prob <- 1 - plogis(etao)
-  occup.prob_site <- aggregate(occup.prob, by = list(site = site_ids), FUN = mean)[, -1]
+
+  occup.prob_site <- occup.prob  # Already site-level?
 
   lambda_matrix <- matrix(exp(fit$report(fit$env$last.par.best)$etaa), ncol = ncol(occup.prob))
+  site_ids <- as.numeric(sites)
   lambda_prod <- aggregate(exp(-lambda_matrix), by = list(site = site_ids), FUN = prod)[, -1]
 
   prob.detect <- 1 - occup.prob_site * lambda_prod
 
-  hist(occup.prob, main = "occupancy probability", xlab="")
-  hist(unlist(prob.detect), main = "Probability of Detection", xlab = "")
-
-  #let's check this is correct
-  #any(ysites[occup.prob[,]>0.8]==0) # NOPE, everything with large occup. prob. has counts larger than 0
-  #all(ysites[occup.prob[,]<0.8]==0) # YUP, everything with small occup. prob. has count 0
-
-  #any_violations <- any(ysites[occup.prob[,] > 0.8] == 0)
-  #all_correct <- all(ysites[occup.prob[,] < 0.8] == 0)
-
-
-  message(" Final TMB model fitting completed.")
-
-  return(list(
+  out <- list(
+    start = opt,
     optimization = opt2,
-    occupancy_probability = occup.prob,
-    detection_probability = prob.detect
-  ))
-
+    occupancy_probability = as.matrix(occup.prob),        # Ensures matrix
+    detection_probability = as.data.frame(prob.detect),   # Ensures dataframe
+    TMBobj = fit
+  )
+  class(out) <- "eDNAModel"
+  return(out)
 }
-
-

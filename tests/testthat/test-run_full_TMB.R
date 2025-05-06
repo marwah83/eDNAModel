@@ -17,7 +17,7 @@ test_that("run_full_TMB executes and returns expected structure", {
   )
 
   # ✅ Create mock covariate data (site and replicate)
-  covariate_data <- data.frame(
+  X <- data.frame(
     site = factor(rep(1:3, each = 4)),
     replicate = factor(rep(1:4, times = 3))
   )
@@ -26,9 +26,9 @@ test_that("run_full_TMB executes and returns expected structure", {
   result <- suppressWarnings(
     run_full_TMB(
       data_array_filtered = mock_data_array,
-      covariate_data = covariate_data,
-      a.formula = ~ site + (1 | replicate),
-      o.formula = ~ site
+      X = X,
+      a.formula = ~ 1,
+      o.formula = ~ 1,
     )
   )
 
@@ -44,4 +44,3 @@ test_that("run_full_TMB executes and returns expected structure", {
   expect_true(is.matrix(result$occupancy_probability), label = "Occupancy prob must be matrix")
   expect_true(is.data.frame(result$detection_probability), label = "Detection prob must be dataframe")
 })
-

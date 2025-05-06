@@ -94,7 +94,7 @@ model_small <- run_full_TMB(
   linka = 0,  # log
   family = 1  # ZINB
 )
-class(model_small) <- "eDNAModel" 
+
 
 ```
 

@@ -13,11 +13,12 @@ run_full_TMB(
   linka = 0,
   family = 1,
   Ntrials = matrix(0),
+  offset = NULL,
   control = list(maxit = 10000, trace = 1)
 )
 }
 \arguments{
-\item{data_array_filtered}{A 3D array (Species x Sites x Replicates) after filtering.}
+\item{data_array_filtered}{Filtered 3D data array ready for TMB model fitting.}
 
 \item{X}{A data frame containing covariates for model matrices.}
 
@@ -40,4 +41,7 @@ A list with optimization results, fitted TMB object, and estimated probabilities
 }
 \description{
 Fits a hierarchical multi-species occupancy-abundance model using TMB...
+}
+\seealso{
+\code{\link{summary.eDNAModel}}
 }

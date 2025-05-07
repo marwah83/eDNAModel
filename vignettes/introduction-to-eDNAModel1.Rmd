@@ -25,8 +25,6 @@ knitr::opts_chunk$set(
 ```{r setup1, include=FALSE}
 library(eDNAModel)
 library(phyloseq)
-library(Matrix)
-library(TMB)
 ```
 
 
@@ -74,8 +72,6 @@ Y_small <- to2D(filtered_array)
 X_small <- Y_small[, c("Site", "Replicate")]
 X_small$Site <- factor(X_small$Site)
 X_small$Replicate <- factor(X_small$Replicate)
-
-
 ```
 
 ---
@@ -94,8 +90,6 @@ model_small <- run_full_TMB(
   linka = 0,  # log
   family = 1  # ZINB
 )
-
-
 ```
 
 ```{r sum1, echo=FALSE}

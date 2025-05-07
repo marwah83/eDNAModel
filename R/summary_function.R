@@ -1,9 +1,11 @@
 #' @title Summary of TMB Model Coefficients
 #' @description Summarizes fixed-effect and random-effect parameters with standard deviations.
 #'
-#' @param model Output from run_full_TMB
+#' @param model Output from \code{\link{run_full_TMB}}
 #'
 #' @return Data frame with parameter names, estimates, and standard deviations
+#' @aliases summary.eDNAModel summary
+#' @method summary eDNAModel
 #' @export
 summary.eDNAModel <- function(model) {
   # Get standard deviation report
@@ -29,6 +31,8 @@ summary.eDNAModel <- function(model) {
 
   # Filter for model parameters of interest
   summary_df <- summary_df[grepl("Ba|Bo|Ua|Uo|logphi|logsda|logsdo", summary_df$parameter), ]
+
+  class(summary_df) <- "summary.eDNAModel"
 
   # Return clean result
   return(summary_df)

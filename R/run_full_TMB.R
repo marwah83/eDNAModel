@@ -1,6 +1,5 @@
-#' Run Full TMB Model
-#'
-#' Fits a hierarchical multi-species occupancy-abundance model using TMB...
+#' @title Run Full TMB Model
+#' @description Fits a hierarchical multi-species occupancy-abundance model using TMB...
 #'
 #' @param data_array_filtered A 3D array (Species x Sites x Replicates) after filtering.
 #' @param X A data frame containing covariates for model matrices.
@@ -12,16 +11,19 @@
 #' @param Ntrials Matrix of trials for Binomial models.
 #' @param control Optimization control list.
 #' @param data_array_filtered Filtered 3D data array ready for TMB model fitting.
-#' @return List containing optimized object opt2 and final extracted results (occupancy, lambda, prob.detect)
-#' @importFrom(methods, as)
-#' @importFrom(stats, aggregate, model.matrix, optim, plogis)
+#'
 #' @return A list with optimization results, fitted TMB object, and estimated probabilities.
+#'
 #' @export
+#'
 #' @useDynLib eDNAModel, .registration = TRUE
 #' @importFrom TMB MakeADFun
 #' @importFrom TMB openmp
+#' @importFrom methods as
+#' @importFrom stats aggregate model.matrix optim plogis
 #' @import Matrix
-#' Run Full TMB Model
+#' @seealso \code{\link{summary.eDNAModel}}
+
 run_full_TMB <- function(data_array_filtered,
                          X,
                          a.formula = ~1,

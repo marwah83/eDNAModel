@@ -1,4 +1,4 @@
-#' Convert 3D array to 2D data frame (safe version)
+#' @title Convert 3D array to 2D data frame (safe version)
 #'
 #' @param array_3d A 3D array with dimensions (Species, Sites, Replicates) and appropriate dimnames.
 #' @return A data frame with columns: Site (numeric), Replicate, Species1, Species2, ..., SpeciesN

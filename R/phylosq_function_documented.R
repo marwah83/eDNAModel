@@ -1,6 +1,6 @@
-#' Generate Data Array from Phyloseq Object
+#' @title Generate Data Array from Phyloseq Object
 #'
-#' Converts a phyloseq object into a 3D data array (Species x Sites x Replicates).
+#' @description Converts a phyloseq object into a 3D data array (Species x Sites x Replicates).
 #'
 #' @param phyloseq_path Path to the .RDS file containing a phyloseq object.
 #' @param verbose Logical, if TRUE (default), prints progress messages.
@@ -13,14 +13,14 @@
 #'
 #' @export
 data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {
-  
+
   #  Load phyloseq object
   physeq <- readRDS(phyloseq_path)
   if (verbose) message(" Phyloseq object loaded successfully.")
 
   #  Extract OTU Table (Species x Samples)
   otu_mat <- as.matrix(phyloseq::otu_table(physeq))
-  
+
   # Ensure correct orientation: Species (OTUs) as rows, Samples as columns
   if (phyloseq::taxa_are_rows(physeq)) {
     otu_mat <- t(otu_mat)
@@ -47,7 +47,7 @@ data_array_phyloseq <- function(phyloseq_path, verbose = TRUE) {
   sample_data_df$Replicates <- sub(".*_", "", rownames(sample_data_df))  # Extract replicate ID
 
   #  Convert Sites to numeric IDs
-  sample_data_df$Sites <- as.factor(sample_data_df$Sites)  
+  sample_data_df$Sites <- as.factor(sample_data_df$Sites)
   sample_data_df$Site_ID <- as.numeric(sample_data_df$Sites)
 
   #  Create Empty 3D Array (Species x Sites x Replicates)

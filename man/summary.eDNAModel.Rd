@@ -2,12 +2,13 @@
 % Please edit documentation in R/summary_function.R
 \name{summary.eDNAModel}
 \alias{summary.eDNAModel}
+\alias{summary}
 \title{Summary of TMB Model Coefficients}
 \usage{
-summary.eDNAModel(model)
+\method{summary}{eDNAModel}(model)
 }
 \arguments{
-\item{model}{Output from run_full_TMB}
+\item{model}{Output from \code{\link{run_full_TMB}}}
 }
 \value{
 Data frame with parameter names, estimates, and standard deviations

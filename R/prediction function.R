@@ -1,4 +1,4 @@
-#' Predict from TMB Model with Confidence Intervals (Safe Version)
+#' @title Predict from TMB Model with Confidence Intervals (Safe Version)
 #'
 #' @param model Output from run_full_TMB()
 #' @param newX New data.frame of covariates

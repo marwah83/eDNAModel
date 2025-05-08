@@ -2,12 +2,13 @@
 #' @description Summarizes fixed-effect and random-effect parameters with standard deviations.
 #'
 #' @param model Output from \code{\link{run_full_TMB}}
+#' @param explain Logical; if TRUE (default), prints descriptions of each parameter type.
 #'
-#' @return Data frame with parameter names, estimates, and standard deviations
+#' @return A data frame with parameter names, estimates, and standard deviations
 #' @aliases summary.eDNAModel summary
 #' @method summary eDNAModel
 #' @export
-summary.eDNAModel <- function(model) {
+summary.eDNAModel <- function(model,explain = TRUE) {
   # Get standard deviation report
   sdr <- TMB::sdreport(model$TMBobj)
 
@@ -33,6 +34,20 @@ summary.eDNAModel <- function(model) {
   summary_df <- summary_df[grepl("Ba|Bo|Ua|Uo|logphi|logsda|logsdo", summary_df$parameter), ]
 
   class(summary_df) <- "summary.eDNAModel"
+
+  if (explain) {
+    cat("\n🧾 Parameter Description:\n")
+    cat("---------------------------------------------------\n")
+    cat("Ba      - Fixed effects for abundance (log scale)\n")
+    cat("Bo      - Fixed effects for occupancy (logit/probit scale)\n")
+    cat("Ua      - Random effects for abundance (e.g., replicate-level)\n")
+    cat("Uo      - Random effects for occupancy\n")
+    cat("logphi  - Dispersion parameter (ZINB only)\n")
+    cat("logsda  - Log standard deviation of abundance random effects\n")
+    cat("logsdo  - Log standard deviation of occupancy random effects\n")
+    cat("---------------------------------------------------\n\n")
+  }
+
 
   # Return clean result
   return(summary_df)

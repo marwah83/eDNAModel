@@ -1,5 +1,4 @@
 # eDNAModel
-# eDNAModel
 
 First install (phyloseq) the install eDNAModel.
 

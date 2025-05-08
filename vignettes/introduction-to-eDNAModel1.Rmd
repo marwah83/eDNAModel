@@ -104,7 +104,7 @@ summary(fitted_vals$fitted_abundance)
 
 ```{r run_resid, eval = TRUE}
 # Residuals
-residuals_out <- compute_residuals_TMB(model_small, filtered_array)
+residuals_out <- compute_residuals_TMB(model_small, filtered_array,type="pearson")
 hist(residuals_out$abundance_residuals, main = "Abundance Residuals")
 hist(residuals_out$occupancy_residuals, main = "Occupancy Residuals")
 ```

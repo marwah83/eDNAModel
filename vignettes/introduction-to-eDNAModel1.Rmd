@@ -114,11 +114,11 @@ hist(residuals_out$occupancy_residuals, main = "Occupancy Residuals")
 newX <- unique(X_small[, "Site", drop = FALSE])
 newX$Site <- factor(newX$Site)
 
-predict_abund <- predict_TMB(model_small, newX = newX, formula = ~ Site, type = "abundance")
-predict_occ <- predict_TMB(model_small, newX = newX, formula = ~ Site, type = "occupancy")
+pred_abund <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "abundance",type = ("response"))
+pred_occ <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "occupancy",type = ("response"))
 
-head(predict_abund)
-head(predict_occ)
+head(pred_abund)
+head(pred_occ)
 ```
 
 ```{r run-H, eval = TRUE}

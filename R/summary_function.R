@@ -8,7 +8,7 @@
 #' @aliases summary.eDNAModel summary
 #' @method summary eDNAModel
 #' @export
-summary.eDNAModel <- function(model,explain = TRUE) {
+summary.eDNAModel <- function(model) {
   # Get standard deviation report
   sdr <- TMB::sdreport(model$TMBobj)
 
@@ -33,22 +33,25 @@ summary.eDNAModel <- function(model,explain = TRUE) {
   # Filter for model parameters of interest
   summary_df <- summary_df[grepl("Ba|Bo|Ua|Uo|logphi|logsda|logsdo", summary_df$parameter), ]
 
-  class(summary_df) <- "summary.eDNAModel"
+  # Add explanation table as attribute
+  explanation <- data.frame(
+    parameter_type = c("Ba", "Bo", "Ua", "Uo", "logphi", "logsda", "logsdo"),
+    meaning = c(
+      "Abundance model fixed effects",
+      "Occupancy model fixed effects",
+      "Random effects for abundance (e.g. Replicates)",
+      "Random effects for occupancy (if any)",
+      "Species-specific dispersion (ZINB models)",
+      "Log standard deviation of abundance random effects",
+      "Log standard deviation of occupancy random effects"
+    ),
+    stringsAsFactors = FALSE
+  )
 
-  if (explain) {
-    cat("\n🧾 Parameter Description:\n")
-    cat("---------------------------------------------------\n")
-    cat("Ba      - Fixed effects for abundance (log scale)\n")
-    cat("Bo      - Fixed effects for occupancy (logit/probit scale)\n")
-    cat("Ua      - Random effects for abundance (e.g., replicate-level)\n")
-    cat("Uo      - Random effects for occupancy\n")
-    cat("logphi  - Dispersion parameter (ZINB only)\n")
-    cat("logsda  - Log standard deviation of abundance random effects\n")
-    cat("logsdo  - Log standard deviation of occupancy random effects\n")
-    cat("---------------------------------------------------\n\n")
-  }
+  attr(summary_df, "explanation") <- explanation
 
+  # Set dual class
+  class(summary_df) <- c("summary.eDNAModel", "data.frame")
 
-  # Return clean result
   return(summary_df)
 }

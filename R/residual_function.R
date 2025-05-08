@@ -3,9 +3,9 @@
 #' @param model Output from run_full_TMB
 #' @param data_array_filtered Original input array (Species x Sites x Replicates)
 #' @return A list with residual matrices: occupancy_residuals, abundance_residuals
-#' @export
 #' @param type Character; residual type: "pearson", "response", "deviance"
 #' @return List of residual matrices: named by type
+#' @export
 compute_residuals_TMB <- function(model, data_array_filtered, type = c("pearson", "response", "deviance")) {
   type <- match.arg(type)
 

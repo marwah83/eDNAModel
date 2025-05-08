@@ -1,75 +1,94 @@
-#' @title Predict from TMB Model with Confidence Intervals (Safe Version)
+#' @title Predict from TMB Model with Optional SE and Scale
 #'
-#' @param model Output from run_full_TMB()
-#' @param newX New data.frame of covariates
-#' @param formula The same formula used for abundance or occupancy
-#' @param type "abundance" or "occupancy"
-#' @param level Confidence level for CI
+#' @param model Output from run_full_TMB().
+#' @param newX A new data.frame of covariates.
+#' @param formula The same formula used for abundance or occupancy model.
+#' @param which Which component to predict: "abundance" or "occupancy".
+#' @param type Type of prediction scale: "link", "response", or "terms".
+#' @param level Confidence level for CI (if se = TRUE).
+#' @param se Logical; if TRUE (default), returns SE and CIs.
 #'
-#' @return Data frame with predictions and CIs
+#' @return A data.frame of predictions and optionally SE and CIs.
 #' @export
-predict_TMB <- function(model, newX, formula, type = c("abundance", "occupancy"), level = 0.95) {
+predict_TMB <- function(model, newX, formula, which = c("abundance", "occupancy"),
+                        type = c("response", "link", "terms"), level = 0.95, se = TRUE) {
+  which <- match.arg(which)
   type <- match.arg(type)
 
-  # Determine which coefficient matrix to use
-  coef_matrix <- switch(type,
-                        "abundance" = model$TMBobj$env$parList()$Ba,
-                        "occupancy" = model$TMBobj$env$parList()$Bo
-  )
-  coef_name <- ifelse(type == "abundance", "Ba", "Bo")
-
-  # Compute species-averaged coefficients
-  beta_mean <- rowMeans(coef_matrix)
-
-  # Ensure all factor levels in newX match those in training
-  # This avoids mismatch when factor levels differ
-  training_data <- model$TMBobj$env$data
-  for (var in names(newX)) {
-    if (is.factor(newX[[var]]) && var %in% names(training_data)) {
-      ref_levels <- levels(as.factor(training_data[[var]]))
-      newX[[var]] <- factor(newX[[var]], levels = ref_levels)
-    }
+  # Select coefficient matrix and parameter name
+  coefs <- if (which == "abundance") {
+    model$TMBobj$env$parList()$Ba
+  } else {
+    model$TMBobj$env$parList()$Bo
   }
+  coef_name <- if (which == "abundance") "Ba" else "Bo"
 
-  # Construct design matrix
+  beta_mean <- rowMeans(coefs)
+
+  # Build design matrix
   Xmat <- tryCatch(
-    model.matrix(formula, data = newX),
+    model.matrix(formula, newX),
     error = function(e) stop("Design matrix creation failed: ", e$message)
   )
 
-  # Ensure dimensions match
   if (ncol(Xmat) != length(beta_mean)) {
     stop(sprintf("Design matrix (%d columns) does not match coefficient length (%d).",
                  ncol(Xmat), length(beta_mean)))
   }
 
-  # Prediction point estimates
-  prediction <- as.vector(Xmat %*% beta_mean)
+  # Compute linear predictor
+  linpred <- as.vector(Xmat %*% beta_mean)
 
-  # Confidence intervals from standard errors
-  sdr <- TMB::sdreport(model$TMBobj)
-  coef_rows <- which(rownames(summary(sdr)) == coef_name)
-  coef_vars <- summary(sdr)[coef_rows, 2]^2
-
-  if (length(coef_vars) < length(beta_mean)) {
-    stop("Standard errors not available for all coefficients.")
+  # Option: Return terms
+  if (type == "terms") {
+    term_matrix <- sweep(Xmat, 2, beta_mean, `*`)
+    colnames(term_matrix) <- colnames(Xmat)
+    return(as.data.frame(term_matrix))
   }
 
-  # Compute standard error of predictions
-  pred_se <- sqrt(rowSums((Xmat^2) %*% diag(coef_vars[1:length(beta_mean)])))
+  # Inverse link function
+  inv_link <- switch(which,
+                     "abundance" = exp,
+                     "occupancy" = function(x) 1 - plogis(x))
 
-  # Confidence intervals
-  z <- qnorm(1 - (1 - level) / 2)
-  lower <- prediction - z * pred_se
-  upper <- prediction + z * pred_se
+  # Response scale
+  prediction <- if (type == "response") inv_link(linpred) else linpred
+
+  # If no SE requested
+  if (!se) return(data.frame(prediction = prediction))
+
+  # Get standard errors via sdreport
+  sdr <- TMB::sdreport(model$TMBobj)
+  summary_sdr <- summary(sdr)
+
+  idx <- which(rownames(summary_sdr) == coef_name)
+  V <- summary_sdr[idx, 2]^2
+
+  if (length(V) < length(beta_mean)) stop("SEs missing for some coefficients.")
+
+  pred_se_link <- sqrt(rowSums((Xmat^2) %*% diag(V[1:length(beta_mean)])))
+
+  # CI on link or response scale
+  z <- qnorm(1 - (1 - level)/2)
+  lower_link <- linpred - z * pred_se_link
+  upper_link <- linpred + z * pred_se_link
+
+  if (type == "response") {
+    lower <- inv_link(lower_link)
+    upper <- inv_link(upper_link)
+  } else {
+    lower <- lower_link
+    upper <- upper_link
+  }
 
   return(data.frame(
     prediction = prediction,
-    se = pred_se,
+    se = pred_se_link,
     lower = lower,
     upper = upper
   ))
 }
 
 
+ 
 

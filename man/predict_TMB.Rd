@@ -2,33 +2,32 @@
 % Please edit documentation in R/prediction function.R
 \name{predict_TMB}
 \alias{predict_TMB}
-\title{Predict from TMB Model with Confidence Intervals (Safe Version)}
+\title{Predict from Fitted eDNAModel}
+\description{
+Generates predicted values for abundance or occupancy from a fitted TMB model.
+}
 \usage{
 predict_TMB(model, newX, formula,
-            which = c("abundance", "occupancy"),
-            type = c("response", "link", "terms"),
-            level = 0.95, se = TRUE)
+  which = c("abundance", "occupancy"),
+  type = c("response", "link", "terms"),
+  level = 0.95, se = TRUE)
 }
-
 \arguments{
-\item{model}{Output from run_full_TMB()}
-
-\item{newX}{New data.frame of covariates}
-
-\item{which}{One of "abundance" or "occupancy".}
-
-\item{type}{One of "response", "link", or "terms".}
-
-\item{level}{Confidence level for intervals.}
-
-\item{se}{Logical. Return standard errors?}
-
-\item{formula}{The same formula used for abundance or occupancy}
-
+  \item{model}{A fitted TMB model object (from \code{\link{run_full_TMB}}).}
+  \item{newX}{A new covariate data frame for prediction.}
+  \item{formula}{The right-hand side of the formula used in the model (e.g., \code{~ Site}).}
+  \item{which}{Either \code{"abundance"} or \code{"occupancy"} indicating which model to predict from.}
+  \item{type}{Prediction scale: \code{"response"}, \code{"link"}, or \code{"terms"}.}
+  \item{level}{Confidence level for prediction intervals (default = 0.95).}
+  \item{se}{Logical; whether standard errors and confidence intervals should be returned.}
 }
 \value{
-Data frame with predictions and CIs
+A data frame with the following columns:
+\itemize{
+  \item \code{prediction}
+  \item \code{se}
+  \item \code{lower}
+  \item \code{upper}
 }
-\description{
-Predict from TMB Model with Confidence Intervals (Safe Version)
 }
+

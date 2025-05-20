@@ -90,7 +90,7 @@ model_small <- run_full_TMB(
 ```
 
 ```{r sum1, echo=FALSE}
-summary_output <- summary(model_small)
+summary_output <- summary_all(model_small)
 head(summary_output)
 ```
 

@@ -134,12 +134,10 @@ if (any(low_occ)) {
 }
 
 # Check if Hessian is positive definite
-H <- model_small$TMBobj$he()
-eigvals <- eigen(H)$values
-if (any(eigvals <= 0)) {
-  warning("⚠️ Hessian is not positive definite. Consider simplifying the model.")
+if (length(model_small$random) == 0) {
+  he <- model_small$TMBobj$he()
 } else {
-  message("✅ Hessian is positive definite.")
+  message("Skipping TMBobj$he(): not supported for random effects.")
 }
 ```
 

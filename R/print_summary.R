@@ -1,9 +1,11 @@
 #' @title Print Method for summary.eDNAModel Objects
-#' @description Custom print method for objects of class \code{summary.eDNAModel}.
-#' Prints the parameter estimates with standard deviations and explains parameter types.
+#' @description Custom print method for summary results from \code{eDNAModel}.
 #'
-#' @param x A \code{summary.eDNAModel} object returned by \code{summary.eDNAModel}.
+#' @param x A \code{summary.eDNAModel} object returned by \code{\link{summary.eDNAModel}}.
 #' @param ... Additional arguments (currently ignored).
+#'
+#' @seealso \code{\link{summary.eDNAModel}}
+#' @method print summary.eDNAModel
 #' @export
 print.summary.eDNAModel <- function(x, ...) {
   cat("\nModel Parameter Summary:\n")

@@ -35,6 +35,8 @@ run_full_TMB(
 \item{Ntrials}{Matrix of trials for Binomial models.}
 
 \item{control}{Optimization control list.}
+
+\item{offset}{Optional numeric vector of offset values for the model.}
 }
 \value{
 A list with optimization results, fitted TMB object, and estimated probabilities.

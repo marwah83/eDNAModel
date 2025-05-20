@@ -19,7 +19,7 @@ test_that("summary returns valid data.frame", {
   model <- run_full_TMB(array, X, ~ Site, ~ Site, linko = 1, linka = 0, family = 1)
   
   # Test summary
-  smry <- summary(model)
+  smry <- summary_all(model)
   expect_s3_class(smry, "data.frame")
   expect_true(all(c("parameter", "estimate", "sd") %in% colnames(smry)))
 })

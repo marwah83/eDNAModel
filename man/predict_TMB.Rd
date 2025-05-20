@@ -4,13 +4,10 @@
 \alias{predict_TMB}
 \title{Predict from TMB Model with Confidence Intervals (Safe Version)}
 \usage{
-predict_TMB(
-  model,
-  newX,
-  formula,
-  type = c("abundance", "occupancy"),
-  level = 0.95
-)
+predict_TMB(model, newX, formula,
+            which = c("abundance", "occupancy"),
+            type = c("response", "link", "terms"),
+            level = 0.95, se = TRUE)
 }
 
 \arguments{

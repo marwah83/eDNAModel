@@ -1,14 +1,15 @@
-#' @title Predict from TMB Model with Optional SE and Scale
+#' @title Predict from a fitted eDNAModel
+#' @description Generate predicted values for abundance or occupancy using a fitted model.
 #'
-#' @param model Output from run_full_TMB().
-#' @param newX A new data.frame of covariates.
-#' @param formula The same formula used for abundance or occupancy model.
-#' @param which Which component to predict: "abundance" or "occupancy".
-#' @param type Type of prediction scale: "link", "response", or "terms".
-#' @param level Confidence level for CI (if se = TRUE).
-#' @param se Logical; if TRUE (default), returns SE and CIs.
+#' @param model A fitted model object from \code{\link{run_full_TMB}}.
+#' @param newX A new covariate data frame for prediction.
+#' @param formula The right-hand side of the formula used for the model (e.g., \code{~ Site}).
+#' @param which Either \code{"abundance"} or \code{"occupancy"} indicating which model to predict from.
+#' @param type Prediction scale: one of \code{"response"}, \code{"link"}, or \code{"terms"}.
+#' @param level Confidence level for prediction intervals.
+#' @param se Logical; should standard errors and intervals be returned?
 #'
-#' @return A data.frame of predictions and optionally SE and CIs.
+#' @return A data frame with predicted values and, if \code{se = TRUE}, standard errors and confidence intervals.
 #' @export
 predict_TMB <- function(model, newX, formula, which = c("abundance", "occupancy"),
                         type = c("response", "link", "terms"), level = 0.95, se = TRUE) {

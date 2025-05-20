@@ -1,10 +1,11 @@
-#' @title Compute Residuals from TMB Model
-#' @description Computes Pearson residuals for both occupancy and abundance components.
-#' @param model Output from run_full_TMB
-#' @param data_array_filtered Original input array (Species x Sites x Replicates)
-#' @return A list with residual matrices: occupancy_residuals, abundance_residuals
-#' @param type Character; residual type: "pearson", "response", "deviance"
-#' @return List of residual matrices: named by type
+#' @title Compute Residuals from a Fitted eDNAModel
+#' @description Computes residuals for abundance and occupancy models.
+#'
+#' @param model A fitted TMB model object (from \code{\link{run_full_TMB}}).
+#' @param data_array_filtered The original 3D data array used in fitting.
+#' @param type Type of residuals: \code{"pearson"}, \code{"response"}, or \code{"deviance"}.
+#'
+#' @return A list with matrices: \code{occupancy_residuals} and \code{abundance_residuals}.
 #' @export
 compute_residuals_TMB <- function(model, data_array_filtered, type = c("pearson", "response", "deviance")) {
   type <- match.arg(type)

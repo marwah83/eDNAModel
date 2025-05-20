@@ -81,8 +81,8 @@ test_that("predict_TMB returns prediction data frame", {
   model <- run_full_TMB(array, X, ~ Site, ~ Site, linko = 1, linka = 0, family = 1)
   
   newX <- X[1:2, ]
-  pred_occ <- predict_TMB(model, newX, ~ Site, type = "occupancy")
-  pred_abund <- predict_TMB(model, newX, ~ Site, type = "abundance")
+  pred_abund <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "abundance",type = ("response"))
+  pred_occ <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "occupancy",type = ("response"))
   
   expect_s3_class(pred_occ, "data.frame")
   expect_s3_class(pred_abund, "data.frame")

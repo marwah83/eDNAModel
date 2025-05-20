@@ -8,7 +8,7 @@
 #' @aliases summary.eDNAModel summary
 #' @method summary eDNAModel
 #' @export
-summary.eDNAModel <- function(model) {
+summary_all.eDNAModel <- function(model) {
   # Get standard deviation report
   sdr <- TMB::sdreport(model$TMBobj)
 

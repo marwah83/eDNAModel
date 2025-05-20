@@ -1,0 +1,10 @@
+\name{print.summary.eDNAModel}
+\alias{print.summary.eDNAModel}
+\title{Print Method for summary.eDNAModel Objects}
+\description{Prints the summary of an eDNAModel object.}
+\usage{
+print.summary.eDNAModel(x, ...)
+}
+\arguments{
+  \item{x}{An object of class \code{summary.eDNAModel}.}
+}

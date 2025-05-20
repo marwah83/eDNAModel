@@ -4,15 +4,26 @@
 \alias{summary.eDNAModel}
 \alias{summary}
 \title{Summary of TMB Model Coefficients}
+\description{
+Summarizes fixed and random effect parameters of a fitted eDNAModel object,
+including standard errors and standard deviations, and provides a legend for parameter types.
+}
 \usage{
-\method{summary}{eDNAModel}(model)
+\method{summary}{eDNAModel}(object, ...)
 }
 \arguments{
-\item{model}{Output from \code{\link{run_full_TMB}}}
+  \item{object}{An object of class \code{eDNAModel}, typically returned by \code{\link{run_full_TMB}}.}
+  \item{...}{Additional arguments (currently unused).}
 }
 \value{
-Data frame with parameter names, estimates, and standard deviations
+A data frame with columns:
+\itemize{
+  \item \code{parameter}
+  \item \code{estimate}
+  \item \code{sd}
 }
-\description{
-Summarizes fixed-effect and random-effect parameters with standard deviations.
+An attribute \code{"explanation"} contains a legend for interpreting parameter types.
+}
+\seealso{
+  \code{\link{print.summary.eDNAModel}}, \code{\link{run_full_TMB}}
 }

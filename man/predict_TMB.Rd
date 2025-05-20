@@ -12,16 +12,22 @@ predict_TMB(
   level = 0.95
 )
 }
+
 \arguments{
 \item{model}{Output from run_full_TMB()}
 
 \item{newX}{New data.frame of covariates}
 
+\item{which}{One of "abundance" or "occupancy".}
+
+\item{type}{One of "response", "link", or "terms".}
+
+\item{level}{Confidence level for intervals.}
+
+\item{se}{Logical. Return standard errors?}
+
 \item{formula}{The same formula used for abundance or occupancy}
 
-\item{type}{"abundance" or "occupancy"}
-
-\item{level}{Confidence level for CI}
 }
 \value{
 Data frame with predictions and CIs

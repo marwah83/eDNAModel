@@ -1,20 +1,18 @@
-#' @title Print Method for Summary of eDNAModel
-#' @description Print method for objects of class \code{summary.eDNAModel}.
-#' @param x An object of class \code{summary.eDNAModel}.
+#' @title Print Method for summary.eDNAModel Objects
+#' @description Custom print method for objects of class \code{summary.eDNAModel}.
+#' Prints the parameter estimates with standard deviations and explains parameter types.
+#'
+#' @param x A \code{summary.eDNAModel} object returned by \code{summary.eDNAModel}.
 #' @param ... Additional arguments (currently ignored).
 #' @export
 print.summary.eDNAModel <- function(x, ...) {
-  # Print the main summary table
-  cat("Model Coefficient Summary:\n")
-  print(as.data.frame(x), row.names = FALSE)
-  
-  # Extract and print the explanation
-  explanation <- attr(x, "explanation")
-  if (!is.null(explanation)) {
-    cat("\nLegend:\n")
-    print(explanation, row.names = FALSE)
-  } else {
-    cat("\n(No explanation metadata available.)\n")
+  cat("\nModel Parameter Summary:\n")
+  print.data.frame(x, row.names = FALSE)
+
+  if (!is.null(attr(x, "explanation"))) {
+    cat("\nLegend for parameter types:\n")
+    print(attr(x, "explanation"), row.names = FALSE)
   }
+
   invisible(x)
 }

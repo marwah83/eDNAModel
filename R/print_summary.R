@@ -1,3 +1,7 @@
+#' @title Print Method for Summary of eDNAModel
+#' @description Print method for objects of class \code{summary.eDNAModel}.
+#' @param x An object of class \code{summary.eDNAModel}.
+#' @param ... Additional arguments (currently ignored).
 #' @export
 print.summary.eDNAModel <- function(x, ...) {
   # Print the main summary table

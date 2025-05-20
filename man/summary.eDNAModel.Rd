@@ -2,7 +2,7 @@
 % Please edit documentation in R/summary_function.R
 \name{summary.eDNAModel}
 \alias{summary.eDNAModel}
-\alias{summaryall}
+\alias{summary}
 \title{Summary of TMB Model Coefficients}
 \usage{
 \method{summary}{eDNAModel}(model)

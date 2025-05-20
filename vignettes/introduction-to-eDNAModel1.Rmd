@@ -133,12 +133,6 @@ if (any(low_occ)) {
   warning(sum(low_occ), " entries with occupancy ~0. Check sparsity.")
 }
 
-# Check if Hessian is positive definite
-if (length(model_small$random) == 0) {
-  he <- model_small$TMBobj$he()
-} else {
-  message("Skipping TMBobj$he(): not supported for random effects.")
-}
 ```
 
 You can extract model output such as slopes, intercepts, and model fit metrics from `result`.

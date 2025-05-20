@@ -2,18 +2,23 @@
 % Please edit documentation in R/residual_function.R
 \name{compute_residuals_TMB}
 \alias{compute_residuals_TMB}
-\title{Compute Residuals from TMB Model}
+\title{Compute Residuals from a Fitted eDNAModel}
+\description{
+Computes residuals for abundance and occupancy models.
+}
 \usage{
-compute_residuals_TMB(model, data_array_filtered)
+compute_residuals_TMB(model, data_array_filtered, type = c("pearson", "response", "deviance"))
 }
 \arguments{
-\item{model}{Output from run_full_TMB}
-
-\item{data_array_filtered}{Original input array (Species x Sites x Replicates)}
+  \item{model}{A fitted model object from \code{\link{run_full_TMB}}.}
+  \item{data_array_filtered}{The original 3D data array used for fitting.}
+  \item{type}{The type of residuals: one of \code{"pearson"}, \code{"response"}, or \code{"deviance"}.}
 }
 \value{
-A list with residual matrices: occupancy_residuals, abundance_residuals
+A list with two matrices:
+\itemize{
+  \item \code{occupancy_residuals}
+  \item \code{abundance_residuals}
 }
-\description{
-Computes Pearson residuals for both occupancy and abundance components.
 }
+

@@ -1,6 +1,6 @@
 # eDNAModel
 
-First install (phyloseq) the install eDNAModel.
+First install (phyloseq) then install eDNAModel.
 
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")

@@ -135,6 +135,25 @@ if (any(low_occ)) {
 
 ```
 
+```{r run-Hes, eval = TRUE}
+H <- tryCatch({
+  model_small$TMBobj$he()
+}, error = function(e) {
+  message("ℹ️ Hessian evaluation via `TMBobj$he()` is not implemented for models with random effects.")
+  return(NULL)
+})
+
+if (!is.null(H)) {
+  eigvals <- eigen(H)$values
+  if (any(eigvals <= 0)) {
+    warning("⚠️ Hessian is not positive definite. Consider simplifying the model.")
+  } else {
+    message("✅ Hessian is positive definite.")
+  }
+}
+```
+
+
 You can extract model output such as slopes, intercepts, and model fit metrics from `result`.
 
 ---

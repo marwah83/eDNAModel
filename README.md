@@ -2,6 +2,12 @@
 
 First install (phyloseq) the install eDNAModel.
 
-install.packages(phyloseq)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
 
-install.packages(eDNAModel)
+BiocManager::install("phyloseq")
+
+Then install the eDNAModel package :
+
+devtools::install_github("marwah83/eDNAModel")
+

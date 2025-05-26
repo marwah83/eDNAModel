@@ -58,6 +58,7 @@ Type objective_function<Type>::operator() ()
 {
   DATA_IMATRIX(Y);
   DATA_IMATRIX(Ysites);
+  DATA_MATRIX(offset);
   DATA_MATRIX(Xa);//abundance covs
   DATA_MATRIX(Xo);//occupancy covs
   DATA_SPARSE_MATRIX(Za);//abundance re matrix
@@ -88,7 +89,12 @@ Type objective_function<Type>::operator() ()
   //replicate-specific
   matrix<Type>etaa(Xa.rows(),Y.cols());
   etaa.fill(0.0);
+
   etaa = Xa*Ba;
+
+  if(offset.rows()>0){
+  etaa += offset;
+  }
 
   if(Za.rows()==Xa.rows()){
     etaa += Za*Ua;

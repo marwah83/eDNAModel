@@ -175,7 +175,7 @@ run_full_TMB <- function(data_array_filtered,
     start = opt,
     optimization = opt2,
     occupancy_probability = as.matrix(occup.prob),
-    detection_probability = as.data.frame(prob.detect),
+    detection_probability = as.matrix(prob.detect),
     TMBobj = fit
   )
   class(out) <- "eDNAModel"

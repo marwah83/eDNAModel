@@ -9,6 +9,7 @@
 #' @param linka Link function for abundance: 0 = log, 1 = logit, 2 = probit, 3 = cloglog.
 #' @param family Distribution: 0 = ZIP, 1 = ZINB, 2 = Binomial.
 #' @param Ntrials Matrix of trials for Binomial models.
+#' @param offset Offset matrix (same dimension as y)
 #' @param control Optimization control list.
 #' @param data_array_filtered Filtered 3D data array ready for TMB model fitting.
 #'

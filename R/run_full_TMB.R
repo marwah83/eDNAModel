@@ -25,7 +25,7 @@
 #' @import Matrix
 #' @seealso \code{\link{summary.eDNAModel}}
 
-run_full_TMB <- function(data_array_filtered,
+run_full_TMB <- function(y,
                          X,
                          a.formula = ~1,
                          o.formula = ~1,

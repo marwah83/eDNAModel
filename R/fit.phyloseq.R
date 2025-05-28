@@ -1,3 +1,26 @@
+#' @title Fit Hierarchical eDNA Model from a Phyloseq Object
+#' @description 
+#' This function extracts OTU count data and sample metadata from a `phyloseq` object,
+#' and fits a multispecies occupancy-abundance model using the `run_full_TMB()` function.
+#' It is intended for eDNA metabarcoding studies where PCR replicates are nested within biological samples and sites.
+#'
+#' @param phyloseq_obj A valid `phyloseq` object containing OTU table and sample metadata.
+#' @param a.formula Formula for the abundance model (default: `~ 1` for intercept-only).
+#' @param o.formula Formula for the occupancy model (default: `~ 1` for intercept-only).
+#' @param linko Link function for occupancy. Options: 1 = logit (default), 2 = probit.
+#' @param linka Link function for abundance. Options: 0 = log (default), 1 = logit, 2 = probit, 3 = cloglog.
+#' @param family Distribution type. Options: 0 = ZIP, 1 = ZINB (default), 2 = Binomial.
+#' @param Ntrials Trial matrix for binomial models (default: 0 matrix).
+#' @param offset Offset matrix, same shape as `y` (optional).
+#' @param control List of optimizer control options (e.g., `list(maxit = 10000, trace = 1)`).
+#' @param ... Additional arguments passed to `run_full_TMB`.
+#'
+#' @return A fitted model object of class `eDNAModel`.
+#' @export
+#'
+#' @examples
+#' # Load phyloseq object and run model with defaults
+#' model <- fit.phyloseq(my_physeq_object)
 fit.phyloseq <- function(phyloseq_obj,
                          a.formula = ~ 1,
                          o.formula = ~ 1,

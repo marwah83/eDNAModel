@@ -34,10 +34,25 @@ run_full_TMB <- function(data_array_filtered,
                          Ntrials = matrix(0), offset = NULL,
                          control = list(maxit = 10e3, trace = 1)) {
 
-  Y <- to2D(data_array_filtered)
-  y <- as.matrix(Y[, -(1:2)])
-  sites <- as.numeric(Y[, 1]) - 1
-  ysites <- as.matrix(aggregate(y, FUN = sum, list(sites)))[, -1]
+ stopifnot(is.matrix(y))
+  stopifnot(all(rownames(y) %in% rownames(X)))
+  X <- X[rownames(y), , drop = FALSE]
+  
+  # Ensure required columns
+  required_cols <- c("Site", "Sample", "Replicate")
+  stopifnot(all(required_cols %in% colnames(X)))
+  
+  # Ensure factor types
+  X$Site <- as.factor(X$Site)
+  X$Sample <- as.factor(X$Sample)
+  X$Replicate <- as.factor(X$Replicate)
+  
+  # Site index for TMB (0-based)
+  sites <- as.numeric(X$Site) - 1
+  
+  # Aggregate y over sites for occupancy
+  ysites <- aggregate(y, by = list(site = sites), FUN = sum)
+  ysites <- as.matrix(ysites[, -1])
 
   if (!linko %in% c(1, 2)) stop("linko must be 1 (logit) or 2 (probit)")
   if (!linka %in% c(0, 1, 2, 3)) stop("linka must be 0 (log), 1 (logit), 2 (probit), or 3 (cloglog)")

@@ -122,8 +122,8 @@ run_full_TMB <- function(y,
   )
 
   # First optimization
-  opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS", verbose = control$trace,
-               control = list(maxit = control$maxit))
+  opt <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+               control = list(trace = control$trace, maxit = control$maxit))
 
   # Reconstruct estimates for second run
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
@@ -155,8 +155,8 @@ run_full_TMB <- function(y,
     map = maplist
   )
 
-  opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS", verbose = control$trace,
-               control = list(maxit = control$maxit))
+  opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+               control = list(trace = control$trace, maxit = control$maxit))
   
 
   # Occupancy & Detection probability calculation

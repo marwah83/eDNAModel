@@ -28,14 +28,17 @@ library(phyloseq)
 
 ## Introduction
 
-The `eDNAModel` package provides a pipeline to analyze environmental DNA (eDNA) data for species occupancy and abundance modeling using TMB.
+The eDNAModel package provides a robust pipeline for analyzing environmental DNA (eDNA) using hierarchical multispecies occupancy-abundance models implemented via Template Model Builder (TMB).
 
-This vignette demonstrates:
+1.This updated vignette demonstrates how to:
 
-1. Loading a phyloseq object
-2. Converting to a 3D array
-3. Filtering the array
-4. Running the TMB pipeline
+2.Load a phyloseq object
+
+3.Automatically prepare the data using fit.phyloseq()
+
+4.Fit the model with minimal effort
+
+5.Extract and visualize residuals and predictions
 
 ---
 
@@ -51,6 +54,15 @@ physeq <- readRDS(physeq_path)
 ---
 
 ## Run the Full TMB Pipeline
+We now use the high-level wrapper fit.phyloseq() which handles:
+
+Extracting OTU table
+
+Filtering biological samples
+
+Adding Site, Sample, Replicate columns
+
+Running the TMB pipeline
 
 
 ```{r model, eval = TRUE}
@@ -66,6 +78,8 @@ model <- fit.phyloseq(
 ```
 ---
 
+##Model Summary
+
 ```{r sum1, echo=FALSE}
 summary_out <- summary(model)
 head(summary_out)
@@ -74,6 +88,9 @@ head(summary_out)
 ```{r exp, echo=FALSE}
 attr(summary_out, "explanation")
 ```
+---
+
+## Fitted Values
 
 ```{r fitted_summary, echo=FALSE}
 fitted_vals <- fitted_TMB(model)
@@ -82,6 +99,9 @@ summary(fitted_vals$fitted_abundance)
 summary(fitted_vals$fitted_occupancy)
 
 ```
+---
+
+##Residuals
 
 ```{r run_resid, eval = TRUE}
 # Residuals
@@ -91,7 +111,9 @@ hist(res_out$abundance_residuals, main = "Abundance Residuals", col = "lightblue
 hist(res_out$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
 
 ```
+---
 
+## Predictions
 
 ```{r run-pred, eval = TRUE}
 newdata <- unique(model$input$X[, "Site", drop = FALSE])
@@ -104,6 +126,9 @@ head(pred_abund)
 head(pred_occ)
 
 ```
+---
+
+##Check for Boundary Cases
 
 ```{r run-H, eval = TRUE}
 # Check for extreme occupancy values
@@ -118,6 +143,9 @@ if (any(low_occ)) {
 }
 
 ```
+---
+
+##  Hessian Diagnostic
 
 ```{r run-Hes, eval = TRUE}
 H <- tryCatch({
@@ -137,7 +165,7 @@ if (!is.null(H)) {
 }
 
 ```
-
+---
 
 You can extract model output such as slopes, intercepts, and model fit metrics from `result`.
 
@@ -145,10 +173,14 @@ You can extract model output such as slopes, intercepts, and model fit metrics f
 
 ## Summary
 
-This vignette showed how to:
+This vignette demonstrated how to:
 
-- Convert phyloseq data to 3D array
-- Filter the array
-- Run TMB model pipeline
+-- Use fit.phyloseq() for end-to-end modeling
+
+-- Interpret and visualize model output
+
+-- Compute residuals and predictions
+
+--Perform diagnostics
 
 Explore the `eDNAModel` documentation for further customization and model diagnostics.

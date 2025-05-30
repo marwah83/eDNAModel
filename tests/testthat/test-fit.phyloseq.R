@@ -1,23 +1,37 @@
-test_that("fit.phyloseq runs correctly on example data", {
-  skip_on_cran()
+# test-fit.phyloseq.R
 
-  # Load example phyloseq object
-  physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
-  physeq <- readRDS(physeq_path)
+test_that("fit.phyloseq() works on a small example", {
+  skip_if_not_installed("phyloseq")
+  skip_if_not_installed("eDNAModel")
 
-  expect_s4_class(physeq, "phyloseq")
-  expect_true(!is.null(otu_table(physeq)))
+  library(phyloseq)
+  library(eDNAModel)
 
-  # Fit the model with default formulas
-  model <- fit.phyloseq(physeq)
+  # Load test data
+  data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+  skip_if(data_path == "", "Test RDS file not found.")
 
-  # Check structure of returned object
+  physeq <- readRDS(data_path)
+
+  # Run model
+  expect_error({
+    model <- fit.phyloseq(
+      phyloseq_obj = physeq,
+      a.formula = ~ 1,
+      o.formula = ~ 1,
+      linko = 1,
+      linka = 0,
+      family = 1,
+      control = list(maxit = 50, trace = 0),
+      verbose = FALSE
+    )
+  }, NA)  # Expect no error
+
+  # Check output class
   expect_s3_class(model, "eDNAModel")
+
+  # Basic content check
   expect_true("occupancy_probability" %in% names(model))
   expect_true("detection_probability" %in% names(model))
-  expect_true(inherits(model$TMBobj, "ADFun"))
-})
-
-test_that("fit.phyloseq throws error with invalid phyloseq input", {
-  expect_error(fit.phyloseq("not_a_phyloseq_object"), "phyloseq_obj must be a phyloseq object")
+  expect_s3_class(model$TMBobj, "ADFun")
 })

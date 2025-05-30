@@ -1,5 +1,5 @@
 ---
-title: "eDNAModel: Small Example Workflow"
+title: "eDNAModel: Updated Workflow with Phyloseq"
 author: "Marwah Soliman, Bert van der Veen"
 date: "`r Sys.Date()`"
 output:
@@ -8,7 +8,7 @@ output:
     toc_depth: 3
     number_sections: true
 vignette: >
-  %\VignetteIndexEntry{eDNAModel: Small Example Workflow}
+  %\VignetteIndexEntry{eDNAModel: Updated Workflow with Phyloseq}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -44,87 +44,71 @@ This vignette demonstrates:
 We'll use an example `.RDS` file located in `inst/extdata/`.
 
 ```{r load-data, eval = TRUE}
-# Load example phyloseq object
-data_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
-data_array <- data_array_phyloseq(data_path, verbose = FALSE)
-
-# Subset to 10 species, 6 sites, and 3 replicates
-small_array <- data_array[1:10, 1:6, 1:3]
-
-# Filter species with at least 10 total counts
-filtered_array <- filter_data_array(small_array, min_species_sum = 10, save_path = NULL)
-
-# Show dimensions
-dim(filtered_array)
-```
-
----
-
-## Filter the 3D Data Array
-
-We remove species with all-zero counts, sites with all-zero counts, and rare species.
-
-```{r input, eval = TRUE}
-Y_small <- to2D(filtered_array)
-X_small <- Y_small[, c("Site", "Replicate")]
-X_small$Site <- factor(X_small$Site)
-X_small$Replicate <- factor(X_small$Replicate)
+physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+physeq <- readRDS(physeq_path)
 ```
 
 ---
 
 ## Run the Full TMB Pipeline
 
-Fit the statistical model to the filtered array:
 
 ```{r model, eval = TRUE}
-model_small <- run_full_TMB(
-  data_array_filtered = filtered_array,
-  X = X_small,
-  a.formula = ~ Site + (1 | Replicate),
+model <- fit.phyloseq(
+  phyloseq_obj = physeq,
+  a.formula = ~ Site + (1 | Sample) + (1 | Replicate),
   o.formula = ~ Site,
-  linko = 1,  # logit
-  linka = 0,  # log
-  family = 1  # ZINB
+  linko = 1,
+  linka = 0,
+  family = 1,
+  control = list(maxit = 10000, trace = 1)
 )
 ```
+---
 
 ```{r sum1, echo=FALSE}
-summary_output <- summary(model_small)
-head(summary_output)
+summary_out <- summary(model)
+head(summary_out)
+```
+
+```{r exp, echo=FALSE}
+attr(summary_out, "explanation")
 ```
 
 ```{r fitted_summary, echo=FALSE}
-fitted_vals <- fitted_TMB(model_small)
+fitted_vals <- fitted_TMB(model)
 
-# Summary of fitted values
-summary(fitted_vals$fitted_occupancy)
 summary(fitted_vals$fitted_abundance)
+summary(fitted_vals$fitted_occupancy)
+
 ```
 
 ```{r run_resid, eval = TRUE}
 # Residuals
-residuals_out <- compute_residuals_TMB(model_small, filtered_array,type="pearson")
-hist(residuals_out$abundance_residuals, main = "Abundance Residuals")
-hist(residuals_out$occupancy_residuals, main = "Occupancy Residuals")
+res_out <- compute_residuals_TMB(model, y = model$input$y, X = model$input$X, type = "pearson")
+
+hist(res_out$abundance_residuals, main = "Abundance Residuals", col = "lightblue")
+hist(res_out$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
+
 ```
 
 
 ```{r run-pred, eval = TRUE}
-newX <- unique(X_small[, "Site", drop = FALSE])
-newX$Site <- factor(newX$Site)
+newdata <- unique(model$input$X[, "Site", drop = FALSE])
+newdata$Site <- factor(newdata$Site)
 
-pred_abund <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "abundance",type = ("response"))
-pred_occ <- predict_TMB(model_small, newX = newX, formula = ~ Site, which = "occupancy",type = ("response"))
+pred_abund <- predict_TMB(model, newX = newdata, formula = ~ Site, which = "abundance", type = "response")
+pred_occ <- predict_TMB(model, newX = newdata, formula = ~ Site, which = "occupancy", type = "response")
 
 head(pred_abund)
 head(pred_occ)
+
 ```
 
 ```{r run-H, eval = TRUE}
 # Check for extreme occupancy values
 high_occ <- fitted_vals$fitted_occupancy >= 0.999
-low_occ  <- fitted_vals$fitted_occupancy <= 0.001
+low_occ <- fitted_vals$fitted_occupancy <= 0.001
 
 if (any(high_occ)) {
   warning(sum(high_occ), " entries with occupancy ~1. Possible overfitting.")
@@ -137,20 +121,21 @@ if (any(low_occ)) {
 
 ```{r run-Hes, eval = TRUE}
 H <- tryCatch({
-  model_small$TMBobj$he()
+  model$TMBobj$he()
 }, error = function(e) {
-  message("ℹ️ Hessian evaluation via `TMBobj$he()` is not implemented for models with random effects.")
-  return(NULL)
+  message("ℹ️ Hessian calculation skipped (random effects present).")
+  NULL
 })
 
 if (!is.null(H)) {
-  eigvals <- eigen(H)$values
-  if (any(eigvals <= 0)) {
-    warning("⚠️ Hessian is not positive definite. Consider simplifying the model.")
+  eigenvalues <- eigen(H)$values
+  if (any(eigenvalues <= 0)) {
+    warning("⚠️ Non-positive definite Hessian detected. Consider simplifying the model.")
   } else {
     message("✅ Hessian is positive definite.")
   }
 }
+
 ```
 
 

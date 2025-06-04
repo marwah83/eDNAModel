@@ -122,9 +122,12 @@ run_full_TMB <- function(y,
   )
 
   # First optimization
-  opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS", verbose = control$trace,
-               control = list(maxit = control$maxit))
-
+  opt <- nlminb(
+  start     = fit$par,
+  objective = fit$fn,
+  gradient  = fit$gr,
+  control   = list(eval.max = 1000, iter.max = 1000, rel.tol = 1e-8, trace = 1)
+)
   # Reconstruct estimates for second run
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
   Bo2 <- matrix(opt$par[names(opt$par) == "Bo"], nrow = ncol(Xo))
@@ -155,9 +158,12 @@ run_full_TMB <- function(y,
     map = maplist
   )
 
-  opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS", verbose = control$trace,
-               control = list(maxit = control$maxit))
-  
+  opt2 <- nlminb(
+  start     = fit$par,
+  objective = fit$fn,
+  gradient  = fit$gr,
+  control   = list(eval.max = 1000, iter.max = 1000, rel.tol = 1e-8, trace = 1)
+)
 
   # Occupancy & Detection probability calculation
   etao <- fit$report(fit$env$last.par.best)$etao

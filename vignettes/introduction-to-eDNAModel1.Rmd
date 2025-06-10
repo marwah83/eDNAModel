@@ -105,10 +105,10 @@ summary(fitted_vals$fitted_occupancy)
 
 ```{r run_resid, eval = TRUE}
 # Residuals
-res_out <- compute_residuals_TMB(model, y = model$input$y, X = model$input$X, type = "pearson")
+residuals <- compute_residuals_TMB(model = model, y = y, X = X, type = "pearson")
 
-hist(res_out$abundance_residuals, main = "Abundance Residuals", col = "lightblue")
-hist(res_out$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
+hist(residuals$abundance_residuals, main = "Abundance Residuals", col = "lightblue")
+hist(residuals$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
 
 ```
 ---

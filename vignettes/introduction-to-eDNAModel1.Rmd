@@ -68,7 +68,7 @@ Running the TMB pipeline
 ```{r model, eval = TRUE}
 model <- fit.phyloseq(
   phyloseq_obj = physeq,
-  a.formula = ~ Site + (1 | Sample) + (1 | Replicate),
+  a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
   o.formula = ~ Site,
   linko = 1,
   linka = 0,

@@ -35,6 +35,8 @@ run_full_TMB <- function(y,
                          Ntrials = matrix(0), offset = NULL,
                          control = list(maxit = 10e3, trace = 1)) {
 
+ method = "BFGS" # L-BFGS-B
+  
  stopifnot(is.matrix(y))
   stopifnot(all(rownames(y) %in% rownames(X)))
   X <- X[rownames(y), , drop = FALSE]
@@ -122,7 +124,7 @@ run_full_TMB <- function(y,
   )
 
   # First optimization
-  opt <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+  opt <- optim(fit$par, fit$fn, fit$gr, method = method,
                control = list(trace = control$trace, maxit = control$maxit))
   
   # Reconstruct estimates for second run
@@ -155,7 +157,7 @@ run_full_TMB <- function(y,
     map = maplist
   )
 
-  opt2 <- optim(fit$par, fit$fn, fit$gr, method = "L-BFGS-B",
+  opt2 <- optim(fit$par, fit$fn, fit$gr, method = method,
                control = list(trace = control$trace, maxit = control$maxit))
 
   # Occupancy & Detection probability calculation

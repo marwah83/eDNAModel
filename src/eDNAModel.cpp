@@ -13,7 +13,7 @@ enum valid_link{
 //modelled after glmmTMB's inverse_linkfun
 template<class Type>
 Type inverse_link(Type eta, int link){
-  Type ans;
+  Type ans = 0;
   switch (link){
   case log_link:
     eta = exp(eta);

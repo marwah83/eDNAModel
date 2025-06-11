@@ -33,7 +33,7 @@ run_full_TMB <- function(y,
                          linka = 0,
                          family = 1,
                          Ntrials = matrix(0), offset = NULL,
-                         control = list(maxit = 10e3, trace = 1)) {
+                         control = list(start.maxit = 200, maxit = 10e3, trace = 1)) {
 
  method = "LBFGS" # L-BFGS-B
 
@@ -125,7 +125,7 @@ run_full_TMB <- function(y,
 
   # First optimization
   opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = method,
-               control = list(maxit = control$maxit), verbose = control$trace)
+               control = list(maxit = control$start.maxit), verbose = control$trace)
 
   # Reconstruct estimates for second run
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))

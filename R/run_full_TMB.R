@@ -35,24 +35,24 @@ run_full_TMB <- function(y,
                          Ntrials = matrix(0), offset = NULL,
                          control = list(maxit = 10e3, trace = 1)) {
 
- method = "BFGS" # L-BFGS-B
-  
+ method = "LBFGS" # L-BFGS-B
+
  stopifnot(is.matrix(y))
   stopifnot(all(rownames(y) %in% rownames(X)))
   X <- X[rownames(y), , drop = FALSE]
-  
+
   # Ensure required columns
   required_cols <- c("Site", "Sample", "Replicate")
   stopifnot(all(required_cols %in% colnames(X)))
-  
+
   # Ensure factor types
   X$Site <- as.factor(X$Site)
   X$Sample <- as.factor(X$Sample)
   X$Replicate <- as.factor(X$Replicate)
-  
+
   # Site index for TMB (0-based)
   sites <- as.numeric(X$Site) - 1
-  
+
   # Aggregate y over sites for occupancy
   ysites <- aggregate(y, by = list(site = sites), FUN = sum)
   ysites <- as.matrix(ysites[, -1])
@@ -124,9 +124,9 @@ run_full_TMB <- function(y,
   )
 
   # First optimization
-  opt <- optim(fit$par, fit$fn, fit$gr, method = method,
-               control = list(trace = control$trace, maxit = control$maxit))
-  
+  opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = method,
+               control = list(maxit = control$maxit), verbose = control$trace)
+
   # Reconstruct estimates for second run
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
   Bo2 <- matrix(opt$par[names(opt$par) == "Bo"], nrow = ncol(Xo))
@@ -157,8 +157,8 @@ run_full_TMB <- function(y,
     map = maplist
   )
 
-  opt2 <- optim(fit$par, fit$fn, fit$gr, method = method,
-               control = list(trace = control$trace, maxit = control$maxit))
+  opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = method,
+                                control = list(maxit = control$maxit), verbose = control$trace)
 
   # Occupancy & Detection probability calculation
   etao <- fit$report(fit$env$last.par.best)$etao

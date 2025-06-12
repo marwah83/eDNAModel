@@ -157,7 +157,7 @@ run_full_TMB <- function(y,
   )
 
   opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS",
-               control = list(maxit = control$start.maxit), verbose = control$trace)
+               control = list(maxit = control$maxit), verbose = control$trace)
 
   # Occupancy & Detection probability calculation
   etao <- fit$report(fit$env$last.par.best)$etao

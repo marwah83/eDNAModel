@@ -37,8 +37,6 @@ run_full_TMB <- function(y,
                          startOptcontrol = list(maxit = 200),
                          optControl = list(maxit = 10e3))) {
 
- method = "LBFGS" # L-BFGS-B
-
  stopifnot(is.matrix(y))
   stopifnot(all(rownames(y) %in% rownames(X)))
   X <- X[rownames(y), , drop = FALSE]
@@ -126,8 +124,13 @@ run_full_TMB <- function(y,
   )
 
   # First optimization
+<<<<<<< HEAD
   opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = method,
                control = control$startOptControl, verbose = control$trace)
+=======
+  opt <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS",
+               control = list(maxit = control$start.maxit), verbose = control$trace)
+>>>>>>> 19457d41d10f65aeb24e19bbb8efa83e7357cff0
 
   # Reconstruct estimates for second run
   Ba2 <- matrix(opt$par[names(opt$par) == "Ba"], nrow = ncol(Xa))
@@ -159,8 +162,14 @@ run_full_TMB <- function(y,
     map = maplist
   )
 
+<<<<<<< HEAD
   opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = method,
                                 control = control$optControl, verbose = control$trace)
+=======
+  opt2 <- minic::rnewton(fit$par, fit$fn, fit$gr, method = "LBFGS",
+               control = list(maxit = control$maxit), verbose = control$trace)
+
+>>>>>>> 19457d41d10f65aeb24e19bbb8efa83e7357cff0
 
   # Occupancy & Detection probability calculation
   etao <- fit$report(fit$env$last.par.best)$etao

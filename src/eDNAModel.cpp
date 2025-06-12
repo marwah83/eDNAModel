@@ -181,7 +181,7 @@ Type objective_function<Type>::operator() ()
   }else if(family==1){ //ZINB
     for(int s = 0; s<Y.cols(); s++){
       for(int j = 0; j<Y.rows(); j++){
-        logProbs(sites(j),s) += dnbinom_robust(Type(Y(j,s)), inverse_link(etaa(j,s), linka), 2*etaa(j,s)-logphi(s), true);
+        logProbs(sites(j),s) += dnbinom_robust(Type(Y(j,s)), log(inverse_link(etaa(j,s), linka)), 2*etaa(j,s)-logphi(s), true);
       }
     }
     // for(int s = 0; s<Y.cols(); s++){

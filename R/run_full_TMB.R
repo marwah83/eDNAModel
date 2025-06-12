@@ -36,7 +36,7 @@ run_full_TMB <- function(y,
                          control = list(trace = TRUE,
                          startOptcontrol = list(maxit = 200),
                          optControl = list(maxit = 10e3))) {
-
+method = "LBFGS"
  stopifnot(is.matrix(y))
   stopifnot(all(rownames(y) %in% rownames(X)))
   X <- X[rownames(y), , drop = FALSE]

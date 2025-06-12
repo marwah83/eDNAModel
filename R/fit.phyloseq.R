@@ -22,10 +22,11 @@ fit.phyloseq <- function(phyloseq_obj,
                          family = 1,
                          Ntrials = matrix(0),
                          offset = NULL,
-                         control = list(start.maxit = 200, maxit = 10000, trace = 1),
-                         verbose = TRUE,
-                         ...) {
-  
+                         verbose = FALSE,
+                         control = list(trace = TRUE,
+                                        startOptcontrol = list(maxit = 200),
+                                        optControl = list(maxit = 10e3))) {
+
   # Internal helper to prepare y and X
   prepare_y_X <- function(phyloseq_obj, verbose = TRUE) {
     if (verbose) message("🔧 Extracting OTU table and metadata...")
@@ -84,9 +85,7 @@ fit.phyloseq <- function(phyloseq_obj,
     family = family,
     Ntrials = Ntrials,
     offset = offset,
-    control = control,
-    ...
-  )
+    control = control)
 
   if (verbose) message("✅ Model fitting complete.")
   return(model)

@@ -22,7 +22,7 @@ fit.phyloseq <- function(phyloseq_obj,
                          family = 1,
                          Ntrials = matrix(0),
                          offset = NULL,
-                         control = list(start.maxit = 200, maxit = 10000, trace = 1),
+                         control = list(maxit = 10000, trace = 1),
                          verbose = TRUE,
                          ...) {
   

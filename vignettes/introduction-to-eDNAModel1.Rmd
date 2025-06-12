@@ -73,7 +73,8 @@ model <- fit.phyloseq(
   linko = 1,
   linka = 0,
   family = 1,
-  control = list(start.maxit = 200, maxit = 10000, trace = 1)
+  control = list(startOptcontrol = list(maxit = 200),
+  optControl = list(maxit = 10e3, sigma1 = 0.25), trace = TRUE)
 )
 ```
 ---

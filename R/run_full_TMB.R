@@ -33,7 +33,7 @@ run_full_TMB <- function(y,
                          linka = 0,
                          family = 1,
                          Ntrials = matrix(0), offset = NULL,
-                         control = list(start.maxit = 200, maxit = 10e3, trace = 1)) {
+                         control = list(maxit = 10e3, trace = 1)) {
 
  method = "LBFGS" # L-BFGS-B
 

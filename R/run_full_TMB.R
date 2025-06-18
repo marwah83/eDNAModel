@@ -36,6 +36,8 @@ run_full_TMB <- function(y,
                          control = list(trace = TRUE,
                          startOptcontrol = list(maxit = 200),
                          optControl = list(maxit = 10e3))) {
+
+  if(!is.matrix(y)) y <- as.matrix(y)
 method = "LBFGS"
  stopifnot(is.matrix(y))
   stopifnot(all(rownames(y) %in% rownames(X)))
@@ -65,7 +67,7 @@ method = "LBFGS"
   # Abundance model matrices
   Xa <- model.matrix(gllvm:::nobars1_(a.formula), X)
   if (gllvm:::anyBars(a.formula)) {
-    Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), X)
+    Zalist <- gllvm:::mkReTrms1(gllvm:::findbars1(a.formula), X, nocorr = gllvm:::corstruc(gllvm:::expandDoubleVerts2(gllvm:::allbars(a.formula))))
     Za <- Matrix::t(Zalist$Zt)
     csa <- Zalist$cs
   } else {
@@ -105,20 +107,20 @@ method = "LBFGS"
   }
 
   maplist <- list()
+  dat <- list(
+    Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
+    Za = as(matrix(0), "TsparseMatrix"), Zo = as(matrix(0),"TsparseMatrix"), family = family, sites = sites,
+    csa = csa, cso = cso, NTrials = Ntrials,
+    linka = linka, linko = linko, offset = offset
+  )
+  pars <- list(
+    Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo,
+    logphi = logphi, logsda = logsda, corsa = corsa,
+    logsdo = logsdo, corso = corso)
 
   # Initial TMB object
-  fit <- TMB::MakeADFun(
-    data = list(
-      Y = y, Ysites = ysites, Xa = Xa, Xo = Xo,
-      Za = as(matrix(0), "TsparseMatrix"), Zo = as(matrix(0),"TsparseMatrix"), family = family, sites = sites,
-      csa = csa, cso = cso, NTrials = Ntrials,
-      linka = linka, linko = linko, offset = offset
-    ),
-    parameters = list(
-      Ba = Ba, Bo = Bo, Ua = Ua, Uo = Uo,
-      logphi = logphi, logsda = logsda, corsa = corsa,
-      logsdo = logsdo, corso = corso
-    ),
+  fit <- TMB::MakeADFun(data = dat,
+    parameters = pars,
     DLL = "eDNAModel",
     map = maplist
   )

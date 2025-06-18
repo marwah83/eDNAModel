@@ -16,7 +16,7 @@ Type inverse_link(Type eta, int link){
   Type ans = 0;
   switch (link){
   case log_link:
-    eta = exp(eta);
+    ans = exp(eta);
     break;
   case logit_link:
     ans = invlogit(eta);
@@ -181,7 +181,7 @@ Type objective_function<Type>::operator() ()
   }else if(family==1){ //ZINB
     for(int s = 0; s<Y.cols(); s++){
       for(int j = 0; j<Y.rows(); j++){
-        logProbs(sites(j),s) += dnbinom_robust(Type(Y(j,s)), log(inverse_link(etaa(j,s), linka)), 2*etaa(j,s)-logphi(s), true);
+        logProbs(sites(j),s) += dnbinom_robust(Type(Y(j,s)), log(inverse_link(etaa(j,s),linka)), 2*log(inverse_link(etaa(j,s), linka))-logphi(s), true);
       }
     }
     // for(int s = 0; s<Y.cols(); s++){

@@ -30,37 +30,65 @@ library(TMB)
 ---
 ```{r example, eval=TRUE}
 # Create OTU table
-otu_mat <- matrix(
-  c(5, 0, 3,
-    2, 1, 4,
-    0, 0, 2,
-    7, 1, 0),
-  nrow = 4, byrow = TRUE
-)
-rownames(otu_mat) <- c("SiteA_r1", "SiteA_r2", "SiteB_r1", "SiteB_r2")
-colnames(otu_mat) <- paste0("Species", 1:3)
+# ----------------------------
+# LOAD REQUIRED PACKAGE
+# ----------------------------
+library(phyloseq)
 
-otu_table_obj <- otu_table(otu_mat, taxa_are_rows = FALSE)
+# ----------------------------
+# STEP 1: Simulate toy OTU table
+# ----------------------------
+set.seed(42)
+otu_mat <- matrix(rpois(60, lambda = 5), nrow = 5, ncol = 12)  # 5 taxa × 12 samples
+rownames(otu_mat) <- paste0("Taxon", 1:5)
+colnames(otu_mat) <- paste0("Sample", 1:12)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
 
-# Create sample data
-sample_df <- data.frame(
-  SampleID = rownames(otu_mat),
-  location = c("SiteA", "SiteA", "SiteB", "SiteB"),
-  sampletype = rep("biologicalsample", 4),
-  row.names = rownames(otu_mat)
-)
-
-sample_data_obj <- sample_data(sample_df)
-
-# Create tax table
-tax_df <- data.frame(
-  Kingdom = rep("Bacteria", 3),
+# ----------------------------
+# STEP 2: Simulate sample metadata
+# ----------------------------
+meta_df <- data.frame(
+  location = rep(c("SiteA", "SiteB"), each = 6),
+  sampletype = "biologicalsample",
+  Replicate = rep(c("r1", "r2", "r3"), times = 4),
   row.names = colnames(otu_mat)
 )
-tax_table_obj <- tax_table(as.matrix(tax_df))
 
-# Assemble into phyloseq object
-physeq_toy <- phyloseq(otu_table_obj, sample_data_obj, tax_table_obj)
+meta_df$Site <- factor(meta_df$location)
+meta_df$Sample <- factor(rownames(meta_df))
+
+sample_data_obj <- sample_data(meta_df)
+
+# ----------------------------
+# STEP 3: Create phyloseq object
+# ----------------------------
+physeq_toy <- phyloseq(otu_tab, sample_data_obj)
+
+# ----------------------------
+# STEP 4: Construct y and X matrices
+# ----------------------------
+otu_mat <- as.matrix(otu_table(physeq_toy))
+meta <- as.data.frame(sample_data(physeq_toy))
+
+# Filter biological samples
+meta <- meta[meta$sampletype == "biologicalsample", , drop = FALSE]
+common_samples <- intersect(rownames(meta), colnames(otu_mat))
+
+# Build response and design matrices
+y <- t(otu_mat[, common_samples])  # response matrix (samples × taxa)
+X <- meta[common_samples, , drop = FALSE]  # design matrix
+X$Site <- as.factor(X$location)
+X$Sample <- factor(gsub("(_r[0-9]+)$", "", rownames(X)))
+X$Replicate <- factor(gsub(".*(_r[0-9]+)$", "\\1", rownames(X)))
+
+# ----------------------------
+# Print preview
+# ----------------------------
+cat("✅ Preview of response matrix (y):\n")
+print(head(y))
+cat("\n✅ Preview of design matrix (X):\n")
+print(head(X))
+
 ```
 ---
 ```{r filter(optional), eval=FALSE}
@@ -73,19 +101,22 @@ physeq_bio <- physeq_toy
 ---
 ```{r runcode, eval=TRUE}
 
+# Make sure the model-fitting function is loaded in your environment
+
 model_toy <- fit.phyloseq(
   phyloseq_obj = physeq_toy,
   a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
   o.formula = ~ Site,
-  linko = 1,   # logit for occupancy
-  linka = 0,   # log for abundance
-  family = 1,  # ZINB
+  linko = 1,   # logit link for occupancy
+  linka = 0,   # log link for abundance
+  family = 1,  # ZIBN distribution
   control = list(
     startOptcontrol = list(maxit = 50),
     optControl = list(maxit = 1000, sigma1 = 0.2),
     trace = TRUE
   )
 )
+
 ```
 ---
 ```{r sum, eval=TRUE}
@@ -109,9 +140,15 @@ summary(fitted_vals$fitted_occupancy)
 
 ```{r run_resid, eval = TRUE}
 # Residuals
-X <- model_toy$TMBobj$env$data$X
-y <- model_toy$TMBobj$env$data$y
-residuals <- compute_residuals_TMB(model = model_toy, y = y, X = X, type = "pearson")
+# Make sure compute_residuals_TMB is sourced beforehand
+residuals <- compute_residuals_TMB(model_toy, y = y, X = X, type = "pearson")
+
+# Display a preview
+cat("✅ Abundance residuals (first few rows):\n")
+print(head(residuals$abundance_residuals))
+
+cat("\n✅ Occupancy residuals (first few rows):\n")
+print(head(residuals$occupancy_residuals))
 
 hist(residuals$abundance_residuals, main = "Abundance Residuals", col = "lightblue")
 hist(residuals$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
@@ -122,30 +159,27 @@ hist(residuals$occupancy_residuals, main = "Occupancy Residuals", col = "lightgr
 ## Predictions
 
 ```{r run-pred, eval = TRUE}
-newdata <- unique(X[, "Site", drop = FALSE])
-newdata$Site <- factor(newdata$Site)
 
-pred_abund <- predict_TMB(model_toy, newX = newdata, formula = ~ Site, which = "abundance", type = "response")
+# Create newdata with unique Site levels for fixed-effect prediction
+newdata <- data.frame(Site = factor(levels(X$Site), levels = levels(X$Site)))
+
+# Predict abundance on the response scale with CI
+pred_abund <- predict_TMB(
+  model = model_toy,
+  newX = newdata,
+  formula = ~ Site,  # only fixed effect
+  which = "abundance", 
+  type = "response",
+  se = TRUE
+)
 pred_occ <- predict_TMB(model_toy, newX = newdata, formula = ~ Site, which = "occupancy", type = "response")
 
 head(pred_abund)
 head(pred_occ)
 
-newdata <- unique(as.data.frame(X)[, "Site", drop = FALSE])
-newdata$Site <- factor(newdata$Site, levels = levels(X$Site))
-
-pred_out <- predict_TMB(
-  model = model_toy,
-  newX = newdata,
-  formula = ~ Site,
-  which = "abundance",
-  type = "response"
-)
-
-print(pred_out)
-
-
-
+cat("✅ Abundance predictions:\n")
+print(pred_abund)
+print(pred_occ)
 ```
 ---
 

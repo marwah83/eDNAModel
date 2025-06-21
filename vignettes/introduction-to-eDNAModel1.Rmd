@@ -74,7 +74,7 @@ physeq_bio <- physeq_toy
 ```{r runcode, eval=TRUE}
 
 model_toy <- fit.phyloseq(
-  phyloseq_obj = physeq_bio,
+  phyloseq_obj = physeq_toy,
   a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
   o.formula = ~ Site,
   linko = 1,   # logit for occupancy

@@ -21,9 +21,133 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup1, include=FALSE}
-library(eDNAModel)
 library(phyloseq)
+library(Matrix)
+library(TMB)
+# Assume fit.phyloseq and summary.eDNAModel are defined in your package or sourced manually
+
 ```
+---
+```{r example, eval=TRUE}
+# Create OTU table
+otu_mat <- matrix(
+  c(5, 0, 3,
+    2, 1, 4,
+    0, 0, 2,
+    7, 1, 0),
+  nrow = 4, byrow = TRUE
+)
+rownames(otu_mat) <- c("SiteA_r1", "SiteA_r2", "SiteB_r1", "SiteB_r2")
+colnames(otu_mat) <- paste0("Species", 1:3)
+
+otu_table_obj <- otu_table(otu_mat, taxa_are_rows = FALSE)
+
+# Create sample data
+sample_df <- data.frame(
+  SampleID = rownames(otu_mat),
+  location = c("SiteA", "SiteA", "SiteB", "SiteB"),
+  sampletype = rep("biologicalsample", 4),
+  row.names = rownames(otu_mat)
+)
+
+sample_data_obj <- sample_data(sample_df)
+
+# Create tax table
+tax_df <- data.frame(
+  Kingdom = rep("Bacteria", 3),
+  row.names = colnames(otu_mat)
+)
+tax_table_obj <- tax_table(as.matrix(tax_df))
+
+# Assemble into phyloseq object
+physeq_toy <- phyloseq(otu_table_obj, sample_data_obj, tax_table_obj)
+```
+---
+```{r filter(optional), eval=FALSE}
+
+# You may skip this for toy data, but if using real data, filtering helps
+# physeq_toy_filtered <- filter_phyloseq_data(physeq_toy, min_species_sum = 2, save_path = NULL)
+# Here, use original directly:
+physeq_bio <- physeq_toy
+```
+---
+```{r runcode, eval=TRUE}
+
+model_toy <- fit.phyloseq(
+  phyloseq_obj = physeq_bio,
+  a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
+  o.formula = ~ Site,
+  linko = 1,   # logit for occupancy
+  linka = 0,   # log for abundance
+  family = 1,  # ZINB
+  control = list(
+    startOptcontrol = list(maxit = 50),
+    optControl = list(maxit = 1000, sigma1 = 0.2),
+    trace = TRUE
+  )
+)
+```
+---
+```{r sum, eval=TRUE}
+
+summary_df <- summary.eDNAModel(model_toy)
+print(summary_df)
+```
+---
+## Fitted Values
+
+```{r fitted_summary, echo=FALSE}
+fitted_vals <- fitted_TMB(model_toy)
+
+summary(fitted_vals$fitted_abundance)
+summary(fitted_vals$fitted_occupancy)
+
+```
+---
+
+##Residuals
+
+```{r run_resid, eval = TRUE}
+# Residuals
+X <- model_toy$TMBobj$env$data$X
+y <- model_toy$TMBobj$env$data$y
+residuals <- compute_residuals_TMB(model = model_toy, y = y, X = X, type = "pearson")
+
+hist(residuals$abundance_residuals, main = "Abundance Residuals", col = "lightblue")
+hist(residuals$occupancy_residuals, main = "Occupancy Residuals", col = "lightgreen")
+
+```
+---
+
+## Predictions
+
+```{r run-pred, eval = TRUE}
+newdata <- unique(X[, "Site", drop = FALSE])
+newdata$Site <- factor(newdata$Site)
+
+pred_abund <- predict_TMB(model_toy, newX = newdata, formula = ~ Site, which = "abundance", type = "response")
+pred_occ <- predict_TMB(model_toy, newX = newdata, formula = ~ Site, which = "occupancy", type = "response")
+
+head(pred_abund)
+head(pred_occ)
+
+newdata <- unique(as.data.frame(X)[, "Site", drop = FALSE])
+newdata$Site <- factor(newdata$Site, levels = levels(X$Site))
+
+pred_out <- predict_TMB(
+  model = model_toy,
+  newX = newdata,
+  formula = ~ Site,
+  which = "abundance",
+  type = "response"
+)
+
+print(pred_out)
+
+
+
+```
+---
 
 
 ## Introduction

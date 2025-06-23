@@ -179,6 +179,7 @@ head(pred_occ)
 
 cat("✅ Abundance predictions:\n")
 print(pred_abund)
+cat("✅ Occupancy predictions:\n")
 print(pred_occ)
 ```
 ---

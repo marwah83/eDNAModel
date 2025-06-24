@@ -3,6 +3,7 @@
 S3method(summary,eDNAModel)
 export(compute_residuals_TMB)
 export(data_array_phyloseq)
+export(filter_phyloseq_data)
 export(filter_data_array)
 export(fitted_TMB)
 export(predict_TMB)

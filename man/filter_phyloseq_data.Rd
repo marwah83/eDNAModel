@@ -32,8 +32,14 @@ Filters a \code{phyloseq} object by:
 }
 Includes internal consistency checks and returns a cleaned object ready for analysis.
 }
+
 \examples{
-data(GlobalPatterns)
-physeq_sub <- filter_phyloseq_data(GlobalPatterns, min_species_sum = 50, save_path = NULL)
-physeq_sub
+# Example with custom data (if included in your package)
+data_path <- system.file("extdata", "my_phyloseq_example.rds", package = "YourPackageName")
+if (file.exists(data_path)) {
+  physeq <- readRDS(data_path)
+  filtered_physeq <- filter_phyloseq_data(physeq, min_species_sum = 30, save_path = NULL)
+}
+}
+
 }

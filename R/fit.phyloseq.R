@@ -51,8 +51,15 @@ fit.phyloseq <- function(phyloseq_obj,
     X <- meta[common_samples, , drop = FALSE]
     X <- data.frame(X)
 
-    if (!"location" %in% colnames(X)) stop("❌ 'location' column not found.")
-    X$Site <- factor(X$location)
+    # Use 'location' if available, otherwise try 'Site'
+    if ("location" %in% colnames(X)) {
+      X$Site <- factor(X$location)
+    } else if ("Site" %in% colnames(X)) {
+      X$Site <- factor(X$Site)
+    } else {
+      stop("❌ Neither 'location' nor 'Site' column found in metadata.")
+    }
+
     X$Sample <- sub("(_r[0-9]+)$", "", rownames(X))
     X$Replicate <- sub(".*_(r[0-9]+)$", "\\1", rownames(X))
 
@@ -85,7 +92,8 @@ fit.phyloseq <- function(phyloseq_obj,
     family = family,
     Ntrials = Ntrials,
     offset = offset,
-    control = control)
+    control = control
+  )
 
   if (verbose) message("✅ Model fitting complete.")
   return(model)

@@ -121,7 +121,7 @@ model_toy <- fit.phyloseq(
 ---
 ```{r sum, eval=TRUE}
 
-summary_df <- summary.eDNAModel(model_toy)
+summary_df <- summary(model_toy)
 print(summary_df)
 ```
 ---

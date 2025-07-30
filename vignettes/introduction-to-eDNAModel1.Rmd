@@ -34,101 +34,118 @@ library(TMB)
 # LOAD REQUIRED PACKAGE
 # ----------------------------
 library(phyloseq)
-
 # ----------------------------
-# STEP 1: Simulate toy OTU table
-# ----------------------------
-set.seed(42)
-otu_mat <- matrix(rpois(60, lambda = 5), nrow = 5, ncol = 12)  # 5 taxa × 12 samples
-rownames(otu_mat) <- paste0("Taxon", 1:5)
-colnames(otu_mat) <- paste0("Sample", 1:12)
-otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
-
-# ----------------------------
-# STEP 2: Simulate sample metadata
-# ----------------------------
-meta_df <- data.frame(
-  location = rep(c("SiteA", "SiteB"), each = 6),
-  sampletype = "biologicalsample",
-  Replicate = rep(c("r1", "r2", "r3"), times = 4),
-  row.names = colnames(otu_mat)
+physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+physeq <- readRDS(physeq_path)
+physeq_filtered <- filter_phyloseq_data(
+  phyloseq_obj = physeq,
+  min_species_sum = 50,
+  save_path = "filtered_physeq.RDS"
 )
 
-meta_df$Site <- factor(meta_df$location)
-meta_df$Sample <- factor(rownames(meta_df))
+table(sample_data(physeq_filtered)$sampletype)
 
-sample_data_obj <- sample_data(meta_df)
 
-# ----------------------------
-# STEP 3: Create phyloseq object
-# ----------------------------
-physeq_toy <- phyloseq(otu_tab, sample_data_obj)
+# Subset only biological samples
+physeq_bio <- subset_samples(physeq_filtered, sampletype == "biologicalsample")
 
-# ----------------------------
-# STEP 4: Construct y and X matrices
-# ----------------------------
-otu_mat <- as.matrix(otu_table(physeq_toy))
-meta <- as.data.frame(sample_data(physeq_toy))
+sample_names_vec <- sample_names(physeq_bio)
 
-# Filter biological samples
-meta <- meta[meta$sampletype == "biologicalsample", , drop = FALSE]
-common_samples <- intersect(rownames(meta), colnames(otu_mat))
+parsed <- tryCatch({
+  as.data.frame(strcapture(
+    pattern = "^(.*)_r([0-9]+)$",
+    x = sample_names_vec,
+    proto = list(Sample = character(), Replicate = integer())
+  ))
+}, error = function(e) {
+  message("⚠️ Pattern matching failed: ", e$message)
+  data.frame(Sample = sample_names_vec, Replicate = 1)
+})
 
-# Build response and design matrices
-y <- t(otu_mat[, common_samples])  # response matrix (samples × taxa)
-X <- meta[common_samples, , drop = FALSE]  # design matrix
-X$Site <- as.factor(X$location)
-X$Sample <- factor(gsub("(_r[0-9]+)$", "", rownames(X)))
-X$Replicate <- factor(gsub(".*(_r[0-9]+)$", "\\1", rownames(X)))
+parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
+parsed$Replicate[is.na(parsed$Replicate)] <- 1
 
-# ----------------------------
-# Print preview
-# ----------------------------
-cat("✅ Preview of response matrix (y):\n")
-print(head(y))
-cat("\n✅ Preview of design matrix (X):\n")
-print(head(X))
+parsed$Sample <- factor(parsed$Sample)
+parsed$Replicate <- factor(parsed$Replicate)
 
-```
----
-```{r filter(optional), eval=FALSE}
+sample_data(physeq_bio)$Sample <- parsed$Sample
+sample_data(physeq_bio)$Replicate <- parsed$Replicate
+sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
 
-# You may skip this for toy data, but if using real data, filtering helps
-# physeq_toy_filtered <- filter_phyloseq_data(physeq_toy, min_species_sum = 2, save_path = NULL)
-# Here, use original directly:
-physeq_bio <- physeq_toy
-```
----
-```{r runcode, eval=TRUE}
+meta_df <- data.frame(phyloseq::sample_data(physeq_bio))
+str(meta_df)
 
-# Make sure the model-fitting function is loaded in your environment
+# 1. Copy and clean `location` as the new Site
+meta_df$Site <- factor(trimws(meta_df$location))
 
-model_toy <- fit.phyloseq(
-  phyloseq_obj = physeq_toy,
+# 2. Check it looks good
+table(meta_df$Site)
+
+# 3. Drop the old `location` column if desired
+meta_df$location <- NULL
+
+# 4. Reassign to phyloseq object
+sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
+
+levels(sample_data(physeq_bio)$Site)
+table(sample_data(physeq_bio)$Site)
+
+
+physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, TRUE)
+
+
+
+model <- fit.phyloseq(
+  phyloseq_obj = physeq_bio_filtered,
   a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
   o.formula = ~ Site,
-  linko = 1,   # logit link for occupancy
-  linka = 0,   # log link for abundance
-  family = 1,  # ZIBN distribution
+  linko = 1,
+  linka = 0,
+  family = 1,
+  control = list(startOptcontrol = list(maxit = 200),
+                 optControl = list(maxit = 10e3, sigma1 = 0.25), trace = TRUE)
+)
+
+##################### Model selection, randomly selection of 200 OTU####################################
+
+# Ensure reproducibility
+set.seed(42)
+
+# Get all OTU/taxa names
+all_otus <- taxa_names(physeq_bio_filtered)
+
+# Randomly sample 200 OTUs
+selected_otus <- sample(all_otus, 200)
+
+# Subset phyloseq object
+physeq_200 <- prune_taxa(selected_otus, physeq_bio_filtered)
+
+
+model_full <- fit.phyloseq(
+  phyloseq_obj = physeq_200,
+  a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
+  o.formula = ~ Site,
+  linko = 1,
+  linka = 0,
+  family = 1,  # ZINB
   control = list(
-    startOptcontrol = list(maxit = 50),
-    optControl = list(maxit = 1000, sigma1 = 0.2),
-    trace = TRUE
+    startOptcontrol = list(maxit = 200),
+    optControl = list(maxit = 1e4, sigma1 = 0.25),
+    trace = FALSE
   )
 )
 
-```
 ---
 ```{r sum, eval=TRUE}
 
-summary_df <- summary(model_toy)
+summary_df <- summary(model)
 print(summary_df)
 ```
 ---
 ## Fitted Values
 
 ```{r fitted_summary, echo=FALSE}
-fitted_vals <- fitted_TMB(model_toy)
+fitted_vals <- fitted_TMB(model)
 
 summary(fitted_vals$fitted_abundance)
 summary(fitted_vals$fitted_occupancy)
@@ -141,7 +158,7 @@ summary(fitted_vals$fitted_occupancy)
 ```{r run_resid, eval = TRUE}
 # Residuals
 # Make sure compute_residuals_TMB is sourced beforehand
-residuals <- compute_residuals_TMB(model_toy, y = y, X = X, type = "pearson")
+residuals <- compute_residuals_TMB(model, y = y, X = X, type = "pearson")
 
 # Display a preview
 cat("✅ Abundance residuals (first few rows):\n")
@@ -165,14 +182,14 @@ newdata <- data.frame(Site = factor(levels(X$Site), levels = levels(X$Site)))
 
 # Predict abundance on the response scale with CI
 pred_abund <- predict_TMB(
-  model = model_toy,
+  model = model,
   newX = newdata,
   formula = ~ Site,  # only fixed effect
   which = "abundance", 
   type = "response",
   se = TRUE
 )
-pred_occ <- predict_TMB(model_toy, newX = newdata, formula = ~ Site, which = "occupancy", type = "response")
+pred_occ <- predict_TMB(model, newX = newdata, formula = ~ Site, which = "occupancy", type = "response")
 
 head(pred_abund)
 head(pred_occ)

@@ -2,7 +2,8 @@
 #' @description Summarizes fixed-effect and random-effect parameters with standard deviations.
 #'
 #' @param object Output from \code{\link{run_full_TMB}} (an object of class \code{eDNAModel})
-#' @param ... Additional arguments (ignored).
+#' @param getJointPrecision \code{logical}, defaults to FALSE.
+#' @param ... Additional arguments passed to TMB's summary function.
 #'
 #' @return A data frame with parameter names, estimates, and standard deviations.
 #' @aliases summary.eDNAModel summary
@@ -12,7 +13,7 @@ summary.eDNAModel <- function(object, ...) {
   model <- object
 
   # Get standard deviation report
-  sdr <- TMB::sdreport(model$TMBobj)
+  sdr <- TMB::sdreport(model$TMBobj, ...)
 
   # Extract full summary matrix (estimates + sd + CI)
   full_summary <- summary(sdr)

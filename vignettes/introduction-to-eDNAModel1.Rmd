@@ -93,18 +93,65 @@ table(sample_data(physeq_bio)$Site)
 
 physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, TRUE)
 
+library(tidyverse)
+
+# Extract OTU matrix
+otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
+if (taxa_are_rows(physeq_bio_filtered)) otu_mat <- t(otu_mat)
+
+# Convert to long format
+otu_long <- as.data.frame(otu_mat) %>%
+  rownames_to_column(var = "SampleRep") %>%
+  pivot_longer(-SampleRep, names_to = "i", values_to = "y")
 
 
-model <- fit.phyloseq(
-  phyloseq_obj = physeq_bio_filtered,
-  a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
-  o.formula = ~ Site,
-  linko = 1,
-  linka = 0,
-  family = 1,
-  control = list(startOptcontrol = list(maxit = 200),
-                 optControl = list(maxit = 10e3, sigma1 = 0.25), trace = TRUE)
+# Extract sample metadata
+meta_df <- data.frame(sample_data(physeq_bio_filtered))
+
+# If 'SampleRep' already exists, drop it before adding rownames
+if ("SampleRep" %in% colnames(meta_df)) {
+  meta_df <- meta_df %>% select(-SampleRep)
+}
+
+# Add SampleRep from rownames
+meta_df <- meta_df %>% rownames_to_column(var = "SampleRep")
+
+# Merge metadata with OTU counts
+long_df <- left_join(otu_long, meta_df, by = "SampleRep")
+
+
+long_df <- long_df %>%
+  mutate(
+    s = Site,
+    j = Sample,
+    k = Replicate,
+    x_site = 0,    # Set to covariate if you have one, else keep 0
+    w = 1,         # Set to covariate if needed, else keep 1
+    i = factor(i),
+    y = as.integer(y)
+  ) %>%
+  select(i, s, j, k, x_site, w, y)
+
+fit <- fit_occ_siteZIP_repl_glmm(
+    df = long_df,
+    iters = 500,
+    burn_in = 100,
+    a.formula = ~ Site + (1|SampleID) + (1|ReplicateID),  # abundance
+    o.formula = ~ Site                                     # occupancy
 )
+
+
+
+#model <- fit.phyloseq(
+  #phyloseq_obj = physeq_bio_filtered,
+  #a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
+  #o.formula = ~ Site,
+  #linko = 1,
+  #linka = 0,
+ # family = 1,
+ # control = list(startOptcontrol = list(maxit = 200),
+  #               optControl = list(maxit = 10e3, sigma1 = 0.25), trace = TRUE)
+#)
 
 ##################### Model selection, randomly selection of 200 OTU####################################
 

@@ -35,123 +35,264 @@ library(TMB)
 # ----------------------------
 library(phyloseq)
 # ----------------------------
+library(phyloseq)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+prepare_long_data <- function(physeq_obj,
+                              min_species_sum = 50,
+                              save_path = NULL) {
+  
+  # Step 1: Filter by species abundance
+  physeq_filtered <- filter_phyloseq_data(
+    phyloseq_obj = physeq_obj,
+    min_species_sum = min_species_sum,
+    save_path = save_path
+  )
+  
+  # Step 2: Subset biological samples
+  physeq_bio <- subset_samples(physeq_filtered, sampletype == "biologicalsample")
+  
+  # Step 3: Parse Sample and Replicate from sample names
+  sample_names_vec <- sample_names(physeq_bio)
+  parsed <- tryCatch({
+    as.data.frame(strcapture(
+      pattern = "^(.*)_r([0-9]+)$",
+      x = sample_names_vec,
+      proto = list(Sample = character(), Replicate = integer())
+    ))
+  }, error = function(e) {
+    message("⚠️ Pattern matching failed: ", e$message)
+    data.frame(Sample = sample_names_vec, Replicate = 1)
+  })
+  
+  # Fill in any NA values
+  parsed$Sample[is.na(parsed$Sample)]       <- sample_names_vec[is.na(parsed$Sample)]
+  parsed$Replicate[is.na(parsed$Replicate)] <- 1
+  parsed$Sample     <- factor(parsed$Sample)
+  parsed$Replicate  <- factor(parsed$Replicate)
+  
+  # Add parsed info to sample data
+  sample_data(physeq_bio)$Sample     <- parsed$Sample
+  sample_data(physeq_bio)$Replicate  <- parsed$Replicate
+  sample_data(physeq_bio)$SampleRep  <- interaction(parsed$Sample, parsed$Replicate)
+  
+  # Step 4: Clean metadata
+  meta_df <- data.frame(phyloseq::sample_data(physeq_bio), stringsAsFactors = FALSE)
+  meta_df$Site <- factor(trimws(meta_df$location))
+  meta_df$location <- NULL
+  sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
+  
+  # Step 5: Filter taxa (must appear in > 5 samples)
+  physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, prune = TRUE)
+  
+  # Step 6: Build long-format dataframe
+  otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
+  if (taxa_are_rows(physeq_bio_filtered)) {
+    otu_mat <- t(otu_mat)
+  }
+  
+  otu_long <- as.data.frame(otu_mat) %>%
+    rownames_to_column(var = "SampleRep") %>%
+    pivot_longer(-SampleRep, names_to = "i", values_to = "y")
+  
+  meta_df <- data.frame(phyloseq::sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
+  if ("SampleRep" %in% colnames(meta_df)) {
+    meta_df <- dplyr::select(meta_df, -SampleRep)
+  }
+  meta_df <- meta_df %>% rownames_to_column(var = "SampleRep")
+  
+  long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
+    mutate(
+      i = factor(i),
+      y = as.integer(y)
+    ) %>%
+    dplyr::select(i, Site, Sample, Replicate, y)
+  
+  # Return both objects
+  return(list(
+    physeq_filtered = physeq_bio_filtered,
+    long_df = long_df
+  ))
+}
+
+
+# --- EXAMPLE USE ---
+# Load sample phyloseq object
 physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
 physeq <- readRDS(physeq_path)
-physeq_filtered <- filter_phyloseq_data(
-  phyloseq_obj = physeq,
+
+# Run the function
+out1 <- prepare_long_data(
+  physeq_obj = physeq,
   min_species_sum = 50,
   save_path = "filtered_physeq.RDS"
 )
 
-table(sample_data(physeq_filtered)$sampletype)
+# Access outputs
+head(out1$long_df)         # long-format dataframe
+out1$physeq_filtered       # filtered phyloseq object
 
+long_df=out1$long_df
 
-# Subset only biological samples
-physeq_bio <- subset_samples(physeq_filtered, sampletype == "biologicalsample")
+#################################fit the model #######################################
 
-sample_names_vec <- sample_names(physeq_bio)
+library(glmmTMB)
+library(dplyr)
 
-parsed <- tryCatch({
-  as.data.frame(strcapture(
-    pattern = "^(.*)_r([0-9]+)$",
-    x = sample_names_vec,
-    proto = list(Sample = character(), Replicate = integer())
+# ---- Function ----
+simulate_glm_burnin_iterations <- function(data_glm,
+                                           poisson_formula = y ~ 1,
+                                           binomial_formula = z_sim ~ 1,
+                                           num_iterations = 300,
+                                           burn_in = 100) {
+  
+  # initialise latent occupancy state
+  data_glm$z_sim <- ifelse(data_glm$y > 0, 1,
+                           rbinom(nrow(data_glm), 1, 0.5))
+  
+  # storage for models
+  poisson_models  <- list()
+  binomial_models <- list()
+  Z_list          <- list()
+  
+  # iteration loop (only Z + models)
+  for (iter in 1:num_iterations) {
+    
+    # subset for Poisson (only z=1 rows)
+    Q <- data_glm[data_glm$z_sim == 1, ]
+    
+    # fit Poisson (abundance)
+    model_poisson <- glmmTMB(poisson_formula,
+                             family = poisson,
+                             data = Q)
+    
+    # fit Binomial (occupancy)
+    model_binomial <- glmmTMB(binomial_formula,
+                              family = binomial,
+                              data = data_glm)
+    
+    # predictions
+    lambda_i <- predict(model_poisson, type = "response",
+                        newdata = data_glm)
+    P_i      <- predict(model_binomial, type = "response",
+                        newdata = data_glm)
+    
+    # update latent occupancy Z
+    prob_Z1_given_y0 <- P_i * exp(-lambda_i) /
+      (P_i * exp(-lambda_i) + (1 - P_i))
+    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0,
+                                  1e-6), 1 - 1e-6)
+    
+    data_glm$z_sim[data_glm$y == 0] <-
+      rbinom(sum(data_glm$y == 0), 1,
+             prob_Z1_given_y0[data_glm$y == 0])
+    
+    # store models & Z only after burn-in
+    if (iter > burn_in) {
+      poisson_models[[iter - burn_in]]  <- model_poisson
+      binomial_models[[iter - burn_in]] <- model_binomial
+      Z_list[[iter - burn_in]]          <- data_glm$z_sim
+    }
+  }
+  
+  return(list(
+    poisson_models  = poisson_models,
+    binomial_models = binomial_models,
+    Z_list          = Z_list
   ))
-}, error = function(e) {
-  message("⚠️ Pattern matching failed: ", e$message)
-  data.frame(Sample = sample_names_vec, Replicate = 1)
-})
-
-parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
-parsed$Replicate[is.na(parsed$Replicate)] <- 1
-
-parsed$Sample <- factor(parsed$Sample)
-parsed$Replicate <- factor(parsed$Replicate)
-
-sample_data(physeq_bio)$Sample <- parsed$Sample
-sample_data(physeq_bio)$Replicate <- parsed$Replicate
-sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
-
-meta_df <- data.frame(phyloseq::sample_data(physeq_bio))
-str(meta_df)
-
-# 1. Copy and clean `location` as the new Site
-meta_df$Site <- factor(trimws(meta_df$location))
-
-# 2. Check it looks good
-table(meta_df$Site)
-
-# 3. Drop the old `location` column if desired
-meta_df$location <- NULL
-
-# 4. Reassign to phyloseq object
-sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
-
-levels(sample_data(physeq_bio)$Site)
-table(sample_data(physeq_bio)$Site)
-
-
-physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, TRUE)
-
-library(tidyverse)
-
-# Extract OTU matrix
-otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
-if (taxa_are_rows(physeq_bio_filtered)) otu_mat <- t(otu_mat)
-
-# Convert to long format
-otu_long <- as.data.frame(otu_mat) %>%
-  rownames_to_column(var = "SampleRep") %>%
-  pivot_longer(-SampleRep, names_to = "i", values_to = "y")
-
-
-# Extract sample metadata
-meta_df <- data.frame(sample_data(physeq_bio_filtered))
-
-# If 'SampleRep' already exists, drop it before adding rownames
-if ("SampleRep" %in% colnames(meta_df)) {
-  meta_df <- meta_df %>% select(-SampleRep)
 }
 
-# Add SampleRep from rownames
-meta_df <- meta_df %>% rownames_to_column(var = "SampleRep")
-
-# Merge metadata with OTU counts
-long_df <- left_join(otu_long, meta_df, by = "SampleRep")
-
-
-long_df <- long_df %>%
-  mutate(
-    s = Site,
-    j = Sample,
-    k = Replicate,
-    x_site = 0,    # Set to covariate if you have one, else keep 0
-    w = 1,         # Set to covariate if needed, else keep 1
-    i = factor(i),
-    y = as.integer(y)
-  ) %>%
-  select(i, s, j, k, x_site, w, y)
-
-fit <- fit_occ_siteZIP_repl_glmm(
-    df = long_df,
-    iters = 500,
-    burn_in = 100,
-    a.formula = ~ Site + (1|SampleID) + (1|ReplicateID),  # abundance
-    o.formula = ~ Site                                     # occupancy
+# ---- Example run ----
+out <- simulate_glm_burnin_iterations(
+  data_glm=long_df,
+  poisson_formula  = y ~ Site + (1|Sample) + (1|Replicate),
+  binomial_formula = z_sim ~ Site,
+  num_iterations   = 100,
+  burn_in          = 50
 )
 
+# --- outside loop: extract summaries ---
 
+# fixed effects extractor
+extract_fixed <- function(model_list, model_name) {
+  do.call(rbind, lapply(seq_along(model_list), function(i) {
+    sm <- as.data.frame(summary(model_list[[i]])$coefficients$cond)
+    sm$term <- rownames(sm)
+    sm$iter <- i
+    sm$model <- model_name
+    sm
+  }))
+}
 
-#model <- fit.phyloseq(
-  #phyloseq_obj = physeq_bio_filtered,
-  #a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
-  #o.formula = ~ Site,
-  #linko = 1,
-  #linka = 0,
- # family = 1,
- # control = list(startOptcontrol = list(maxit = 200),
-  #               optControl = list(maxit = 10e3, sigma1 = 0.25), trace = TRUE)
-#)
+# random effect extractor
+extract_random <- function(model_list, model_name) {
+  do.call(rbind, lapply(seq_along(model_list), function(i) {
+    vc <- VarCorr(model_list[[i]])
+    if (length(vc$cond) > 0) {
+      data.frame(
+        group = names(vc$cond),
+        var   = sapply(vc$cond, function(x) attr(x, "stddev")^2),
+        iter  = i,
+        model = model_name,
+        stringsAsFactors = FALSE
+      )
+    } else {
+      data.frame(group = NA, var = NA, iter = i, model = model_name)
+    }
+  }))
+}
+
+# extract all fixed & random effects
+poisson_fixed_all  <- extract_fixed(out$poisson_models, "poisson")
+binomial_fixed_all <- extract_fixed(out$binomial_models, "binomial")
+
+poisson_random_all  <- extract_random(out$poisson_models, "poisson")
+binomial_random_all <- extract_random(out$binomial_models, "binomial")
+
+# summarise averages
+summarise_fixed <- function(df) {
+  df %>%
+    group_by(term) %>%
+    summarise(
+      estimate_mean = mean(Estimate, na.rm = TRUE),
+      se_mean       = mean(`Std. Error`, na.rm = TRUE),
+      z_value       = estimate_mean / se_mean,
+      p_value       = 2 * (1 - pnorm(abs(z_value))),
+      .groups = "drop"
+    )
+}
+
+poisson_fixed_summary  <- summarise_fixed(poisson_fixed_all)
+binomial_fixed_summary <- summarise_fixed(binomial_fixed_all)
+
+poisson_random_summary <- poisson_random_all %>%
+  group_by(group) %>%
+  summarise(mean_var = mean(var, na.rm = TRUE), .groups = "drop")
+
+binomial_random_summary <- binomial_random_all %>%
+  group_by(group) %>%
+  summarise(mean_var = mean(var, na.rm = TRUE), .groups = "drop")
+
+# final results
+results <- list(
+  poisson_fixed_summary   = poisson_fixed_summary,
+  binomial_fixed_summary  = binomial_fixed_summary,
+  poisson_random_summary  = poisson_random_summary,
+  binomial_random_summary = binomial_random_summary,
+  Z                       = out$Z_list
+)
+
+results
+
+results$poisson_fixed_summary
+
+results$binomial_fixed_summary
+
+results$poisson_random_summary
+
+results$binomial_random_summary
 
 ##################### Model selection, randomly selection of 200 OTU####################################
 

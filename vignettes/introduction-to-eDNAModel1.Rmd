@@ -108,7 +108,7 @@ prepare_long_data <- function(physeq_obj,
       i = factor(i),
       y = as.integer(y)
     ) %>%
-    dplyr::select(i, Site, Sample, Replicate, y)
+    dplyr::select(i, Site, Sample, Replicate, treatment ,y)
   
   # Return both objects
   return(list(
@@ -135,6 +135,152 @@ head(out1$long_df)         # long-format dataframe
 out1$physeq_filtered       # filtered phyloseq object
 
 long_df=out1$long_df
+
+###################################
+long_df <- long_df %>%
+  group_by(Sample) %>%
+  mutate(total_reads = sum(y)) %>%
+  ungroup()
+
+long_df$log_total_reads <- log(long_df$total_reads)
+
+otu_levels <- levels(long_df$i)[1:100]
+otu_subset <- subset(long_df, i %in% otu_levels)
+otu_subset <- droplevels(otu_subset)
+
+
+out <- simulate_glm_burnin_iterations(
+  data_glm = otu_subset,
+  poisson_formula  = y ~ Site + i + (1 | Sample) + (1 | Replicate) + offset(log_total_reads),
+  binomial_formula = z_sim ~ Site + i,
+  num_iterations   = 100,
+  burn_in          = 50
+)
+
+
+# Predict occupancy (psi) for each OTU from all binomial models using otu_subset
+
+psi_preds <- lapply(out$binomial_models, function(model) {
+  predict(model, type = "response", newdata = otu_subset, allow.new.levels = TRUE)
+})
+
+# Combine into matrix
+psi_mat <- do.call(cbind, psi_preds)
+
+# Calculate mean, standard error, and 95% CI
+psi_mean <- rowMeans(psi_mat)
+psi_se   <- apply(psi_mat, 1, sd)
+psi_ci   <- apply(psi_mat, 1, quantile, probs = c(0.025, 0.975))
+
+# Combine into a data frame
+psi_summary <- data.frame(
+  OTU      = otu_subset$i,
+  psi_mean = psi_mean,
+  psi_se   = psi_se,
+  psi_lwr  = psi_ci[1, ],
+  psi_upr  = psi_ci[2, ]
+)
+
+# Predict lambda for each OTU from all Poisson models using otu_subset
+lambda_preds <- lapply(out$poisson_models, function(model) {
+  predict(model, type = "response", newdata = otu_subset, allow.new.levels = TRUE)
+})
+lambda_mat <- do.call(cbind, lambda_preds)
+
+# Mean and CI for lambda
+lambda_mean <- rowMeans(lambda_mat)
+lambda_ci   <- apply(lambda_mat, 1, quantile, probs = c(0.025, 0.975))
+
+# --- Detection probability ---
+# Calculate detection probability per iteration
+p_detect_mat <- 1 - exp(-lambda_mat)
+
+# Compute mean, SE, and CI
+p_detect_mean <- rowMeans(p_detect_mat)
+p_detect_se   <- apply(p_detect_mat, 1, sd)
+p_detect_ci   <- apply(p_detect_mat, 1, quantile, probs = c(0.025, 0.975))
+
+# Combine into data frame
+detect_summary <- data.frame(
+  OTU          = otu_subset$i,
+  lambda_mean  = lambda_mean,
+  lambda_lwr   = lambda_ci[1, ],
+  lambda_upr   = lambda_ci[2, ],
+  p_detect     = p_detect_mean,
+  p_detect_se  = p_detect_se,
+  p_detect_lwr = p_detect_ci[1, ],
+  p_detect_upr = p_detect_ci[2, ]
+)
+#########################################find the mean and SE for Pr(occupancy) and Pr(detection)############
+# Compute means
+psi_mean <- rowMeans(psi_mat)
+lambda_mean <- rowMeans(lambda_mat)
+p_detect_mat <- 1 - exp(-lambda_mat)
+p_detect_mean <- rowMeans(p_detect_mat)
+
+# Compute standard errors
+psi_se <- apply(psi_mat, 1, sd)
+lambda_se <- apply(lambda_mat, 1, sd)
+p_detect_se <- apply(p_detect_mat, 1, sd)
+
+# Combine into a summary data frame
+occupancy_summary_with_se <- data.frame(
+  OTU = otu_subset$i,           # Or long_df$i if that’s your OTU ID column
+  psi_mean = psi_mean,
+  psi_se = psi_se,
+  lambda_mean = lambda_mean,
+  lambda_se = lambda_se,
+  p_detect_mean = p_detect_mean,
+  p_detect_se = p_detect_se
+)
+
+ggplot(occupancy_summary_with_se, aes(x = p_detect_mean, y = psi_mean)) +
+     geom_point(alpha = 0.6) +
+     labs(
+         x ="Detection Probability" ,
+         y = "Occupancy Probability (ψ)",
+         title = "Occupancy vs. Detection Probability"
+     ) +
+     theme_minimal()
+
+
+
+# Summarise occupancy (psi), lambda, and detection probability per OTU
+library(dplyr)
+
+# Compute summaries
+otu_summary <- data.frame(
+  OTU = otu_subset$i,  # Ensure this matches the order of psi/lambda matrices
+  psi_mean        = rowMeans(psi_mat),
+  psi_se          = apply(psi_mat, 1, sd),
+  lambda_mean     = rowMeans(lambda_mat),
+  lambda_se       = apply(lambda_mat, 1, sd),
+  p_detect_mean   = 1 - exp(-rowMeans(lambda_mat)),
+  p_detect_se     = apply(lambda_mat, 1, function(x) sd(1 - exp(-x)))
+) %>%
+  group_by(OTU) %>%
+  summarise(
+    psi_mean      = mean(psi_mean),
+    psi_se        = mean(psi_se),
+    lambda_mean   = mean(lambda_mean),
+    lambda_se     = mean(lambda_se),
+    p_detect_mean = mean(p_detect_mean),
+    p_detect_se   = mean(p_detect_se),
+    .groups = "drop"
+  )
+
+# View the result
+View(otu_summary)
+
+ggplot(otu_summary, aes(x = p_detect_mean, y = psi_mean)) +
+          geom_point(alpha = 0.6) +
+          labs(
+                  x ="Detection Probability" ,
+                  y = "Occupancy Probability (ψ)",
+                  title = "Occupancy vs. Detection Probability"
+             ) +
+          theme_minimal()
+
 
 #################################fit the model #######################################
 

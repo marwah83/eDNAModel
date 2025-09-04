@@ -293,41 +293,6 @@ results$binomial_fixed_summary
 results$poisson_random_summary
 
 results$binomial_random_summary
-
-##################### Model selection, randomly selection of 200 OTU####################################
-
-# Ensure reproducibility
-set.seed(42)
-
-# Get all OTU/taxa names
-all_otus <- taxa_names(physeq_bio_filtered)
-
-# Randomly sample 200 OTUs
-selected_otus <- sample(all_otus, 200)
-
-# Subset phyloseq object
-physeq_200 <- prune_taxa(selected_otus, physeq_bio_filtered)
-
-
-model_full <- fit.phyloseq(
-  phyloseq_obj = physeq_200,
-  a.formula = ~ Site + diag(1 | Sample) + diag(1 | Replicate),
-  o.formula = ~ Site,
-  linko = 1,
-  linka = 0,
-  family = 1,  # ZINB
-  control = list(
-    startOptcontrol = list(maxit = 200),
-    optControl = list(maxit = 1e4, sigma1 = 0.25),
-    trace = FALSE
-  )
-)
-
----
-```{r sum, eval=TRUE}
-
-summary_df <- summary(model)
-print(summary_df)
 ```
 ---
 ## Fitted Values

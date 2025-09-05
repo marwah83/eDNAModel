@@ -136,7 +136,74 @@ out1$physeq_filtered       # filtered phyloseq object
 
 long_df=out1$long_df
 
-###################################
+#################################simulate_glm_burnin_iterations function#######################
+library(glmmTMB)
+library(dplyr)
+
+# ---- Function ----
+simulate_glm_burnin_iterations <- function(data_glm,
+                                           poisson_formula = y ~ 1,
+                                           binomial_formula = z_sim ~ 1,
+                                           num_iterations = 300,
+                                           burn_in = 100) {
+  
+  # initialise latent occupancy state
+  data_glm$z_sim <- ifelse(data_glm$y > 0, 1,
+                           rbinom(nrow(data_glm), 1, 0.5))
+  
+  # storage for models
+  poisson_models  <- list()
+  binomial_models <- list()
+  Z_list          <- list()
+  
+  # iteration loop (only Z + models)
+  for (iter in 1:num_iterations) {
+    
+    # subset for Poisson (only z=1 rows)
+    Q <- data_glm[data_glm$z_sim == 1, ]
+    
+    # fit Poisson (abundance)
+    model_poisson <- glmmTMB(poisson_formula,
+                             family = poisson,
+                             data = Q)
+    
+    # fit Binomial (occupancy)
+    model_binomial <- glmmTMB(binomial_formula,
+                              family = binomial,
+                              data = data_glm)
+    
+    # predictions
+    lambda_i <- predict(model_poisson, type = "response",
+                        newdata = data_glm)
+    P_i      <- predict(model_binomial, type = "response",
+                        newdata = data_glm)
+    
+    # update latent occupancy Z
+    prob_Z1_given_y0 <- P_i * exp(-lambda_i) /
+      (P_i * exp(-lambda_i) + (1 - P_i))
+    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0,
+                                  1e-6), 1 - 1e-6)
+    
+    data_glm$z_sim[data_glm$y == 0] <-
+      rbinom(sum(data_glm$y == 0), 1,
+             prob_Z1_given_y0[data_glm$y == 0])
+    
+    # store models & Z only after burn-in
+    if (iter > burn_in) {
+      poisson_models[[iter - burn_in]]  <- model_poisson
+      binomial_models[[iter - burn_in]] <- model_binomial
+      Z_list[[iter - burn_in]]          <- data_glm$z_sim
+    }
+  }
+  
+  return(list(
+    poisson_models  = poisson_models,
+    binomial_models = binomial_models,
+    Z_list          = Z_list
+  ))
+}
+
+#################################################################################################
 long_df <- long_df %>%
   group_by(Sample) %>%
   mutate(total_reads = sum(y)) %>%
@@ -248,29 +315,41 @@ ggplot(occupancy_summary_with_se, aes(x = p_detect_mean, y = psi_mean)) +
 # Summarise occupancy (psi), lambda, and detection probability per OTU
 library(dplyr)
 
-# Compute summaries
-otu_summary <- data.frame(
-  OTU = otu_subset$i,  # Ensure this matches the order of psi/lambda matrices
-  psi_mean        = rowMeans(psi_mat),
-  psi_se          = apply(psi_mat, 1, sd),
-  lambda_mean     = rowMeans(lambda_mat),
-  lambda_se       = apply(lambda_mat, 1, sd),
-  p_detect_mean   = 1 - exp(-rowMeans(lambda_mat)),
-  p_detect_se     = apply(lambda_mat, 1, function(x) sd(1 - exp(-x)))
-) %>%
+# Build a data frame with all bootstrap-level values per observation
+otu_summary_long <- data.frame(
+  OTU           = otu_subset$i,
+  psi_mean      = rowMeans(psi_mat),
+  psi_se        = apply(psi_mat, 1, sd),
+  psi_lwr       = apply(psi_mat, 1, quantile, probs = 0.025),
+  psi_upr       = apply(psi_mat, 1, quantile, probs = 0.975),
+  lambda_mean   = rowMeans(lambda_mat),
+  lambda_se     = apply(lambda_mat, 1, sd),
+  p_detect_mean = 1 - exp(-rowMeans(lambda_mat)),
+  p_detect_se   = apply(lambda_mat, 1, function(x) sd(1 - exp(-x))),
+  p_detect_lwr  = apply(lambda_mat, 1, function(x) quantile(1 - exp(-x), probs = 0.025)),
+  p_detect_upr  = apply(lambda_mat, 1, function(x) quantile(1 - exp(-x), probs = 0.975))
+)
+
+# Summarize per OTU
+otu_summary <- otu_summary_long %>%
   group_by(OTU) %>%
   summarise(
-    psi_mean      = mean(psi_mean),
-    psi_se        = mean(psi_se),
-    lambda_mean   = mean(lambda_mean),
-    lambda_se     = mean(lambda_se),
-    p_detect_mean = mean(p_detect_mean),
-    p_detect_se   = mean(p_detect_se),
+    psi_mean        = mean(psi_mean),
+    psi_se          = mean(psi_se),
+    psi_lwr         = mean(psi_lwr),
+    psi_upr         = mean(psi_upr),
+    lambda_mean     = mean(lambda_mean),
+    lambda_se       = mean(lambda_se),
+    p_detect_mean   = mean(p_detect_mean),
+    p_detect_se     = mean(p_detect_se),
+    p_detect_lwr    = mean(p_detect_lwr),
+    p_detect_upr    = mean(p_detect_upr),
     .groups = "drop"
   )
 
-# View the result
+# Optional: View the result
 View(otu_summary)
+
 
 ggplot(otu_summary, aes(x = p_detect_mean, y = psi_mean)) +
           geom_point(alpha = 0.6) +
@@ -281,8 +360,463 @@ ggplot(otu_summary, aes(x = p_detect_mean, y = psi_mean)) +
              ) +
           theme_minimal()
 
+#############################################Rat, no Rat ###############################
+library(dplyr)
+library(ggplot2)
 
-#################################fit the model #######################################
+# Step 1: Merge per-row occupancy estimates with treatment info
+psi_treatment_data <- data.frame(
+  OTU = otu_subset$i,
+  psi = rowMeans(psi_mat),
+  treatment = otu_subset$treatment
+)
+
+# Step 2: Clean and classify treatments
+psi_treatment_data <- psi_treatment_data %>%
+  mutate(
+    treatment_group = case_when(
+      treatment == "Rats" ~ "Rats",
+      treatment == "No Rats" ~ "No Rats",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(treatment_group))
+
+# Step 3: Compute summary stats per OTU × treatment group
+otu_psi_summary <- psi_treatment_data %>%
+  group_by(OTU, treatment_group) %>%
+  summarise(
+    psi_mean = mean(psi, na.rm = TRUE),
+    psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
+    .groups  = "drop"
+  )
+
+# Step 4: Get top 10 OTUs by overall occupancy (mean across groups)
+top_otus <- otu_psi_summary %>%
+  group_by(OTU) %>%
+  summarise(overall_psi = mean(psi_mean)) %>%
+  arrange(desc(overall_psi)) %>%
+  slice(1:10) %>%
+  pull(OTU)
+
+# Step 5: Subset the data for top 10 OTUs
+otu_psi_plot_data <- otu_psi_summary %>%
+  filter(OTU %in% top_otus) %>%
+  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Reverse for top-down plot
+
+# Step 6: Plot Caterpillar plot
+ggplot(otu_psi_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbarh(
+    aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se),
+    height = 0.2,
+    position = position_dodge(width = 0.5)
+  ) +
+  scale_color_manual(
+    values = c("No Rats" = "tomato", "Rats" = "steelblue"),
+    name = "Treatment"
+  ) +
+  labs(
+    x = expression("Estimated occupancy probability (" * psi * ")"),
+    y = "OTU (taxon)",
+    title = "Caterpillar Plot of OTU Occupancy by Rat Presence"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+######################################correct code ##################################
+# Load libraries
+library(phyloseq)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(glmmTMB)
+
+# ---------- Step 1: Prepare long-format data ----------
+prepare_long_data <- function(physeq_obj,
+                              min_species_sum = 50,
+                              save_path = NULL) {
+  physeq_filtered <- filter_phyloseq_data(
+    phyloseq_obj = physeq_obj,
+    min_species_sum = min_species_sum,
+    save_path = save_path
+  )
+  physeq_bio <- subset_samples(physeq_filtered, sampletype == "biologicalsample")
+
+  # Parse Sample and Replicate
+  sample_names_vec <- sample_names(physeq_bio)
+  parsed <- tryCatch({
+    as.data.frame(strcapture(
+      pattern = "^(.*)_r([0-9]+)$",
+      x = sample_names_vec,
+      proto = list(Sample = character(), Replicate = integer())
+    ))
+  }, error = function(e) {
+    message("⚠️ Pattern matching failed: ", e$message)
+    data.frame(Sample = sample_names_vec, Replicate = 1)
+  })
+  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
+  parsed$Replicate[is.na(parsed$Replicate)] <- 1
+  parsed$Sample <- factor(parsed$Sample)
+  parsed$Replicate <- factor(parsed$Replicate)
+  sample_data(physeq_bio)$Sample <- parsed$Sample
+  sample_data(physeq_bio)$Replicate <- parsed$Replicate
+  sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
+
+  # Clean metadata
+  meta_df <- data.frame(phyloseq::sample_data(physeq_bio), stringsAsFactors = FALSE)
+  meta_df$Site <- factor(trimws(meta_df$location))
+  meta_df$location <- NULL
+  sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
+
+  # Filter rare taxa
+  physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, prune = TRUE)
+
+  # Convert to long format
+  otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
+  if (taxa_are_rows(physeq_bio_filtered)) otu_mat <- t(otu_mat)
+  otu_long <- as.data.frame(otu_mat) %>%
+    rownames_to_column(var = "SampleRep") %>%
+    pivot_longer(-SampleRep, names_to = "i", values_to = "y")
+
+  meta_df <- data.frame(phyloseq::sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
+  if ("SampleRep" %in% colnames(meta_df)) {
+    meta_df <- dplyr::select(meta_df, -SampleRep)
+  }
+  meta_df <- meta_df %>% rownames_to_column(var = "SampleRep")
+
+  long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
+    mutate(i = factor(i), y = as.integer(y)) %>%
+    dplyr::select(i, Site, Sample, Replicate, treatment, y)
+
+  return(list(
+    physeq_filtered = physeq_bio_filtered,
+    long_df = long_df
+  ))
+}
+
+
+# ---------- Step 2: Fit ZIP model and simulate ----------
+simulate_glm_burnin_iterations <- function(data_glm,
+                                           poisson_formula,
+                                           binomial_formula,
+                                           num_iterations = 100,
+                                           burn_in = 50) {
+  data_glm$z_sim <- ifelse(data_glm$y > 0, 1,
+                           rbinom(nrow(data_glm), 1, 0.5))
+  poisson_models <- list()
+  binomial_models <- list()
+
+  for (iter in 1:num_iterations) {
+    Q <- data_glm[data_glm$z_sim == 1, ]
+
+    model_poisson <- glmmTMB(poisson_formula, family = poisson, data = Q)
+    model_binomial <- glmmTMB(binomial_formula, family = binomial, data = data_glm)
+
+    lambda_i <- predict(model_poisson, type = "response", newdata = data_glm)
+    P_i <- predict(model_binomial, type = "response", newdata = data_glm)
+
+    prob_Z1_given_y0 <- P_i * exp(-lambda_i) / (P_i * exp(-lambda_i) + (1 - P_i))
+    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0, 1e-6), 1 - 1e-6)
+
+    data_glm$z_sim[data_glm$y == 0] <-
+      rbinom(sum(data_glm$y == 0), 1, prob_Z1_given_y0[data_glm$y == 0])
+
+    if (iter > burn_in) {
+      poisson_models[[iter - burn_in]] <- model_poisson
+      binomial_models[[iter - burn_in]] <- model_binomial
+    }
+  }
+
+  return(list(
+    poisson_models = poisson_models,
+    binomial_models = binomial_models
+  ))
+}
+
+
+# ---------- Step 3: Run it all ----------
+# Load data and prepare
+physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+physeq <- readRDS(physeq_path)
+
+out1 <- prepare_long_data(physeq_obj = physeq)
+long_df <- out1$long_df
+
+# Add total reads for offset
+long_df <- long_df %>%
+  group_by(Sample) %>%
+  mutate(total_reads = sum(y)) %>%
+  ungroup()
+long_df$log_total_reads <- log(long_df$total_reads)
+
+# Subset 50 OTUs
+otu_levels <- levels(long_df$i)[1:50]
+otu_subset <- subset(long_df, i %in% otu_levels)
+otu_subset <- droplevels(otu_subset)
+
+# Fit model
+out <- simulate_glm_burnin_iterations(
+  data_glm = otu_subset,
+  poisson_formula = y ~ Site + i + (1 | Sample) + (1 | Replicate) + offset(log_total_reads),
+  binomial_formula = z_sim ~ Site + i
+)
+
+
+# ---------- Step 4: Extract predictions ----------
+# Occupancy predictions (psi)
+psi_mat <- do.call(cbind, lapply(out$binomial_models, function(model) {
+  predict(model, type = "response", newdata = otu_subset)
+}))
+
+# Abundance predictions (lambda)
+lambda_mat <- do.call(cbind, lapply(out$poisson_models, function(model) {
+  predict(model, type = "response", newdata = otu_subset)
+}))
+
+# Detection probability
+p_detect_mat <- 1 - exp(-lambda_mat)
+
+# ---------- Step 5: Summarize per OTU ----------
+otu_summary <- data.frame(
+  OTU           = otu_subset$i,
+  psi_mean      = rowMeans(psi_mat),
+  psi_se        = apply(psi_mat, 1, sd),
+  psi_lwr       = apply(psi_mat, 1, quantile, probs = 0.025),
+  psi_upr       = apply(psi_mat, 1, quantile, probs = 0.975),
+  lambda_mean   = rowMeans(lambda_mat),
+  lambda_se     = apply(lambda_mat, 1, sd),
+  p_detect_mean = rowMeans(p_detect_mat),
+  p_detect_se   = apply(p_detect_mat, 1, sd),
+  p_detect_lwr  = apply(p_detect_mat, 1, quantile, probs = 0.025),
+  p_detect_upr  = apply(p_detect_mat, 1, quantile, probs = 0.975)
+) %>%
+  group_by(OTU) %>%
+  summarise(
+    psi_mean        = mean(psi_mean),
+    psi_se          = mean(psi_se),
+    psi_lwr         = mean(psi_lwr),
+    psi_upr         = mean(psi_upr),
+    lambda_mean     = mean(lambda_mean),
+    lambda_se       = mean(lambda_se),
+    p_detect_mean   = mean(p_detect_mean),
+    p_detect_se     = mean(p_detect_se),
+    p_detect_lwr    = mean(p_detect_lwr),
+    p_detect_upr    = mean(p_detect_upr),
+    .groups = "drop"
+  )
+
+# ---------- View Results ----------
+print(otu_summary)
+###################################################rat, no rat, correct ############################
+
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Merge per-row occupancy estimates with treatment info
+psi_treatment_data <- otu_subset %>%
+  mutate(
+    psi = rowMeans(psi_mat)  # Add occupancy predictions to each row
+  ) %>%
+  select(i, treatment, psi) %>%
+  rename(OTU = i)
+
+# Step 2: Clean and classify treatments
+psi_treatment_data <- psi_treatment_data %>%
+  mutate(
+    treatment_group = case_when(
+      treatment == "Rats" ~ "Rats",
+      treatment == "No Rats" ~ "No Rats",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(treatment_group))
+
+# Step 3: Compute summary stats per OTU × treatment group
+otu_psi_summary <- psi_treatment_data %>%
+  group_by(OTU, treatment_group) %>%
+  summarise(
+    psi_mean = mean(psi, na.rm = TRUE),
+    psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
+    .groups  = "drop"
+  )
+
+# Step 4: Get top 10 OTUs by average occupancy
+top_otus <- otu_psi_summary %>%
+  group_by(OTU) %>%
+  summarise(overall_psi = mean(psi_mean)) %>%
+  arrange(desc(overall_psi)) %>%
+  slice(1:10) %>%
+  pull(OTU)
+
+# Step 5: Filter for top OTUs
+otu_psi_plot_data <- otu_psi_summary %>%
+  filter(OTU %in% top_otus) %>%
+  mutate(OTU = factor(OTU, levels = rev(top_otus)))  # reverse order for plot
+
+# Step 6: Caterpillar plot
+ggplot(otu_psi_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbarh(
+    aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se),
+    height = 0.2,
+    position = position_dodge(width = 0.5)
+  ) +
+  scale_color_manual(
+    values = c("No Rats" = "tomato", "Rats" = "steelblue"),
+    name = "Treatment"
+  ) +
+  labs(
+    x = expression("Estimated occupancy probability (" * psi * ")"),
+    y = "OTU (taxon)",
+    title = "Caterpillar Plot of OTU Occupancy by Rat Presence"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+################################################  filter ##########################################
+library(dplyr)
+ library(tidyr)
+ 
+ # Step 1: Compute mean and 95% CI per OTU × treatment group
+ otu_ci_summary <- psi_treatment_data %>%
+     group_by(OTU, treatment_group) %>%
+     summarise(
+         psi_mean = mean(psi, na.rm = TRUE),
+         psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
+         psi_lwr  = psi_mean - 1.96 * psi_se,
+         psi_upr  = psi_mean + 1.96 * psi_se,
+         .groups  = "drop"
+     )
+ 
+ # Step 2: Reshape to wide format
+ otu_ci_wide <- otu_ci_summary %>%
+     pivot_wider(
+         names_from = treatment_group,
+         values_from = c(psi_mean, psi_lwr, psi_upr),
+         names_sep = "_"
+     )
+ 
+ # Step 3: Rename columns to be valid R variable names (handles "No Rats" → "No.Rats")
+ names(otu_ci_wide) <- make.names(names(otu_ci_wide))
+ 
+ # Step 4: Identify OTUs exclusive to one treatment
+ exclusive_otus <- otu_ci_wide %>%
+     mutate(
+         rat_exclusive = psi_lwr_Rats > 0 & psi_upr_No.Rats <= 0,
+         no_rat_exclusive = psi_lwr_No.Rats > 0 & psi_upr_Rats <= 0
+     ) %>%
+     filter(rat_exclusive | no_rat_exclusive)
+
+ #What it means:
+
+#Select OTUs that have:
+#No occupancy estimates for Rats group (psi_lwr_Rats is NA)
+#But valid occupancy estimates for No Rats group (psi_lwr_No.Rats is not NA)
+#This indicates these OTUs were only observed in “No Rats” sites, and there’s no data (or zeros) in sites with rats.
+
+exclusive_no_rats <- otu_ci_wide %>%
+    filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats))
+
+#What it means:
+#Select OTUs that have:
+#No occupancy estimates for No Rats group (psi_lwr_No.Rats is NA)
+#But valid occupancy estimates for Rats group (psi_lwr_Rats is not NA)
+#These OTUs were only observed in “Rats” sites, and there’s no data from the No Rats sites.
+
+ exclusive_rats <- otu_ci_wide %>%
+     filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats))
+ 
+ # Combine for plotting
+ exclusive_otus <- bind_rows(exclusive_no_rats, exclusive_rats)
+ 
+ library(dplyr)
+ library(tidyr)
+ library(ggplot2)
+ 
+ # Step 1: Identify exclusive OTUs
+ exclusive_no_rats <- otu_ci_wide %>%
+     filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
+     mutate(treatment_group = "No Rats",
+            psi_mean = psi_mean_No.Rats,
+            psi_lwr = psi_lwr_No.Rats,
+            psi_upr = psi_upr_No.Rats)
+ 
+ exclusive_rats <- otu_ci_wide %>%
+     filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
+     mutate(treatment_group = "Rats",
+            psi_mean = psi_mean_Rats,
+            psi_lwr = psi_lwr_Rats,
+            psi_upr = psi_upr_Rats)
+ 
+ # Step 2: Combine both exclusive OTU sets
+ exclusive_otu_plot_data <- bind_rows(exclusive_no_rats, exclusive_rats) %>%
+     select(OTU, treatment_group, psi_mean, psi_lwr, psi_upr) %>%
+     mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Top-down order
+ 
+ # Step 3: Caterpillar plot
+ ggplot(exclusive_otu_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
+     geom_point(size = 2, position = position_dodge(width = 0.5)) +
+     geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, position = position_dodge(width = 0.5)) +
+     scale_color_manual(
+        values = c("No Rats" = "tomato", "Rats" = "steelblue"),
+         name = "Exclusive To"
+     ) +
+     labs(
+         x = expression("Estimated occupancy probability (" * psi * ")"),
+         y = "OTU (taxon)",
+         title = "Caterpillar Plot: OTUs Occupying Only One Treatment Group"
+     ) +
+     theme_minimal(base_size = 13)
+#####################################################10 otu filter###############################
+
+library(dplyr)
+ library(tidyr)
+ library(ggplot2)
+ 
+     # Step 1: Identify exclusive OTUs
+     exclusive_no_rats <- otu_ci_wide %>%
+             filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
+             mutate(treatment_group = "No Rats",
+                                 psi_mean = psi_mean_No.Rats,
+                                 psi_lwr = psi_lwr_No.Rats,
+                                 psi_upr = psi_upr_No.Rats)
+     
+         exclusive_rats <- otu_ci_wide %>%
+                 filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
+                 mutate(treatment_group = "Rats",
+                                     psi_mean = psi_mean_Rats,
+                                     psi_lwr = psi_lwr_Rats,
+                                     psi_upr = psi_upr_Rats)
+         
+             # Step 2: Combine and select top 10 by occupancy
+             exclusive_otu_plot_data <- bind_rows(exclusive_no_rats, exclusive_rats) %>%
+                     select(OTU, treatment_group, psi_mean, psi_lwr, psi_upr) %>%
+                     arrange(desc(psi_mean)) %>%
+                     slice(1:10) %>%
+                     mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Top-down order
+             
+                 # Step 3: Caterpillar plot
+                 ggplot(exclusive_otu_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
+                     geom_point(size = 2, position = position_dodge(width = 0.5)) +
+                     geom_errorbarh(
+                             aes(xmin = psi_lwr, xmax = psi_upr),
+                             height = 0.2,
+                             position = position_dodge(width = 0.5)
+                        ) +
+                     scale_color_manual(
+                             values = c("No Rats" = "tomato", "Rats" = "steelblue"),
+                            name = "Exclusive To"
+                         ) +
+                     labs(
+                             x = expression("Estimated occupancy probability (" * psi * ")"),
+                             y = "OTU (taxon)",
+                             title = "Caterpillar Plot: Top 10 OTUs Exclusive to One Treatment Group"
+                         ) +
+                     theme_minimal(base_size = 13)
+
+
+#######################################fit model#####################################################
 
 library(glmmTMB)
 library(dplyr)

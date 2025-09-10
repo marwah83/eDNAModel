@@ -815,6 +815,59 @@ library(dplyr)
                          ) +
                      theme_minimal(base_size = 13)
 
+########################################heat map##########################################
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Step 1: Average posterior ψ per OTU × Site
+psi_df <- otu_subset %>%
+  mutate(psi = rowMeans(psi_mat)) %>%
+  select(i, Site, psi)  # i = OTU ID
+
+# Step 2: Pivot to wide format
+psi_wide <- psi_df %>%
+  group_by(i, Site) %>%
+  summarise(psi = mean(psi), .groups = "drop") %>%
+  pivot_wider(names_from = Site, values_from = psi)
+
+# Step 3: Convert back to long format for plotting
+psi_long <- psi_wide %>%
+  pivot_longer(-i, names_to = "Site", values_to = "psi")
+
+# Step 4: Focus on top 20 OTUs by overall mean occupancy
+top_otus <- psi_long %>%
+  group_by(i) %>%
+  summarise(mean_psi = mean(psi, na.rm = TRUE)) %>%
+  arrange(desc(mean_psi)) %>%
+  slice_head(n = 20) %>%
+  pull(i)
+
+psi_long_top <- psi_long %>%
+  filter(i %in% top_otus) %>%
+  mutate(i = factor(i, levels = rev(top_otus)))  # reverse for plot order
+
+# Step 5: Plot heatmap
+ggplot(psi_long_top, aes(x = Site, y = i, fill = psi)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(
+    name = expression(Psi),
+    option = "plasma",  # lighter and colorful
+    direction = -1,
+    begin = 0.2, end = 1  # exclude darkest part
+  ) +
+  labs(
+    title = "Heatmap: Posterior Occupancy Probability (ψ)",
+    x = "Site",
+    y = "OTU"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+
+
 
 #######################################fit model#####################################################
 

@@ -35,26 +35,43 @@ library(TMB)
 # ----------------------------
 library(phyloseq)
 # ----------------------------
+
+######################################correct code ##################################
+
+######################################## Dynamic code #############################################
 library(phyloseq)
 library(dplyr)
 library(tidyr)
 library(tibble)
+library(glmmTMB)
 
 prepare_long_data <- function(physeq_obj,
                               min_species_sum = 50,
+                              sampletype_var = "sampletype",
+                              sampletype_keep = "biologicalsample",
+                              location_var = "location",
+                              treatment_var = "treatment",
                               save_path = NULL) {
   
-  # Step 1: Filter by species abundance
+  # Filter by total abundance across taxa
   physeq_filtered <- filter_phyloseq_data(
     phyloseq_obj = physeq_obj,
     min_species_sum = min_species_sum,
     save_path = save_path
   )
   
-  # Step 2: Subset biological samples
-  physeq_bio <- subset_samples(physeq_filtered, sampletype == "biologicalsample")
+  # Extract sample metadata
+  sample_meta <- as.data.frame(sample_data(physeq_filtered))
   
-  # Step 3: Parse Sample and Replicate from sample names
+  if (!sampletype_var %in% colnames(sample_meta)) {
+    stop(paste("Column", sampletype_var, "not found in sample_data"))
+  }
+  
+  # Subset samples using metadata
+  keep_samples <- rownames(sample_meta[sample_meta[[sampletype_var]] == sampletype_keep, ])
+  physeq_bio <- prune_samples(keep_samples, physeq_filtered)
+  
+  # Parse Sample and Replicate
   sample_names_vec <- sample_names(physeq_bio)
   parsed <- tryCatch({
     as.data.frame(strcapture(
@@ -67,364 +84,83 @@ prepare_long_data <- function(physeq_obj,
     data.frame(Sample = sample_names_vec, Replicate = 1)
   })
   
-  # Fill in any NA values
-  parsed$Sample[is.na(parsed$Sample)]       <- sample_names_vec[is.na(parsed$Sample)]
+  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
   parsed$Replicate[is.na(parsed$Replicate)] <- 1
-  parsed$Sample     <- factor(parsed$Sample)
-  parsed$Replicate  <- factor(parsed$Replicate)
+  parsed$Sample <- factor(parsed$Sample)
+  parsed$Replicate <- factor(parsed$Replicate)
   
-  # Add parsed info to sample data
-  sample_data(physeq_bio)$Sample     <- parsed$Sample
-  sample_data(physeq_bio)$Replicate  <- parsed$Replicate
-  sample_data(physeq_bio)$SampleRep  <- interaction(parsed$Sample, parsed$Replicate)
+  sample_data(physeq_bio)$Sample <- parsed$Sample
+  sample_data(physeq_bio)$Replicate <- parsed$Replicate
+  sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
   
-  # Step 4: Clean metadata
-  meta_df <- data.frame(phyloseq::sample_data(physeq_bio), stringsAsFactors = FALSE)
-  meta_df$Site <- factor(trimws(meta_df$location))
-  meta_df$location <- NULL
+  # Clean metadata
+  meta_df <- as.data.frame(sample_data(physeq_bio), stringsAsFactors = FALSE)
+  
+  if (!location_var %in% colnames(meta_df)) {
+    stop(paste("Column", location_var, "not found in sample_data"))
+  }
+  
+  meta_df$Site <- factor(trimws(meta_df[[location_var]]))
+  meta_df[[location_var]] <- NULL
+  
   sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
   
-  # Step 5: Filter taxa (must appear in > 5 samples)
+  # Filter rare taxa
   physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, prune = TRUE)
   
-  # Step 6: Build long-format dataframe
+  # Convert OTU table to long format
   otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
   if (taxa_are_rows(physeq_bio_filtered)) {
     otu_mat <- t(otu_mat)
   }
   
   otu_long <- as.data.frame(otu_mat) %>%
-    rownames_to_column(var = "SampleRep") %>%
-    pivot_longer(-SampleRep, names_to = "i", values_to = "y")
+    tibble::rownames_to_column(var = "SampleRep") %>%
+    tidyr::pivot_longer(-SampleRep, names_to = "i", values_to = "y")
   
-  meta_df <- data.frame(phyloseq::sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
-  if ("SampleRep" %in% colnames(meta_df)) {
-    meta_df <- dplyr::select(meta_df, -SampleRep)
-  }
-  meta_df <- meta_df %>% rownames_to_column(var = "SampleRep")
+  # Clean metadata for joining
+  meta_df <- as.data.frame(sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
+  meta_df$SampleRep <- rownames(meta_df)
   
-  long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
+  # Join OTU and metadata
+  long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") %>%
     mutate(
       i = factor(i),
       y = as.integer(y)
-    ) %>%
-    dplyr::select(i, Site, Sample, Replicate, treatment ,y)
+    )
   
-  # Return both objects
+  # Ensure treatment variable exists
+  if (!treatment_var %in% colnames(long_df)) {
+    stop(paste("Column", treatment_var, "not found in metadata"))
+  }
+  
+  # Select only valid output columns
+  output_cols <- c("i", "Site", "Sample", "Replicate", treatment_var, "y")
+  output_cols <- output_cols[output_cols %in% colnames(long_df)]
+  long_df <- long_df %>% dplyr::select(all_of(output_cols))
+  
   return(list(
     physeq_filtered = physeq_bio_filtered,
     long_df = long_df
   ))
 }
 
+##How to use the code
 
-# --- EXAMPLE USE ---
-# Load sample phyloseq object
 physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
 physeq <- readRDS(physeq_path)
 
-# Run the function
-out1 <- prepare_long_data(
-  physeq_obj = physeq,
-  min_species_sum = 50,
-  save_path = "filtered_physeq.RDS"
+out_data <- prepare_long_data(
+    physeq_obj = physeq,
+    min_species_sum = 50,
+    sampletype_var = "sampletype",
+    sampletype_keep = "biologicalsample",
+    location_var = "location",
+    treatment_var = "treatment"
 )
 
-# Access outputs
-head(out1$long_df)         # long-format dataframe
-out1$physeq_filtered       # filtered phyloseq object
-
-long_df=out1$long_df
-
-#################################simulate_glm_burnin_iterations function#######################
-library(glmmTMB)
-library(dplyr)
-
-# ---- Function ----
-simulate_glm_burnin_iterations <- function(data_glm,
-                                           poisson_formula = y ~ 1,
-                                           binomial_formula = z_sim ~ 1,
-                                           num_iterations = 300,
-                                           burn_in = 100) {
-  
-  # initialise latent occupancy state
-  data_glm$z_sim <- ifelse(data_glm$y > 0, 1,
-                           rbinom(nrow(data_glm), 1, 0.5))
-  
-  # storage for models
-  poisson_models  <- list()
-  binomial_models <- list()
-  Z_list          <- list()
-  
-  # iteration loop (only Z + models)
-  for (iter in 1:num_iterations) {
-    
-    # subset for Poisson (only z=1 rows)
-    Q <- data_glm[data_glm$z_sim == 1, ]
-    
-    # fit Poisson (abundance)
-    model_poisson <- glmmTMB(poisson_formula,
-                             family = poisson,
-                             data = Q)
-    
-    # fit Binomial (occupancy)
-    model_binomial <- glmmTMB(binomial_formula,
-                              family = binomial,
-                              data = data_glm)
-    
-    # predictions
-    lambda_i <- predict(model_poisson, type = "response",
-                        newdata = data_glm)
-    P_i      <- predict(model_binomial, type = "response",
-                        newdata = data_glm)
-    
-    # update latent occupancy Z
-    prob_Z1_given_y0 <- P_i * exp(-lambda_i) /
-      (P_i * exp(-lambda_i) + (1 - P_i))
-    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0,
-                                  1e-6), 1 - 1e-6)
-    
-    data_glm$z_sim[data_glm$y == 0] <-
-      rbinom(sum(data_glm$y == 0), 1,
-             prob_Z1_given_y0[data_glm$y == 0])
-    
-    # store models & Z only after burn-in
-    if (iter > burn_in) {
-      poisson_models[[iter - burn_in]]  <- model_poisson
-      binomial_models[[iter - burn_in]] <- model_binomial
-      Z_list[[iter - burn_in]]          <- data_glm$z_sim
-    }
-  }
-  
-  return(list(
-    poisson_models  = poisson_models,
-    binomial_models = binomial_models,
-    Z_list          = Z_list
-  ))
-}
-
-#################################################################################################
-long_df <- long_df %>%
-  group_by(Sample) %>%
-  mutate(total_reads = sum(y)) %>%
-  ungroup()
-
-long_df$log_total_reads <- log(long_df$total_reads)
-
-otu_levels <- levels(long_df$i)[1:100]
-otu_subset <- subset(long_df, i %in% otu_levels)
-otu_subset <- droplevels(otu_subset)
-
-
-out <- simulate_glm_burnin_iterations(
-  data_glm = otu_subset,
-  poisson_formula  = y ~ Site + i + (1 | Sample) + (1 | Replicate) + offset(log_total_reads),
-  binomial_formula = z_sim ~ Site + i,
-  num_iterations   = 100,
-  burn_in          = 50
-)
-
-
-# Predict occupancy (psi) for each OTU from all binomial models using otu_subset
-
-psi_preds <- lapply(out$binomial_models, function(model) {
-  predict(model, type = "response", newdata = otu_subset, allow.new.levels = TRUE)
-})
-
-# Combine into matrix
-psi_mat <- do.call(cbind, psi_preds)
-
-# Calculate mean, standard error, and 95% CI
-psi_mean <- rowMeans(psi_mat)
-psi_se   <- apply(psi_mat, 1, sd)
-psi_ci   <- apply(psi_mat, 1, quantile, probs = c(0.025, 0.975))
-
-# Combine into a data frame
-psi_summary <- data.frame(
-  OTU      = otu_subset$i,
-  psi_mean = psi_mean,
-  psi_se   = psi_se,
-  psi_lwr  = psi_ci[1, ],
-  psi_upr  = psi_ci[2, ]
-)
-
-# Predict lambda for each OTU from all Poisson models using otu_subset
-lambda_preds <- lapply(out$poisson_models, function(model) {
-  predict(model, type = "response", newdata = otu_subset, allow.new.levels = TRUE)
-})
-lambda_mat <- do.call(cbind, lambda_preds)
-
-# Mean and CI for lambda
-lambda_mean <- rowMeans(lambda_mat)
-lambda_ci   <- apply(lambda_mat, 1, quantile, probs = c(0.025, 0.975))
-
-# --- Detection probability ---
-# Calculate detection probability per iteration
-p_detect_mat <- 1 - exp(-lambda_mat)
-
-# Compute mean, SE, and CI
-p_detect_mean <- rowMeans(p_detect_mat)
-p_detect_se   <- apply(p_detect_mat, 1, sd)
-p_detect_ci   <- apply(p_detect_mat, 1, quantile, probs = c(0.025, 0.975))
-
-# Combine into data frame
-detect_summary <- data.frame(
-  OTU          = otu_subset$i,
-  lambda_mean  = lambda_mean,
-  lambda_lwr   = lambda_ci[1, ],
-  lambda_upr   = lambda_ci[2, ],
-  p_detect     = p_detect_mean,
-  p_detect_se  = p_detect_se,
-  p_detect_lwr = p_detect_ci[1, ],
-  p_detect_upr = p_detect_ci[2, ]
-)
-#########################################find the mean and SE for Pr(occupancy) and Pr(detection)############
-# Compute means
-psi_mean <- rowMeans(psi_mat)
-lambda_mean <- rowMeans(lambda_mat)
-p_detect_mat <- 1 - exp(-lambda_mat)
-p_detect_mean <- rowMeans(p_detect_mat)
-
-# Compute standard errors
-psi_se <- apply(psi_mat, 1, sd)
-lambda_se <- apply(lambda_mat, 1, sd)
-p_detect_se <- apply(p_detect_mat, 1, sd)
-
-# Combine into a summary data frame
-occupancy_summary_with_se <- data.frame(
-  OTU = otu_subset$i,           # Or long_df$i if that’s your OTU ID column
-  psi_mean = psi_mean,
-  psi_se = psi_se,
-  lambda_mean = lambda_mean,
-  lambda_se = lambda_se,
-  p_detect_mean = p_detect_mean,
-  p_detect_se = p_detect_se
-)
-
-ggplot(occupancy_summary_with_se, aes(x = p_detect_mean, y = psi_mean)) +
-     geom_point(alpha = 0.6) +
-     labs(
-         x ="Detection Probability" ,
-         y = "Occupancy Probability (ψ)",
-         title = "Occupancy vs. Detection Probability"
-     ) +
-     theme_minimal()
-
-
-
-# Summarise occupancy (psi), lambda, and detection probability per OTU
-library(dplyr)
-
-# Build a data frame with all bootstrap-level values per observation
-otu_summary_long <- data.frame(
-  OTU           = otu_subset$i,
-  psi_mean      = rowMeans(psi_mat),
-  psi_se        = apply(psi_mat, 1, sd),
-  psi_lwr       = apply(psi_mat, 1, quantile, probs = 0.025),
-  psi_upr       = apply(psi_mat, 1, quantile, probs = 0.975),
-  lambda_mean   = rowMeans(lambda_mat),
-  lambda_se     = apply(lambda_mat, 1, sd),
-  p_detect_mean = 1 - exp(-rowMeans(lambda_mat)),
-  p_detect_se   = apply(lambda_mat, 1, function(x) sd(1 - exp(-x))),
-  p_detect_lwr  = apply(lambda_mat, 1, function(x) quantile(1 - exp(-x), probs = 0.025)),
-  p_detect_upr  = apply(lambda_mat, 1, function(x) quantile(1 - exp(-x), probs = 0.975))
-)
-
-# Summarize per OTU
-otu_summary <- otu_summary_long %>%
-  group_by(OTU) %>%
-  summarise(
-    psi_mean        = mean(psi_mean),
-    psi_se          = mean(psi_se),
-    psi_lwr         = mean(psi_lwr),
-    psi_upr         = mean(psi_upr),
-    lambda_mean     = mean(lambda_mean),
-    lambda_se       = mean(lambda_se),
-    p_detect_mean   = mean(p_detect_mean),
-    p_detect_se     = mean(p_detect_se),
-    p_detect_lwr    = mean(p_detect_lwr),
-    p_detect_upr    = mean(p_detect_upr),
-    .groups = "drop"
-  )
-
-# Optional: View the result
-View(otu_summary)
-
-
-ggplot(otu_summary, aes(x = p_detect_mean, y = psi_mean)) +
-          geom_point(alpha = 0.6) +
-          labs(
-                  x ="Detection Probability" ,
-                  y = "Occupancy Probability (ψ)",
-                  title = "Occupancy vs. Detection Probability"
-             ) +
-          theme_minimal()
-
-#############################################Rat, no Rat ###############################
-library(dplyr)
-library(ggplot2)
-
-# Step 1: Merge per-row occupancy estimates with treatment info
-psi_treatment_data <- data.frame(
-  OTU = otu_subset$i,
-  psi = rowMeans(psi_mat),
-  treatment = otu_subset$treatment
-)
-
-# Step 2: Clean and classify treatments
-psi_treatment_data <- psi_treatment_data %>%
-  mutate(
-    treatment_group = case_when(
-      treatment == "Rats" ~ "Rats",
-      treatment == "No Rats" ~ "No Rats",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(treatment_group))
-
-# Step 3: Compute summary stats per OTU × treatment group
-otu_psi_summary <- psi_treatment_data %>%
-  group_by(OTU, treatment_group) %>%
-  summarise(
-    psi_mean = mean(psi, na.rm = TRUE),
-    psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
-    .groups  = "drop"
-  )
-
-# Step 4: Get top 10 OTUs by overall occupancy (mean across groups)
-top_otus <- otu_psi_summary %>%
-  group_by(OTU) %>%
-  summarise(overall_psi = mean(psi_mean)) %>%
-  arrange(desc(overall_psi)) %>%
-  slice(1:10) %>%
-  pull(OTU)
-
-# Step 5: Subset the data for top 10 OTUs
-otu_psi_plot_data <- otu_psi_summary %>%
-  filter(OTU %in% top_otus) %>%
-  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Reverse for top-down plot
-
-# Step 6: Plot Caterpillar plot
-ggplot(otu_psi_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
-  geom_point(position = position_dodge(width = 0.5), size = 2) +
-  geom_errorbarh(
-    aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se),
-    height = 0.2,
-    position = position_dodge(width = 0.5)
-  ) +
-  scale_color_manual(
-    values = c("No Rats" = "tomato", "Rats" = "steelblue"),
-    name = "Treatment"
-  ) +
-  labs(
-    x = expression("Estimated occupancy probability (" * psi * ")"),
-    y = "OTU (taxon)",
-    title = "Caterpillar Plot of OTU Occupancy by Rat Presence"
-  ) +
-  theme_minimal(base_size = 13)
-
-
-######################################correct code ##################################
+long_df <- out_data$long_df
+###################################################################################################
 # Load libraries
 library(phyloseq)
 library(dplyr)
@@ -560,6 +296,8 @@ out <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
   poisson_formula = y ~ Site + i + (1 | Sample) + (1 | Replicate) + offset(log_total_reads),
   binomial_formula = z_sim ~ Site + i
+  num_iterations   = 100,
+  burn_in          = 50
 )
 
 
@@ -608,6 +346,7 @@ otu_summary <- data.frame(
 
 # ---------- View Results ----------
 print(otu_summary)
+
 ###################################################rat, no rat, correct ############################
 
 library(dplyr)
@@ -658,7 +397,7 @@ otu_psi_plot_data <- otu_psi_summary %>%
 ggplot(otu_psi_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
   geom_point(position = position_dodge(width = 0.5), size = 2) +
   geom_errorbarh(
-    aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se),
+    aes(xmin = psi_mean - 1.96*psi_se, xmax = psi_mean + 1.96*psi_se),
     height = 0.2,
     position = position_dodge(width = 0.5)
   ) +
@@ -769,51 +508,56 @@ exclusive_no_rats <- otu_ci_wide %>%
      ) +
      theme_minimal(base_size = 13)
 #####################################################10 otu filter###############################
+top_n_otus <- 15  # You can change to any number
 
-library(dplyr)
- library(tidyr)
- library(ggplot2)
- 
-     # Step 1: Identify exclusive OTUs
-     exclusive_no_rats <- otu_ci_wide %>%
-             filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
-             mutate(treatment_group = "No Rats",
-                                 psi_mean = psi_mean_No.Rats,
-                                 psi_lwr = psi_lwr_No.Rats,
-                                 psi_upr = psi_upr_No.Rats)
-     
-         exclusive_rats <- otu_ci_wide %>%
-                 filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
-                 mutate(treatment_group = "Rats",
-                                     psi_mean = psi_mean_Rats,
-                                     psi_lwr = psi_lwr_Rats,
-                                     psi_upr = psi_upr_Rats)
-         
-             # Step 2: Combine and select top 10 by occupancy
-             exclusive_otu_plot_data <- bind_rows(exclusive_no_rats, exclusive_rats) %>%
-                     select(OTU, treatment_group, psi_mean, psi_lwr, psi_upr) %>%
-                     arrange(desc(psi_mean)) %>%
-                     slice(1:10) %>%
-                     mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Top-down order
-             
-                 # Step 3: Caterpillar plot
-                 ggplot(exclusive_otu_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
-                     geom_point(size = 2, position = position_dodge(width = 0.5)) +
-                     geom_errorbarh(
-                             aes(xmin = psi_lwr, xmax = psi_upr),
-                             height = 0.2,
-                             position = position_dodge(width = 0.5)
-                        ) +
-                     scale_color_manual(
-                             values = c("No Rats" = "tomato", "Rats" = "steelblue"),
-                            name = "Exclusive To"
-                         ) +
-                     labs(
-                             x = expression("Estimated occupancy probability (" * psi * ")"),
-                             y = "OTU (taxon)",
-                             title = "Caterpillar Plot: Top 10 OTUs Exclusive to One Treatment Group"
-                         ) +
-                     theme_minimal(base_size = 13)
+exclusive_no_rats <- otu_ci_wide %>%
+  filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
+  mutate(
+    treatment_group = "No Rats",
+    psi_mean = psi_mean_No.Rats,
+    psi_lwr = psi_lwr_No.Rats,
+    psi_upr = psi_upr_No.Rats
+  ) %>%
+  arrange(desc(psi_mean)) %>%
+  slice(1:top_n_otus) %>%
+  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))
+
+
+exclusive_rats <- otu_ci_wide %>%
+  filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
+  filter(!OTU %in% exclusive_no_rats$OTU) %>%  # REMOVE overlaps
+  mutate(
+    treatment_group = "Rats",
+    psi_mean = psi_mean_Rats,
+    psi_lwr = psi_lwr_Rats,
+    psi_upr = psi_upr_Rats
+  ) %>%
+  arrange(desc(psi_mean)) %>%
+  slice(1:top_n_otus) %>%
+  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))
+
+
+ggplot(exclusive_no_rats, aes(x = psi_mean, y = OTU)) +
+  geom_point(color = "tomato", size = 2) +
+  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, color = "tomato") +
+  labs(
+    x = expression("Estimated occupancy probability (" * psi * ")"),
+    y = "OTU (taxon)",
+    title = paste("Top", top_n_otus, "OTUs Exclusive to 'No Rats'")
+  ) +
+  theme_minimal(base_size = 13)
+
+
+ggplot(exclusive_rats, aes(x = psi_mean, y = OTU)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, color = "steelblue") +
+  labs(
+    x = expression("Estimated occupancy probability (" * psi * ")"),
+    y = "OTU (taxon)",
+    title = paste("Top", top_n_otus, "OTUs Exclusive to 'Rats'")
+  ) +
+  theme_minimal(base_size = 13)
+
 
 ########################################heat map##########################################
 library(dplyr)
@@ -967,124 +711,6 @@ overall_metrics <- data.frame(
 
 # View the comparison
 print(overall_metrics)
-
-######################################## Dynamic code #############################################
-
-prepare_long_data <- function(physeq_obj,
-                              min_species_sum = 50,
-                              sampletype_var = "sampletype",
-                              sampletype_keep = "biologicalsample",
-                              location_var = "location",
-                              treatment_var = "treatment",
-                              save_path = NULL) {
-  
-  # Filter by total abundance across taxa
-  physeq_filtered <- filter_phyloseq_data(
-    phyloseq_obj = physeq_obj,
-    min_species_sum = min_species_sum,
-    save_path = save_path
-  )
-  
-  # Extract sample metadata
-  sample_meta <- as.data.frame(sample_data(physeq_filtered))
-  
-  if (!sampletype_var %in% colnames(sample_meta)) {
-    stop(paste("Column", sampletype_var, "not found in sample_data"))
-  }
-  
-  # Subset samples using metadata
-  keep_samples <- rownames(sample_meta[sample_meta[[sampletype_var]] == sampletype_keep, ])
-  physeq_bio <- prune_samples(keep_samples, physeq_filtered)
-  
-  # Parse Sample and Replicate
-  sample_names_vec <- sample_names(physeq_bio)
-  parsed <- tryCatch({
-    as.data.frame(strcapture(
-      pattern = "^(.*)_r([0-9]+)$",
-      x = sample_names_vec,
-      proto = list(Sample = character(), Replicate = integer())
-    ))
-  }, error = function(e) {
-    message("⚠️ Pattern matching failed: ", e$message)
-    data.frame(Sample = sample_names_vec, Replicate = 1)
-  })
-  
-  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
-  parsed$Replicate[is.na(parsed$Replicate)] <- 1
-  parsed$Sample <- factor(parsed$Sample)
-  parsed$Replicate <- factor(parsed$Replicate)
-  
-  sample_data(physeq_bio)$Sample <- parsed$Sample
-  sample_data(physeq_bio)$Replicate <- parsed$Replicate
-  sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
-  
-  # Clean metadata
-  meta_df <- as.data.frame(sample_data(physeq_bio), stringsAsFactors = FALSE)
-  
-  if (!location_var %in% colnames(meta_df)) {
-    stop(paste("Column", location_var, "not found in sample_data"))
-  }
-  
-  meta_df$Site <- factor(trimws(meta_df[[location_var]]))
-  meta_df[[location_var]] <- NULL
-  
-  sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
-  
-  # Filter rare taxa
-  physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, prune = TRUE)
-  
-  # Convert OTU table to long format
-  otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
-  if (taxa_are_rows(physeq_bio_filtered)) {
-    otu_mat <- t(otu_mat)
-  }
-  
-  otu_long <- as.data.frame(otu_mat) %>%
-    tibble::rownames_to_column(var = "SampleRep") %>%
-    tidyr::pivot_longer(-SampleRep, names_to = "i", values_to = "y")
-  
-  # Clean metadata for joining
-  meta_df <- as.data.frame(sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
-  meta_df$SampleRep <- rownames(meta_df)
-  
-  # Join OTU and metadata
-  long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") %>%
-    mutate(
-      i = factor(i),
-      y = as.integer(y)
-    )
-  
-  # Ensure treatment variable exists
-  if (!treatment_var %in% colnames(long_df)) {
-    stop(paste("Column", treatment_var, "not found in metadata"))
-  }
-  
-  # Select only valid output columns
-  output_cols <- c("i", "Site", "Sample", "Replicate", treatment_var, "y")
-  output_cols <- output_cols[output_cols %in% colnames(long_df)]
-  long_df <- long_df %>% dplyr::select(all_of(output_cols))
-  
-  return(list(
-    physeq_filtered = physeq_bio_filtered,
-    long_df = long_df
-  ))
-}
-
-##How to use the code
-
-physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
-physeq <- readRDS(physeq_path)
-
-out_data <- prepare_long_data(
-    physeq_obj = physeq,
-    min_species_sum = 50,
-    sampletype_var = "sampletype",
-    sampletype_keep = "biologicalsample",
-    location_var = "location",
-    treatment_var = "treatment"
-)
-
-long_df <- out_data$long_df
 
 
 

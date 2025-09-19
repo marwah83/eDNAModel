@@ -22,7 +22,7 @@ otu_subset <- droplevels(otu_subset)
 out <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
   poisson_formula = y ~ Site + i + (1 | Sample) + (1 | Replicate) + offset(log_total_reads),
-  binomial_formula = z_sim ~ Site + i
+  binomial_formula = z_sim ~ Site + i,
   num_iterations   = 100,
   burn_in          = 50
 )

@@ -1,9 +1,3 @@
-library(phyloseq)
-library(eDNAModel)
-library(dplyr)
-library(tidyr)
-library(tibble)
-library(glmmTMB)
 
 prepare_long_data <- function(physeq_obj,
                               min_species_sum = 50,

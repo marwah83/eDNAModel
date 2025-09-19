@@ -5,7 +5,7 @@
 \title{Run Full TMB Model}
 \usage{
 run_full_TMB(
-  data_array_filtered,
+  y,
   X,
   a.formula = ~1,
   o.formula = ~1,
@@ -14,12 +14,11 @@ run_full_TMB(
   family = 1,
   Ntrials = matrix(0),
   offset = NULL,
-  control = list(maxit = 10000, trace = 1)
+  control = list(trace = TRUE, startOptcontrol = list(maxit = 200), optControl =
+    list(maxit = 10000))
 )
 }
 \arguments{
-\item{data_array_filtered}{Filtered 3D data array ready for TMB model fitting.}
-
 \item{X}{A data frame containing covariates for model matrices.}
 
 \item{a.formula}{Formula for the abundance model.}
@@ -34,9 +33,11 @@ run_full_TMB(
 
 \item{Ntrials}{Matrix of trials for Binomial models.}
 
+\item{offset}{Offset matrix (same dimension as y)}
+
 \item{control}{Optimization control list.}
 
-\item{offset}{Optional numeric vector of offset values for the model.}
+\item{data_array_filtered}{Filtered 3D data array ready for TMB model fitting.}
 }
 \value{
 A list with optimization results, fitted TMB object, and estimated probabilities.

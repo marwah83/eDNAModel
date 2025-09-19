@@ -3,31 +3,35 @@
 \name{predict_TMB}
 \alias{predict_TMB}
 \title{Predict from Fitted eDNAModel}
+\usage{
+predict_TMB(
+  model,
+  newX,
+  formula,
+  which = c("abundance", "occupancy"),
+  type = c("response", "link", "terms"),
+  level = 0.95,
+  se = TRUE
+)
+}
+\arguments{
+\item{model}{A fitted TMB model object (from \code{\link{run_full_TMB}}).}
+
+\item{newX}{A new covariate data frame for prediction.}
+
+\item{formula}{The right-hand side of the model formula (e.g., \code{~ Site}).}
+
+\item{which}{One of \code{"abundance"} or \code{"occupancy"} specifying the model to predict from.}
+
+\item{type}{Prediction scale: one of \code{"response"}, \code{"link"}, or \code{"terms"}.}
+
+\item{level}{Confidence level for intervals (default = 0.95).}
+
+\item{se}{Logical; should standard errors and confidence intervals be returned?}
+}
+\value{
+A data frame with predicted values and (optionally) uncertainty measures.
+}
 \description{
 Generates predicted values for abundance or occupancy from a fitted TMB model.
 }
-\usage{
-predict_TMB(model, newX, formula,
-  which = c("abundance", "occupancy"),
-  type = c("response", "link", "terms"),
-  level = 0.95, se = TRUE)
-}
-\arguments{
-  \item{model}{A fitted TMB model object (from \code{\link{run_full_TMB}}).}
-  \item{newX}{A new covariate data frame for prediction.}
-  \item{formula}{The right-hand side of the formula used in the model (e.g., \code{~ Site}).}
-  \item{which}{Either \code{"abundance"} or \code{"occupancy"} indicating which model to predict from.}
-  \item{type}{Prediction scale: \code{"response"}, \code{"link"}, or \code{"terms"}.}
-  \item{level}{Confidence level for prediction intervals (default = 0.95).}
-  \item{se}{Logical; whether standard errors and confidence intervals should be returned.}
-}
-\value{
-A data frame with the following columns:
-\itemize{
-  \item \code{prediction}
-  \item \code{se}
-  \item \code{lower}
-  \item \code{upper}
-}
-}
-

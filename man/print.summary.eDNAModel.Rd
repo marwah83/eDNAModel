@@ -3,18 +3,17 @@
 \name{print.summary.eDNAModel}
 \alias{print.summary.eDNAModel}
 \title{Print Method for summary.eDNAModel Objects}
-\description{
-Custom print method for the result of \code{summary.eDNAModel}.
-Prints the summary data frame and appends a legend explaining parameter types.
-}
 \usage{
 \method{print}{summary.eDNAModel}(x, ...)
 }
 \arguments{
-  \item{x}{An object of class \code{summary.eDNAModel}.}
-  \item{...}{Additional arguments (currently ignored).}
+\item{x}{A \code{summary.eDNAModel} object returned by \code{\link{summary.eDNAModel}}.}
+
+\item{...}{Additional arguments (currently ignored).}
+}
+\description{
+Custom print method for summary results from \code{eDNAModel}.
 }
 \seealso{
-  \code{\link{summary.eDNAModel}}
+\code{\link{summary.eDNAModel}}
 }
-

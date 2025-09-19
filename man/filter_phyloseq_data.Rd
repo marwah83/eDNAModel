@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter_phyloseq_data.R
 \name{filter_phyloseq_data}
 \alias{filter_phyloseq_data}
-\title{Filter Phyloseq Data}
+\title{Filter a phyloseq object by removing low-quality samples and taxa}
 \usage{
 filter_phyloseq_data(
   phyloseq_obj,
@@ -11,35 +11,23 @@ filter_phyloseq_data(
 )
 }
 \arguments{
-\item{phyloseq_obj}{A \code{phyloseq} object containing OTU and sample data.}
+\item{phyloseq_obj}{A valid `phyloseq` object.}
 
-\item{min_species_sum}{Minimum total count threshold for keeping a species. Default is 30.}
+\item{min_species_sum}{Minimum total count across all samples for a species to be retained. Default: 30}
 
-\item{save_path}{Optional path to save the filtered \code{phyloseq} object as an RDS file.
-Set to \code{NULL} to avoid saving. Default is \code{"phyloseq_filtered.RDS"}.}
+\item{save_path}{File path to save the filtered object as an `.RDS`. Set to `NULL` to skip saving.}
 }
 \value{
-A cleaned and filtered \code{phyloseq} object. Species and samples with all-zero counts
-are removed, and species with total counts below \code{min_species_sum} are filtered out.
+A filtered `phyloseq` object.
 }
 \description{
-Filters a \code{phyloseq} object by:
-\itemize{
-  \item Removing all-zero species (taxa).
-  \item Removing all-zero samples.
-  \item Removing rare species below the specified abundance threshold.
-  \item Optionally saving the filtered object.
+This function performs standard quality control filtering on a `phyloseq` object by:
+- Removing species (taxa) with zero total abundance
+- Removing samples with zero total abundance
+- Removing species whose total abundance is below a specified threshold
 }
-Includes internal consistency checks and returns a cleaned object ready for analysis.
-}
-
 \examples{
-# Example with custom data (if included in your package)
-data_path <- system.file("extdata", "my_phyloseq_example.rds", package = "YourPackageName")
-if (file.exists(data_path)) {
-  physeq <- readRDS(data_path)
-  filtered_physeq <- filter_phyloseq_data(physeq, min_species_sum = 30, save_path = NULL)
+\dontrun{
+filtered_physeq <- filter_phyloseq_data(my_physeq, min_species_sum = 20)
 }
 }
-
-

@@ -2,23 +2,29 @@
 % Please edit documentation in R/residual_function.R
 \name{compute_residuals_TMB}
 \alias{compute_residuals_TMB}
-\title{Compute Residuals from a Fitted eDNAModel}
-\description{
-Computes residuals for abundance and occupancy models.
-}
+\title{Compute Residuals from eDNAModel Fit}
 \usage{
-compute_residuals_TMB(model, data_array_filtered, type = c("pearson", "response", "deviance"))
+compute_residuals_TMB(model, y, X, type = c("pearson", "response", "deviance"))
 }
 \arguments{
-  \item{model}{A fitted model object from \code{\link{run_full_TMB}}.}
-  \item{data_array_filtered}{The original 3D data array used for fitting.}
-  \item{type}{The type of residuals: one of \code{"pearson"}, \code{"response"}, or \code{"deviance"}.}
+\item{model}{An object of class `eDNAModel` returned by `run_full_TMB()`.}
+
+\item{y}{A numeric matrix of observed counts (replicates × species). Must match rownames in X.}
+
+\item{X}{A data.frame of covariates corresponding to rows in `y`. Must include `Site` as a factor.}
+
+\item{type}{Type of residuals: "pearson" (default), "response", or "deviance".}
 }
 \value{
-A list with two matrices:
-\itemize{
-  \item \code{occupancy_residuals}
-  \item \code{abundance_residuals}
+A list with two components:
+\describe{
+  \item{occupancy_residuals}{A matrix of residuals for the occupancy component.}
+  \item{abundance_residuals}{A matrix of residuals for the abundance component.}
 }
 }
-
+\description{
+Computes residuals for both abundance and occupancy components of a hierarchical multispecies model fit using TMB.
+}
+\examples{
+residuals <- compute_residuals_TMB(model = model, y = y, X = X, type = "pearson")
+}

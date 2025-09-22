@@ -5,7 +5,7 @@
 #' - Removing species (taxa) with zero total abundance
 #' - Removing samples with zero total abundance
 #' - Removing species whose total abundance is below a specified threshold
-#' @importFrom phyloseq nsamples
+#' @importFrom phyloseq nsamples ntaxa prune_taxa sample_data
 #' @param phyloseq_obj A valid `phyloseq` object.
 #' @param min_species_sum Minimum total count across all samples for a species to be retained. Default: 30
 #' @param save_path File path to save the filtered object as an `.RDS`. Set to `NULL` to skip saving.

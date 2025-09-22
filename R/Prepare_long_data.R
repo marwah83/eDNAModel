@@ -17,7 +17,7 @@
 #'   \item{physeq_filtered}{A filtered `phyloseq` object.}
 #'   \item{long_df}{A long-format data frame with columns: i (OTU), Site, Sample, Replicate, treatment, y (count).}
 #' }
-#'
+#' @importFrom phyloseq prune_taxa
 #' @importFrom phyloseq sample_data sample_names prune_samples filter_taxa otu_table taxa_are_rows
 #' @importFrom dplyr left_join select all_of mutate
 #' @importFrom tidyr pivot_longer

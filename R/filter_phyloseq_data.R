@@ -37,14 +37,7 @@ filter_phyloseq_data <- function(phyloseq_obj, min_species_sum = 30, save_path =
   # === Step 2: Remove all-zero species ===
   species_to_keep <- colSums(otu_mat) > 0
   if (!any(species_to_keep)) stop("❌ No species left after removing all-zero species.")
-  otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
-
-  # ✅ Add early return if no taxa left
-  if (ncol(otu_mat) == 0) {
-    stop("❌ No species meet the min_species_sum of ", min_species_sum)
-  }
-
-  message("✅ Removed all-zero species. Remaining: ", ncol(otu_mat))
+  otu_mat <- otu_mat[, species_to_keep, drop = FALSE]
 
   # === Step 3: Remove all-zero samples ===
   samples_to_keep <- rowSums(otu_mat) > 0

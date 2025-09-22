@@ -9,7 +9,6 @@
 #' @param phyloseq_obj A valid `phyloseq` object.
 #' @param min_species_sum Minimum total count across all samples for a species to be retained. Default: 30
 #' @param save_path File path to save the filtered object as an `.RDS`. Set to `NULL` to skip saving.
-#' @importFrom phyloseq sample_data sample_names prune_samples filter_taxa prune_taxa otu_table taxa_are_rows
 #' @return A filtered `phyloseq` object.
 #' @export
 #'

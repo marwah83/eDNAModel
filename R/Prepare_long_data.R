@@ -19,6 +19,7 @@
 #' }
 #' @importFrom phyloseq prune_taxa
 #' @importFrom phyloseq sample_data sample_names prune_samples filter_taxa otu_table taxa_are_rows
+#' @importFrom phyloseq sample_data sample_data<- prune_samples otu_table taxa_are_rows
 #' @importFrom dplyr left_join select all_of mutate
 #' @importFrom tidyr pivot_longer
 #' @importFrom tibble rownames_to_column

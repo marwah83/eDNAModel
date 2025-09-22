@@ -47,9 +47,10 @@ filter_phyloseq_data <- function(phyloseq_obj, min_species_sum = 30, save_path =
 
   # === Step 4: Filter rare species ===
   species_to_keep_final <- colSums(otu_mat) >= min_species_sum
-  if (!any(species_to_keep_final)) warning("⚠️ No species meet the min_species_sum of ", min_species_sum)
-  otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
-  message("✅ Removed rare species with total count <", min_species_sum, ". Remaining: ", ncol(otu_mat))
+if (!any(species_to_keep_final)) {
+  stop("❌ No species meet the min_species_sum of ", min_species_sum)
+}
+otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
 
   # === Step 5: Prune original phyloseq object ===
   physeq_filtered <- prune_taxa(colnames(otu_mat), phyloseq_obj)

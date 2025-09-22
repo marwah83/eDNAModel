@@ -14,7 +14,7 @@
 #'   \item{model}{The model name provided.}
 #' }
 #'
-#' @importFrom glmmTMB summary.glmmTMB
+#' @importFrom glmmTMB glmmTMB
 #' @export
 extract_fixed <- function(model_list, model_name) {
   do.call(rbind, lapply(seq_along(model_list), function(i) {

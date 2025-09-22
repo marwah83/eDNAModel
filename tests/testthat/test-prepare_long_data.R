@@ -27,7 +27,7 @@ test_that("prepare_long_data processes a phyloseq object correctly", {
   # Run function
   result <- prepare_long_data(
     physeq_obj = ps,
-    min_species_sum = 5,
+    min_species_sum = 1,
     sampletype_var = "sampletype",
     sampletype_keep = "biologicalsample",
     location_var = "location",

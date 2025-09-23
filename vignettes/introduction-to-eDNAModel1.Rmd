@@ -178,24 +178,33 @@ library(ggplot2)
 
 ######################################## Dynamic code #############################################
 library(phyloseq)
+library(eDNAModel)
 library(dplyr)
 library(tidyr)
 library(tibble)
 library(glmmTMB)
 
-# ---------- Step 3: Run it all ----------
-# Load data and prepare
+col_map <- list(
+  sampletype = "sampletype",
+  location   = "location",
+  treatment  = "treatment",
+  sample     = "sample",
+  samplerep  = "samplerep",
+  atoll      = "atoll",
+  exblank    = "exblank",
+  samp.blank = "samp.blank"
+)
+
 physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
 physeq <- readRDS(physeq_path)
 
 out_data <- prepare_long_data(
-    physeq_obj = physeq,
-    min_species_sum = 50,
-    sampletype_var = "sampletype",
-    sampletype_keep = "biologicalsample",
-    location_var = "location",
-    treatment_var = "treatment"
+  physeq_obj        = physeq,
+  min_species_sum   = 50,
+  sampletype_keep   = "biologicalsample",
+  col_vars          = col_map
 )
+
 
 long_df <- out_data$long_df
 
@@ -228,19 +237,9 @@ out <- simulate_glm_burnin_iterations(
             burn_in          = 50
         )
 
-extract_fixed <- function(model_list, model_name) {
-            do.call(rbind, lapply(seq_along(model_list), function(i) {
-                  sm <- as.data.frame(summary(model_list[[i]])$coefficients$cond)
-                  sm$term <- rownames(sm)
-                  sm$iter <- i
-                  sm$model <- model_name
-                  sm
-              }))
-        }
-     
-     
+     #plot the interaction, first extract the poisson and plot , then extract from binomial and plot
+
      poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
-     
      interaction_terms <- poisson_fixed_all %>%
        filter(grepl("treatment.*:i", term))
      
@@ -248,9 +247,11 @@ extract_fixed <- function(model_list, model_name) {
     
      
      binomial_fixed_all <- extract_fixed(out$binomial_models, "binomial")
-     
      interaction_terms <- binomial_fixed_all %>%
        filter(grepl("treatment.*:i", term))
+
+
+##for the plot apply the following once for poisson and then one for binomial.
      
      library(dplyr)
      library(ggplot2)

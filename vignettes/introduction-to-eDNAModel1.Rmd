@@ -331,6 +331,31 @@ otu_summary <- data.frame(
 # ---------- View Results ----------
 print(otu_summary)
 
+library(ggplot2)
+library(dplyr)
+
+# Assuming otu_summary is already loaded in your environment
+# If not, read or create it accordingly
+
+# Ensure OTUs are ordered by psi_mean for plotting
+otu_summary_ordered <- otu_summary %>%
+  arrange(psi_mean) %>%
+  mutate(OTU = factor(OTU, levels = OTU))
+
+# Caterpillar plot
+ggplot(otu_summary_ordered, aes(x = OTU, y = psi_mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = psi_lwr, ymax = psi_upr), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "Caterpillar Plot of OTU Occupancy Probabilities (ψ)",
+    x = "OTU",
+    y = "Mean ψ (with 95% CI)"
+  ) +
+  theme_minimal()
+
+
 
 
 otu_predictions <- otu_subset[, c("i", "treatment")] %>%

@@ -69,7 +69,7 @@ long_df <- long_df %>%
   ungroup()
 
 long_df$log_total_reads <- log(long_df$total_reads)
-
+####################################################
 # Subset 50 OTUs
 otu_levels <- levels(long_df$i)[1:50]
 otu_subset <- subset(long_df, i %in% otu_levels)
@@ -98,7 +98,7 @@ out <- simulate_glm_burnin_iterations(
             burn_in          = 50
         )
 
-     #plot the interaction, first extract the poisson and plot , then extract from binomial and plot
+  # plot the interaction, first extract the poisson and plot , then extract from binomial and plot
 
      poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
      interaction_terms <- poisson_fixed_all %>%
@@ -112,7 +112,7 @@ out <- simulate_glm_burnin_iterations(
        filter(grepl("treatment.*:i", term))
 
 
-##for the plot apply the following once for poisson and then onece for binomial.
+## for the plot apply the following once for poisson and then onece for binomial.
      
      library(dplyr)
      library(ggplot2)

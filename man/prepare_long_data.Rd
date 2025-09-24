@@ -7,37 +7,36 @@
 prepare_long_data(
   physeq_obj,
   min_species_sum = 50,
-  sampletype_var = "sampletype",
   sampletype_keep = "biologicalsample",
-  location_var = "location",
-  treatment_var = "treatment",
+  col_vars = list(sampletype = "sampletype", location = "location", treatment =
+    "treatment", sample = "sample", samplerep = "samplerep"),
   save_path = NULL
 )
 }
 \arguments{
-\item{physeq_obj}{A `phyloseq` object containing OTU and sample metadata.}
+\item{physeq_obj}{A `phyloseq` object.}
 
-\item{min_species_sum}{Minimum total abundance across all samples required to retain a taxon (default: 50).}
+\item{min_species_sum}{Minimum abundance to retain a taxon (default: 50).}
 
-\item{sampletype_var}{Column name in sample metadata indicating the sample type (default: "sampletype").}
+\item{sampletype_keep}{The value of `sampletype` to retain (default: "biologicalsample").}
 
-\item{sampletype_keep}{The value of `sampletype_var` to retain (default: "biologicalsample").}
+\item{col_vars}{A named list mapping the following required fields:
+- "sampletype"
+- "location"
+- "treatment"
+- "sample"
+- "samplerep"
+Any other variables in the list will also be carried through to output.}
 
-\item{location_var}{Column name in sample metadata representing site or location (default: "location").}
-
-\item{treatment_var}{Column name representing the treatment group (default: "treatment").}
-
-\item{save_path}{Optional path to save filtered phyloseq object (default: NULL).}
+\item{save_path}{Optional path to save the filtered object.}
 }
 \value{
 A list with:
 \describe{
-  \item{physeq_filtered}{A filtered `phyloseq` object.}
-  \item{long_df}{A long-format data frame with columns: i (OTU), Site, Sample, Replicate, treatment, y (count).}
+  \item{physeq_filtered}{Filtered `phyloseq` object}
+  \item{long_df}{Long-format data frame with counts and metadata}
 }
 }
 \description{
-This function filters and reshapes a phyloseq object into a long-format data frame
-suitable for occupancy-abundance modeling. It also prepares metadata including site,
-treatment, sample, and replicate identifiers.
+Filters and reshapes a phyloseq object into long format for occupancy-abundance modeling.
 }

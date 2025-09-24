@@ -24,8 +24,6 @@ knitr::opts_chunk$set(
 library(phyloseq)
 library(Matrix)
 library(TMB)
-# Assume fit.phyloseq and summary.eDNAModel are defined in your package or sourced manually
-
 ```
 ---
 ```{r example, eval=TRUE}
@@ -35,314 +33,35 @@ library(TMB)
 # ----------------------------
 library(phyloseq)
 # ----------------------------
-
-######################################correct code ##################################
-
-
-extract_fixed <- function(model_list, model_name) {
-    do.call(rbind, lapply(seq_along(model_list), function(i) {
-        sm <- as.data.frame(summary(model_list[[i]])$coefficients$cond)
-        sm$term <- rownames(sm)
-        sm$iter <- i
-        sm$model <- model_name
-        sm
-    }))
-}
-
-poisson_fixed_all <- extract_fixed(model_out$poisson_models
-, "poisson")
-
-interaction_terms <- poisson_fixed_all %>%
-    filter(grepl("treatment.*:i", term))
-
-any(grepl("OTU1005", interaction_terms$term))  # SHOULD be FALSE
-
-library(dplyr)
-library(ggplot2)
-
-# Step 1: Extract OTU from term
-interaction_terms_clean <- interaction_terms %>%
-    mutate(OTU = gsub("treatmentRats:i", "", term))
-
-# Step 2: Compute mean and SD of estimates for each OTU
-otu_estimates <- interaction_terms_clean %>%
-    group_by(OTU) %>%
-    summarise(
-        mean_estimate = mean(Estimate, na.rm = TRUE),
-        sd_estimate   = sd(Estimate, na.rm = TRUE)
-    ) %>%                                       
-    arrange(mean_estimate) %>%
-    mutate(OTU = factor(OTU, levels = OTU))  # Ensure ordered factor for plotting
-
-# Step 3: Caterpillar plot with error bars (SD)
-ggplot(otu_estimates, aes(x = OTU, y = mean_estimate)) +
-    geom_point() +
-    geom_errorbar(aes(ymin = mean_estimate - 1.96*sd_estimate,
-                      ymax = mean_estimate + 1.96*sd_estimate),
-                  width = 0.2) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    coord_flip() +
-    labs(
-        title = "Caterpillar Plot: treatmentRats × OTU Interaction Effects",
-        x = "OTU",
-        y = "Mean Estimate ± SD"
-    ) +
-    theme_minimal()
-
-
-binomial_fixed_all <- extract_fixed(model_out$binomial_models, "binomial")
-     
-     interaction_terms <- binomial_fixed_all %>%
-       filter(grepl("treatment.*:i", term))
-
-library(dplyr)
-     library(ggplot2)
-     
-     # Step 1: Extract OTU from term
-     interaction_terms_clean <- interaction_terms %>%
-       mutate(OTU = gsub("treatmentRats:i", "", term))
-     
-     # Step 2: Compute mean and SD of estimates for each OTU
-     otu_estimates <- interaction_terms_clean %>%
-       group_by(OTU) %>%
-       summarise(
-         mean_estimate = mean(Estimate, na.rm = TRUE),
-         sd_estimate   = sd(Estimate, na.rm = TRUE)
-       ) %>%                                       
-       arrange(mean_estimate) %>%
-       mutate(OTU = factor(OTU, levels = OTU))  # Ensure ordered factor for plotting
-     
-     # Step 3: Caterpillar plot with error bars (SD)
-     ggplot(otu_estimates, aes(x = OTU, y = mean_estimate)) +
-       geom_point() +
-       geom_errorbar(aes(ymin = mean_estimate - 1.96*sd_estimate,
-                         ymax = mean_estimate + 1.96*sd_estimate),
-                     width = 0.2) +
-       geom_hline(yintercept = 0, linetype = "dashed") +
-       coord_flip() +
-       labs(
-         title = "Caterpillar Plot: treatmentRats × OTU Interaction Effects",
-         x = "OTU",
-         y = "Mean Estimate ± SD"
-       ) +
-       theme_minimal()
-
-library(ggplot2)
-     library(dplyr)
-     
-     # Assuming `otu_treatment_summary` is your data frame
-     
-     # Reorder OTUs for better visual clarity
-     otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(i = factor(i, levels = unique(i[order(psi_mean)])))
-     
-     # Plot psi_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = psi_mean, y = i, color = treatment)) +
-       geom_point() +
-       geom_errorbarh(aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se), height = 0.2) +
-       labs(
-         x = "Psi Mean (Occupancy Probability)",
-         y = "OTU",
-         title = "Caterpillar Plot for Psi Estimates by OTU and Treatment"
-       ) +
-       theme_minimal() +
-       theme(
-         legend.position = "top",
-         axis.text.y = element_text(size = 7)
-       )
-    
-     
-     
-     library(ggplot2)
-     library(dplyr)
-     
-     # Reorder OTUs by detection probability for clarity
-     otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(i = factor(i, levels = unique(i[order(p_detect_mean)])))
-     
-     # Plot p_detect_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = p_detect_mean, y = i, color = treatment)) +
-       geom_point() +
-       geom_errorbarh(aes(xmin = p_detect_mean - p_detect_se, xmax = p_detect_mean + p_detect_se), height = 0.2) +
-       labs(
-         x = "Detection Probability",
-         y = "OTU",
-         title = "Caterpillar Plot for Detection Probability by OTU and Treatment"
-       ) +
-       theme_minimal() +
-       theme(
-         legend.position = "top",
-         axis.text.y = element_text(size = 7)
-       )
-     
-
 ######################################## Dynamic code #############################################
 library(phyloseq)
+library(eDNAModel)
 library(dplyr)
 library(tidyr)
 library(tibble)
 library(glmmTMB)
 
-prepare_long_data <- function(physeq_obj,
-                              min_species_sum = 50,
-                              sampletype_var = "sampletype",
-                              sampletype_keep = "biologicalsample",
-                              location_var = "location",
-                              treatment_var = "treatment",
-                              save_path = NULL) {
-  
-  # Filter by total abundance across taxa
-  physeq_filtered <- filter_phyloseq_data(
-    phyloseq_obj = physeq_obj,
-    min_species_sum = min_species_sum,
-    save_path = save_path
-  )
-  
-  # Extract sample metadata
-  sample_meta <- as.data.frame(sample_data(physeq_filtered))
-  
-  if (!sampletype_var %in% colnames(sample_meta)) {
-    stop(paste("Column", sampletype_var, "not found in sample_data"))
-  }
-  
-  # Subset samples using metadata
-  keep_samples <- rownames(sample_meta[sample_meta[[sampletype_var]] == sampletype_keep, ])
-  physeq_bio <- prune_samples(keep_samples, physeq_filtered)
-  
-  # Parse Sample and Replicate
-  sample_names_vec <- sample_names(physeq_bio)
-  parsed <- tryCatch({
-    as.data.frame(strcapture(
-      pattern = "^(.*)_r([0-9]+)$",
-      x = sample_names_vec,
-      proto = list(Sample = character(), Replicate = integer())
-    ))
-  }, error = function(e) {
-    message("⚠️ Pattern matching failed: ", e$message)
-    data.frame(Sample = sample_names_vec, Replicate = 1)
-  })
-  
-  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
-  parsed$Replicate[is.na(parsed$Replicate)] <- 1
-  parsed$Sample <- factor(parsed$Sample)
-  parsed$Replicate <- factor(parsed$Replicate)
-  
-  sample_data(physeq_bio)$Sample <- parsed$Sample
-  sample_data(physeq_bio)$Replicate <- parsed$Replicate
-  sample_data(physeq_bio)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
-  
-  # Clean metadata
-  meta_df <- as.data.frame(sample_data(physeq_bio), stringsAsFactors = FALSE)
-  
-  if (!location_var %in% colnames(meta_df)) {
-    stop(paste("Column", location_var, "not found in sample_data"))
-  }
-  
-  meta_df$Site <- factor(trimws(meta_df[[location_var]]))
-  meta_df[[location_var]] <- NULL
-  
-  sample_data(physeq_bio) <- phyloseq::sample_data(meta_df)
-  
-  # Filter rare taxa
-  physeq_bio_filtered <- filter_taxa(physeq_bio, function(x) sum(x > 0) > 5, prune = TRUE)
-  
-  # Convert OTU table to long format
-  otu_mat <- as(otu_table(physeq_bio_filtered), "matrix")
-  if (taxa_are_rows(physeq_bio_filtered)) {
-    otu_mat <- t(otu_mat)
-  }
-  
-  otu_long <- as.data.frame(otu_mat) %>%
-    tibble::rownames_to_column(var = "SampleRep") %>%
-    tidyr::pivot_longer(-SampleRep, names_to = "i", values_to = "y")
-  
-  # Clean metadata for joining
-  meta_df <- as.data.frame(sample_data(physeq_bio_filtered), stringsAsFactors = FALSE)
-  meta_df$SampleRep <- rownames(meta_df)
-  
-  # Join OTU and metadata
-  long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") %>%
-    mutate(
-      i = factor(i),
-      y = as.integer(y)
-    )
-  
-  # Ensure treatment variable exists
-  if (!treatment_var %in% colnames(long_df)) {
-    stop(paste("Column", treatment_var, "not found in metadata"))
-  }
-  
-  # Select only valid output columns
-  output_cols <- c("i", "Site", "Sample", "Replicate", treatment_var, "y")
-  output_cols <- output_cols[output_cols %in% colnames(long_df)]
-  long_df <- long_df %>% dplyr::select(all_of(output_cols))
-  
-  return(list(
-    physeq_filtered = physeq_bio_filtered,
-    long_df = long_df
-  ))
-}
+col_map <- list(
+  sampletype = "sampletype",
+  location   = "location",
+  treatment  = "treatment",
+  sample     = "sample",
+  samplerep  = "samplerep",
+  atoll      = "atoll",
+  exblank    = "exblank",
+  samp.blank = "samp.blank"
+)
 
-###################################################################################################
-# Load libraries
-library(phyloseq)
-library(dplyr)
-library(tidyr)
-library(tibble)
-library(glmmTMB)
-
-# ---------- Step 2: Fit ZIP model and simulate ----------
-simulate_glm_burnin_iterations <- function(data_glm,
-                                           poisson_formula,
-                                           binomial_formula,
-                                           num_iterations = 100,
-                                           burn_in = 50) {
-  data_glm$z_sim <- ifelse(data_glm$y > 0, 1,
-                           rbinom(nrow(data_glm), 1, 0.5))
-  poisson_models <- list()
-  binomial_models <- list()
-
-  for (iter in 1:num_iterations) {
-    Q <- data_glm[data_glm$z_sim == 1, ]
-
-    model_poisson <- glmmTMB(poisson_formula, family = poisson, data = Q)
-    model_binomial <- glmmTMB(binomial_formula, family = binomial, data = data_glm)
-
-    lambda_i <- predict(model_poisson, type = "response", newdata = data_glm)
-    P_i <- predict(model_binomial, type = "response", newdata = data_glm)
-
-    prob_Z1_given_y0 <- P_i * exp(-lambda_i) / (P_i * exp(-lambda_i) + (1 - P_i))
-    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0, 1e-6), 1 - 1e-6)
-
-    data_glm$z_sim[data_glm$y == 0] <-
-      rbinom(sum(data_glm$y == 0), 1, prob_Z1_given_y0[data_glm$y == 0])
-
-    if (iter > burn_in) {
-      poisson_models[[iter - burn_in]] <- model_poisson
-      binomial_models[[iter - burn_in]] <- model_binomial
-    }
-  }
-
-  return(list(
-    poisson_models = poisson_models,
-    binomial_models = binomial_models
-  ))
-}
-
-
-# ---------- Step 3: Run it all ----------
-# Load data and prepare
 physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
 physeq <- readRDS(physeq_path)
 
 out_data <- prepare_long_data(
-    physeq_obj = physeq,
-    min_species_sum = 50,
-    sampletype_var = "sampletype",
-    sampletype_keep = "biologicalsample",
-    location_var = "location",
-    treatment_var = "treatment"
+  physeq_obj        = physeq,
+  min_species_sum   = 50,
+  sampletype_keep   = "biologicalsample",
+  col_vars          = col_map
 )
+
 
 long_df <- out_data$long_df
 
@@ -375,19 +94,9 @@ out <- simulate_glm_burnin_iterations(
             burn_in          = 50
         )
 
-extract_fixed <- function(model_list, model_name) {
-            do.call(rbind, lapply(seq_along(model_list), function(i) {
-                  sm <- as.data.frame(summary(model_list[[i]])$coefficients$cond)
-                  sm$term <- rownames(sm)
-                  sm$iter <- i
-                  sm$model <- model_name
-                  sm
-              }))
-        }
-     
-     
+     #plot the interaction, first extract the poisson and plot , then extract from binomial and plot
+
      poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
-     
      interaction_terms <- poisson_fixed_all %>%
        filter(grepl("treatment.*:i", term))
      
@@ -395,9 +104,11 @@ extract_fixed <- function(model_list, model_name) {
     
      
      binomial_fixed_all <- extract_fixed(out$binomial_models, "binomial")
-     
      interaction_terms <- binomial_fixed_all %>%
        filter(grepl("treatment.*:i", term))
+
+
+##for the plot apply the following once for poisson and then onece for binomial.
      
      library(dplyr)
      library(ggplot2)
@@ -478,6 +189,29 @@ otu_summary <- data.frame(
 # ---------- View Results ----------
 print(otu_summary)
 
+library(ggplot2)
+library(dplyr)
+
+# Assuming otu_summary is already loaded in your environment
+# If not, read or create it accordingly
+
+# Ensure OTUs are ordered by psi_mean for plotting
+otu_summary_ordered <- otu_summary %>%
+  arrange(psi_mean) %>%
+  mutate(OTU = factor(OTU, levels = OTU))
+
+# Caterpillar plot
+ggplot(otu_summary_ordered, aes(x = OTU, y = psi_mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = psi_lwr, ymax = psi_upr), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "Caterpillar Plot of OTU Occupancy Probabilities (ψ)",
+    x = "OTU",
+    y = "Mean ψ (with 95% CI)"
+  ) +
+  theme_minimal()
 
 
 otu_predictions <- otu_subset[, c("i", "treatment")] %>%
@@ -549,270 +283,39 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
          axis.text.y = element_text(size = 7)
        )
      
-
-###################################################rat, no rat, correct ############################
-
-library(dplyr)
-library(ggplot2)
-
-# Step 1: Merge per-row occupancy estimates with treatment info
-psi_treatment_data <- otu_subset %>%
-  mutate(
-    psi = rowMeans(psi_mat)  # Add occupancy predictions to each row
-  ) %>%
-  select(i, treatment, psi) %>%
-  rename(OTU = i)
-
-# Step 2: Clean and classify treatments
-psi_treatment_data <- psi_treatment_data %>%
-  mutate(
-    treatment_group = case_when(
-      treatment == "Rats" ~ "Rats",
-      treatment == "No Rats" ~ "No Rats",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(treatment_group))
-
-# Step 3: Compute summary stats per OTU × treatment group
-otu_psi_summary <- psi_treatment_data %>%
-  group_by(OTU, treatment_group) %>%
-  summarise(
-    psi_mean = mean(psi, na.rm = TRUE),
-    psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
-    .groups  = "drop"
-  )
-
-# Step 4: Get top 10 OTUs by average occupancy
-top_otus <- otu_psi_summary %>%
-  group_by(OTU) %>%
-  summarise(overall_psi = mean(psi_mean)) %>%
-  arrange(desc(overall_psi)) %>%
-  slice(1:10) %>%
-  pull(OTU)
-
-# Step 5: Filter for top OTUs
-otu_psi_plot_data <- otu_psi_summary %>%
-  filter(OTU %in% top_otus) %>%
-  mutate(OTU = factor(OTU, levels = rev(top_otus)))  # reverse order for plot
-
-# Step 6: Caterpillar plot
-ggplot(otu_psi_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
-  geom_point(position = position_dodge(width = 0.5), size = 2) +
-  geom_errorbarh(
-    aes(xmin = psi_mean - 1.96*psi_se, xmax = psi_mean + 1.96*psi_se),
-    height = 0.2,
-    position = position_dodge(width = 0.5)
-  ) +
-  scale_color_manual(
-    values = c("No Rats" = "tomato", "Rats" = "steelblue"),
-    name = "Treatment"
-  ) +
-  labs(
-    x = expression("Estimated occupancy probability (" * psi * ")"),
-    y = "OTU (taxon)",
-    title = "Caterpillar Plot of OTU Occupancy by Rat Presence"
-  ) +
-  theme_minimal(base_size = 13)
-
-
-################################################  filter ##########################################
-library(dplyr)
- library(tidyr)
- 
- # Step 1: Compute mean and 95% CI per OTU × treatment group
- otu_ci_summary <- psi_treatment_data %>%
-     group_by(OTU, treatment_group) %>%
-     summarise(
-         psi_mean = mean(psi, na.rm = TRUE),
-         psi_se   = sd(psi, na.rm = TRUE) / sqrt(n()),
-         psi_lwr  = psi_mean - 1.96 * psi_se,
-         psi_upr  = psi_mean + 1.96 * psi_se,
-         .groups  = "drop"
-     )
- 
- # Step 2: Reshape to wide format
- otu_ci_wide <- otu_ci_summary %>%
-     pivot_wider(
-         names_from = treatment_group,
-         values_from = c(psi_mean, psi_lwr, psi_upr),
-         names_sep = "_"
-     )
- 
- # Step 3: Rename columns to be valid R variable names (handles "No Rats" → "No.Rats")
- names(otu_ci_wide) <- make.names(names(otu_ci_wide))
- 
- # Step 4: Identify OTUs exclusive to one treatment
- exclusive_otus <- otu_ci_wide %>%
-     mutate(
-         rat_exclusive = psi_lwr_Rats > 0 & psi_upr_No.Rats <= 0,
-         no_rat_exclusive = psi_lwr_No.Rats > 0 & psi_upr_Rats <= 0
-     ) %>%
-     filter(rat_exclusive | no_rat_exclusive)
-
- #What it means:
-
-#Select OTUs that have:
-#No occupancy estimates for Rats group (psi_lwr_Rats is NA)
-#But valid occupancy estimates for No Rats group (psi_lwr_No.Rats is not NA)
-#This indicates these OTUs were only observed in “No Rats” sites, and there’s no data (or zeros) in sites with rats.
-
-exclusive_no_rats <- otu_ci_wide %>%
-    filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats))
-
-#What it means:
-#Select OTUs that have:
-#No occupancy estimates for No Rats group (psi_lwr_No.Rats is NA)
-#But valid occupancy estimates for Rats group (psi_lwr_Rats is not NA)
-#These OTUs were only observed in “Rats” sites, and there’s no data from the No Rats sites.
-
- exclusive_rats <- otu_ci_wide %>%
-     filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats))
- 
- # Combine for plotting
- exclusive_otus <- bind_rows(exclusive_no_rats, exclusive_rats)
- 
- library(dplyr)
- library(tidyr)
- library(ggplot2)
- 
- # Step 1: Identify exclusive OTUs
- exclusive_no_rats <- otu_ci_wide %>%
-     filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
-     mutate(treatment_group = "No Rats",
-            psi_mean = psi_mean_No.Rats,
-            psi_lwr = psi_lwr_No.Rats,
-            psi_upr = psi_upr_No.Rats)
- 
- exclusive_rats <- otu_ci_wide %>%
-     filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
-     mutate(treatment_group = "Rats",
-            psi_mean = psi_mean_Rats,
-            psi_lwr = psi_lwr_Rats,
-            psi_upr = psi_upr_Rats)
- 
- # Step 2: Combine both exclusive OTU sets
- exclusive_otu_plot_data <- bind_rows(exclusive_no_rats, exclusive_rats) %>%
-     select(OTU, treatment_group, psi_mean, psi_lwr, psi_upr) %>%
-     mutate(OTU = factor(OTU, levels = rev(unique(OTU))))  # Top-down order
- 
- # Step 3: Caterpillar plot
- ggplot(exclusive_otu_plot_data, aes(x = psi_mean, y = OTU, color = treatment_group)) +
-     geom_point(size = 2, position = position_dodge(width = 0.5)) +
-     geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, position = position_dodge(width = 0.5)) +
-     scale_color_manual(
-        values = c("No Rats" = "tomato", "Rats" = "steelblue"),
-         name = "Exclusive To"
-     ) +
-     labs(
-         x = expression("Estimated occupancy probability (" * psi * ")"),
-         y = "OTU (taxon)",
-         title = "Caterpillar Plot: OTUs Occupying Only One Treatment Group"
-     ) +
-     theme_minimal(base_size = 13)
-#####################################################10 otu filter###############################
-top_n_otus <- 15  # You can change to any number
-
-exclusive_no_rats <- otu_ci_wide %>%
-  filter(is.na(psi_lwr_Rats) & !is.na(psi_lwr_No.Rats)) %>%
-  mutate(
-    treatment_group = "No Rats",
-    psi_mean = psi_mean_No.Rats,
-    psi_lwr = psi_lwr_No.Rats,
-    psi_upr = psi_upr_No.Rats
-  ) %>%
-  arrange(desc(psi_mean)) %>%
-  slice(1:top_n_otus) %>%
-  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))
-
-
-exclusive_rats <- otu_ci_wide %>%
-  filter(is.na(psi_lwr_No.Rats) & !is.na(psi_lwr_Rats)) %>%
-  filter(!OTU %in% exclusive_no_rats$OTU) %>%  # REMOVE overlaps
-  mutate(
-    treatment_group = "Rats",
-    psi_mean = psi_mean_Rats,
-    psi_lwr = psi_lwr_Rats,
-    psi_upr = psi_upr_Rats
-  ) %>%
-  arrange(desc(psi_mean)) %>%
-  slice(1:top_n_otus) %>%
-  mutate(OTU = factor(OTU, levels = rev(unique(OTU))))
-
-
-ggplot(exclusive_no_rats, aes(x = psi_mean, y = OTU)) +
-  geom_point(color = "tomato", size = 2) +
-  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, color = "tomato") +
-  labs(
-    x = expression("Estimated occupancy probability (" * psi * ")"),
-    y = "OTU (taxon)",
-    title = paste("Top", top_n_otus, "OTUs Exclusive to 'No Rats'")
-  ) +
-  theme_minimal(base_size = 13)
-
-
-ggplot(exclusive_rats, aes(x = psi_mean, y = OTU)) +
-  geom_point(color = "steelblue", size = 2) +
-  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2, color = "steelblue") +
-  labs(
-    x = expression("Estimated occupancy probability (" * psi * ")"),
-    y = "OTU (taxon)",
-    title = paste("Top", top_n_otus, "OTUs Exclusive to 'Rats'")
-  ) +
-  theme_minimal(base_size = 13)
-
-
 ########################################heat map##########################################
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
-# Step 1: Average posterior ψ per OTU × Site
-psi_df <- otu_subset %>%
-  mutate(psi = rowMeans(psi_mat)) %>%
-  select(i, Site, psi)  # i = OTU ID
-
-# Step 2: Pivot to wide format
-psi_wide <- psi_df %>%
-  group_by(i, Site) %>%
-  summarise(psi = mean(psi), .groups = "drop") %>%
-  pivot_wider(names_from = Site, values_from = psi)
-
-# Step 3: Convert back to long format for plotting
-psi_long <- psi_wide %>%
-  pivot_longer(-i, names_to = "Site", values_to = "psi")
-
-# Step 4: Focus on top 20 OTUs by overall mean occupancy
-top_otus <- psi_long %>%
-  group_by(i) %>%
-  summarise(mean_psi = mean(psi, na.rm = TRUE)) %>%
-  arrange(desc(mean_psi)) %>%
-  slice_head(n = 20) %>%
-  pull(i)
-
-psi_long_top <- psi_long %>%
-  filter(i %in% top_otus) %>%
-  mutate(i = factor(i, levels = rev(top_otus)))  # reverse for plot order
-
-# Step 5: Plot heatmap
-ggplot(psi_long_top, aes(x = Site, y = i, fill = psi)) +
-  geom_tile(color = "white") +
-  scale_fill_viridis_c(
-    name = expression(Psi),
-    option = "plasma",  # lighter and colorful
-    direction = -1,
-    begin = 0.2, end = 1  # exclude darkest part
-  ) +
-  labs(
-    title = "Heatmap: Posterior Occupancy Probability (ψ)",
-    x = "Site",
-    y = "OTU"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    panel.grid = element_blank()
-  )
+#####################Heat map######################################
+     library(dplyr)
+     
+     otu_pred_df <- otu_subset %>%
+       dplyr::select(i, Site) %>%
+       mutate(
+         psi = rowMeans(psi_mat),
+         p_detect = rowMeans(p_detect_mat),
+         detected = p_detect == 1,
+         display_psi = ifelse(detected, 1, psi)
+       )
+     
+     otu_pred_df <- otu_pred_df %>%
+       mutate(i = factor(i, levels = unique(i[order(-psi)])))
+     
+     # Step 3: Plot heatmap with Site on x-axis and OTU on y-axis
+     ggplot(otu_pred_df, aes(x = Site, y = i)) +
+       geom_tile(data = filter(otu_pred_df, detected), fill = "grey70") +
+       geom_tile(data = filter(otu_pred_df, !detected), aes(fill = display_psi)) +
+       scale_fill_gradient(low = "blue", high = "orange", name = "Occupancy\nProbability (ψ)") +
+       labs(
+         x = "Site",
+         y = "OTU",
+         title = "Predicted Probability of Species Occupancy by OTU and Site\nGrey = Detected (p_detect = 1)"
+       ) +
+       theme_minimal() +
+       theme(
+         axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.text.y = element_text(size = 6),
+         legend.position = "right"
+       )
+     
 
 ############################### model comparison#########################################
 
@@ -820,16 +323,16 @@ ggplot(psi_long_top, aes(x = Site, y = i, fill = psi)) +
 
 out1 <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
-  poisson_formula  = y ~ Site + i + (1 | Sample) + (1 | Replicate),
-  binomial_formula = z_sim ~ Site + i,
+  poisson_formula  = y ~ (1|Site) + i*treatment + (1 | Sample) + (1 | Replicate),
+  binomial_formula = z_sim ~ (1|Site) + i*treatment,
   num_iterations   = 100,
   burn_in          = 50
 )
 
 out2 <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
-  poisson_formula  = y ~ Site + i,
-  binomial_formula = z_sim ~ Site + i,
+  poisson_formula  = y ~ (1|Site) + i*treatment,
+  binomial_formula = z_sim ~ (1|Site) + i*treatment,
   num_iterations   = 100,
   burn_in          = 50
 )

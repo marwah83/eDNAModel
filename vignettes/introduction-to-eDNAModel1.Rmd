@@ -94,8 +94,8 @@ levels(otu_subset$treatment)
 # Fit model
 out <- simulate_glm_burnin_iterations(
             data_glm = otu_subset,
-            poisson_formula = y ~ (1|Site) + (1 | Sample) + (1 | Replicate) +treatment*i+ offset(log_total_reads),
-            binomial_formula = z_sim ~ (1|Site)+ treatment*i,
+            poisson_formula = y ~ (1|Site)*i + (1 | Sample)*i + (1 | Replicate)*i +treatment*i,
+            binomial_formula = z_sim ~ (1|Site)*i+ treatment*i,
             num_iterations   = 100,
             burn_in          = 50
         )
@@ -216,6 +216,31 @@ ggplot(otu_summary_ordered, aes(x = OTU, y = psi_mean)) +
     title = "Caterpillar Plot of OTU Occupancy Probabilities (ψ)",
     x = "OTU",
     y = "Mean ψ (with 95% CI)"
+  ) +
+  theme_minimal()
+
+
+library(ggplot2)
+library(dplyr)
+
+# Assuming otu_summary is already loaded in your environment
+# If not, read or create it accordingly
+
+# Ensure OTUs are ordered by psi_mean for plotting
+otu_summary_ordered <- otu_summary %>%
+  arrange(p_detect_mean) %>%
+  mutate(OTU = factor(OTU, levels = OTU))
+
+# Caterpillar plot
+ggplot(otu_summary_ordered, aes(x = OTU, y = p_detect_mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = p_detect_lwr, ymax = p_detect_upr), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "Caterpillar Plot of OTU detection Probabilities (ψ)",
+    x = "OTU",
+    y = "Detection (with 95% CI)"
   ) +
   theme_minimal()
 

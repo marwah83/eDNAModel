@@ -23,16 +23,9 @@ knitr::opts_chunk$set(
 ```{r setup1, include=FALSE}
 library(phyloseq)
 library(Matrix)
-library(TMB)
 ```
 ---
-```{r example, eval=TRUE}
-# Create OTU table
-# ----------------------------
-# LOAD REQUIRED PACKAGE
-# ----------------------------
-library(phyloseq)
-# ----------------------------
+
 ######################################## Dynamic code #############################################
 library(phyloseq)
 library(eDNAModel)

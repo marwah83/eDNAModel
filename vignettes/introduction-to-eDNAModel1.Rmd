@@ -23,16 +23,9 @@ knitr::opts_chunk$set(
 ```{r setup1, include=FALSE}
 library(phyloseq)
 library(Matrix)
-library(TMB)
 ```
 ---
-```{r example, eval=TRUE}
-# Create OTU table
-# ----------------------------
-# LOAD REQUIRED PACKAGE
-# ----------------------------
-library(phyloseq)
-# ----------------------------
+
 ######################################## Dynamic code #############################################
 library(phyloseq)
 library(eDNAModel)
@@ -65,7 +58,18 @@ out_data <- prepare_long_data(
 
 long_df <- out_data$long_df
 
+############adding offset###########
 
+library(dplyr)
+
+# Add total read depth per sample (across all OTUs)
+long_df <- long_df %>%
+  group_by(Sample) %>%
+  mutate(total_reads = sum(y)) %>%
+  ungroup()
+
+long_df$log_total_reads <- log(long_df$total_reads)
+####################################################
 # Subset 50 OTUs
 otu_levels <- levels(long_df$i)[1:50]
 otu_subset <- subset(long_df, i %in% otu_levels)
@@ -88,13 +92,13 @@ levels(otu_subset$treatment)
 # Fit model
 out <- simulate_glm_burnin_iterations(
             data_glm = otu_subset,
-            poisson_formula = y ~ (1|Site) + (1 | Sample) + (1 | Replicate) +treatment*i,
+            poisson_formula = y ~ (1|Site) + (1 | Sample) + (1 | Replicate) +treatment*i+ offset(log_total_reads),
             binomial_formula = z_sim ~ (1|Site)+ treatment*i,
             num_iterations   = 100,
             burn_in          = 50
         )
 
-     #plot the interaction, first extract the poisson and plot , then extract from binomial and plot
+  # plot the interaction, first extract the poisson and plot , then extract from binomial and plot
 
      poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
      interaction_terms <- poisson_fixed_all %>%
@@ -108,7 +112,7 @@ out <- simulate_glm_burnin_iterations(
        filter(grepl("treatment.*:i", term))
 
 
-##for the plot apply the following once for poisson and then onece for binomial.
+## for the plot apply the following once for poisson and then onece for binomial.
      
      library(dplyr)
      library(ggplot2)
@@ -420,4 +424,11 @@ overall_metrics <- data.frame(
 # View the comparison
 print(overall_metrics)
 
+<<<<<<< HEAD
 ```
+=======
+
+
+
+
+>>>>>>> 8124d3acf61a62817d084f206b11a28e6b06aace

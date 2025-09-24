@@ -26,6 +26,8 @@ library(Matrix)
 ```
 ---
 
+```{r example, include=FALSE}
+
 ######################################## Dynamic code #############################################
 library(phyloseq)
 library(eDNAModel)
@@ -424,11 +426,4 @@ overall_metrics <- data.frame(
 # View the comparison
 print(overall_metrics)
 
-<<<<<<< HEAD
 ```
-=======
-
-
-
-
->>>>>>> 8124d3acf61a62817d084f206b11a28e6b06aace

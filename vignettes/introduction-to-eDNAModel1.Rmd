@@ -24,8 +24,6 @@ knitr::opts_chunk$set(
 library(phyloseq)
 library(Matrix)
 library(TMB)
-# Assume fit.phyloseq and summary.eDNAModel are defined in your package or sourced manually
-
 ```
 ---
 ```{r example, eval=TRUE}

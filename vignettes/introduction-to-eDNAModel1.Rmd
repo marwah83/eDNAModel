@@ -91,14 +91,6 @@ levels(otu_subset$treatment)
 
 
 
-# Fit model
-#out <- simulate_glm_burnin_iterations(
-           # data_glm = otu_subset,
-           # poisson_formula = y ~ (1|Site)*i + (1 | Sample)*i + (1 | Replicate)*i +treatment*i,
-           # binomial_formula = z_sim ~ (1|Site)*i+ treatment*i,
-            #num_iterations   = 100,
-           # burn_in          = 50
-    #    )
 
 out <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,

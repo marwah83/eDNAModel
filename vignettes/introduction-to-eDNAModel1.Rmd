@@ -90,8 +90,6 @@ otu_subset$treatment <- droplevels(factor(otu_subset$treatment))
 levels(otu_subset$treatment)
 
 
-
-
 out <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
   poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment + offset(log_total_reads)),

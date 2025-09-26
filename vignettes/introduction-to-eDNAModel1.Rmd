@@ -353,20 +353,22 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
 
 ##For example 
 
+
 out1 <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
-  poisson_formula  = y ~ (1|Site) + i*treatment + (1 | Sample) + (1 | Replicate),
-  binomial_formula = z_sim ~ (1|Site) + i*treatment,
-  num_iterations   = 100,
-  burn_in          = 50
+  poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment + offset(log_total_reads)),
+  binomial_rhs = quote((1 | Site) + treatment),
+  num_iterations = 100,
+  burn_in = 50
 )
+
 
 out2 <- simulate_glm_burnin_iterations(
   data_glm = otu_subset,
-  poisson_formula  = y ~ (1|Site) + i*treatment,
-  binomial_formula = z_sim ~ (1|Site) + i*treatment,
-  num_iterations   = 100,
-  burn_in          = 50
+  poisson_rhs = quote((1 | Site) + treatment + offset(log_total_reads)),
+  binomial_rhs = quote((1 | Site) + treatment),
+  num_iterations = 100,
+  burn_in = 50
 )
 
 

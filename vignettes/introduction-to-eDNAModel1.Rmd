@@ -27,6 +27,292 @@ library(Matrix)
 ---
 
 ```{r example, include=FALSE}
+```
+
+
+library(phyloseq)
+library(eDNAModel)
+library(dplyr)
+
+
+physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+physeq <- readRDS(physeq_path)
+
+
+prepare_long_data <- function(physeq_obj,
+                              min_species_sum = 50,
+                              sampletype_keep = NULL) {
+  
+  # Filter by total abundance
+  physeq_filtered <- filter_phyloseq_data(physeq_obj, min_species_sum = min_species_sum)
+  
+  # Extract sample metadata
+  sample_meta <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
+  
+  # Optional filtering by sampletype
+  if (!is.null(sampletype_keep)) {
+    if (!"sampletype" %in% names(sample_meta)) {
+      stop("sampletype column missing in sample_data")
+    }
+    keep_samples <- rownames(sample_meta[sample_meta$sampletype == sampletype_keep, ])
+    physeq_filtered <- prune_samples(keep_samples, physeq_filtered)
+  }
+  
+  # Parse replicate and sample
+  sample_names_vec <- sample_names(physeq_filtered)
+  parsed <- strcapture("^(.*)_r([0-9]+)$", sample_names_vec,
+                       proto = list(Sample = character(), Replicate = integer()))
+  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
+  parsed$Replicate[is.na(parsed$Replicate)] <- 1
+  parsed$Sample <- factor(parsed$Sample)
+  parsed$Replicate <- factor(parsed$Replicate)
+  
+  sample_data(physeq_filtered)$Sample <- parsed$Sample
+  sample_data(physeq_filtered)$Replicate <- parsed$Replicate
+  sample_data(physeq_filtered)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
+  
+  # Pull out metadata again, and rename "location" to "Site"
+  meta_df <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
+  if (!"location" %in% names(meta_df)) {
+    stop("location column missing in sample_data")
+  }
+  meta_df$Site <- factor(trimws(meta_df$location))
+  meta_df$SampleRep <- rownames(meta_df)
+  
+  # Filter low-prevalence taxa
+  physeq_filtered <- filter_taxa(physeq_filtered, function(x) sum(x > 0) > 5, prune = TRUE)
+  
+  # Prepare OTU long format
+  otu_mat <- as(otu_table(physeq_filtered), "matrix")
+  if (taxa_are_rows(physeq_filtered)) {
+    otu_mat <- t(otu_mat)
+  }
+  
+  otu_long <- as.data.frame(otu_mat) %>%
+    tibble::rownames_to_column("SampleRep") %>%
+    tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
+  
+  # Merge OTU and metadata
+  long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
+    mutate(
+      OTU = factor(OTU),
+      y = as.integer(y)
+    )
+  
+  return(list(
+    physeq_filtered = physeq_filtered,
+    long_df = long_df
+  ))
+}
+
+simulate_glm_burnin_iterations <- function(data_glm,
+                                           poisson_formula,
+                                           binomial_formula,
+                                           num_iterations = 100,
+                                           burn_in = 50,
+                                           species_var = "OTU") {
+  # Step 1: Initialize latent occupancy variable
+  data_glm$z_sim <- ifelse(data_glm$y > 0, 1, rbinom(nrow(data_glm), 1, 0.5))
+  
+  poisson_models <- list()
+  binomial_models <- list()
+  
+  for (iter in 1:num_iterations) {
+    # Subset data where occupancy = 1
+    Q <- data_glm[data_glm$z_sim == 1, ]
+    
+    # Step 2: Fit Poisson and Binomial models
+    model_poisson <- glmmTMB::glmmTMB(poisson_formula, family = poisson, data = Q)
+    model_binomial <- glmmTMB::glmmTMB(binomial_formula, family = binomial, data = data_glm)
+    
+    # Step 3: Predict lambda (abundance) and P (occupancy)
+    lambda_i <- predict(model_poisson, type = "response", newdata = data_glm)
+    P_i <- predict(model_binomial, type = "response", newdata = data_glm)
+    
+    # Step 4: Update z_sim based on posterior probability
+    prob_Z1_given_y0 <- P_i * exp(-lambda_i) / (P_i * exp(-lambda_i) + (1 - P_i))
+    prob_Z1_given_y0 <- pmin(pmax(prob_Z1_given_y0, 1e-6), 1 - 1e-6)
+    data_glm$z_sim[data_glm$y == 0] <-
+      rbinom(sum(data_glm$y == 0), 1, prob_Z1_given_y0[data_glm$y == 0])
+    
+    # Step 5: Store models post burn-in
+    if (iter > burn_in) {
+      poisson_models[[iter - burn_in]] <- model_poisson
+      binomial_models[[iter - burn_in]] <- model_binomial
+    }
+  }
+  
+  return(list(
+    poisson_models = poisson_models,
+    binomial_models = binomial_models
+  ))
+}
+
+
+FitModel <- function(phyloseq,
+                     poisson_rhs,
+                     binomial_rhs,
+                     min_species_sum = 50,
+                     sampletype_keep = NULL,      # ✅ default NULL now
+                     num_iterations = 100,
+                     burn_in = 50) {
+  
+  # Prepare data
+  prep <- prepare_long_data(
+    physeq_obj = phyloseq,
+    min_species_sum = min_species_sum,
+    sampletype_keep = sampletype_keep  # ✅ Pass user value (or NULL)
+  )
+  
+  long_df <- prep$long_df
+  replicate_var <- "Replicate"
+  
+  # Build formulas with correct species interactions
+  poisson_formula <- build_formula_with_species_interaction(
+    rhs = poisson_rhs,
+    response = "y",
+    species_var = "OTU",
+    lower_level = replicate_var
+  )
+  
+  binomial_formula <- build_formula_with_species_interaction(
+    rhs = binomial_rhs,
+    response = "z_sim",
+    species_var = "OTU",
+    lower_level = replicate_var
+  )
+  
+  # Fit model
+  result <- simulate_glm_burnin_iterations(
+    data_glm = long_df,
+    poisson_formula = poisson_formula,
+    binomial_formula = binomial_formula,
+    num_iterations = num_iterations,
+    burn_in = burn_in
+  )
+  
+return(list(
+  poisson_models = result$poisson_models,
+  binomial_models = result$binomial_models,
+  data_glm = long_df  # ✅ Add this line
+))
+
+}
+
+
+build_formula_with_species_interaction <- function(rhs, response = "y", species_var = "OTU", lower_level = "Replicate") {
+  rhs_str <- paste(deparse(rhs), collapse = "")
+  terms <- strsplit(rhs_str, "\\s*\\+\\s*")[[1]]
+  terms <- trimws(terms)
+  
+  new_terms <- vapply(terms, function(term) {
+    if (grepl("^offset\\s*\\(", term)) {
+      return(term)
+    } else if (grepl(lower_level, term)) {
+      return(term)
+    } else {
+      return(paste0("(", term, ") * ", species_var))
+    }
+  }, character(1))
+  
+  full_formula_str <- paste(response, "~", paste(new_terms, collapse = " + "))
+  as.formula(full_formula_str)
+}
+
+# Define model right-hand sides using formula()
+poisson_rhs <- quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment)
+binomial_rhs <- quote((1 | Site) + treatment)
+
+
+# Fit the model
+out <- FitModel(
+  phyloseq = physeq,
+  poisson_rhs = poisson_rhs,
+  binomial_rhs = binomial_rhs,
+  num_iterations = 100,
+  burn_in = 50,
+  sampletype_keep = "biologicalsample"
+)
+
+
+# Get the names of the first 50 OTUs (or any 50 you want)
+otu_names_to_keep <- taxa_names(physeq)[1:50]
+
+# Subset the phyloseq object to those OTUs
+physeq_50 <- prune_taxa(otu_names_to_keep, physeq)
+
+
+FitModel <- function(phyloseq,
+                     poisson_rhs,
+                     binomial_rhs,
+                     min_species_sum = 50,
+                     sampletype_keep = NULL,
+                     num_iterations = 100,
+                     burn_in = 50) {
+  
+  # Prepare long-format data
+  prep <- prepare_long_data(
+    physeq_obj = phyloseq,
+    min_species_sum = min_species_sum,
+    sampletype_keep = sampletype_keep
+  )
+  long_df <- prep$long_df
+  replicate_var <- "Replicate"
+  
+  # 🔁 Automatically relevel OTU to the most abundant
+  otu_counts <- table(long_df$OTU)
+  top_otu <- names(sort(otu_counts, decreasing = TRUE))[1]
+  message("📌 Using most abundant OTU as reference: ", top_otu)
+  long_df$OTU <- relevel(long_df$OTU, ref = top_otu)
+  
+  # 💡 OPTIONAL: filter treatment != "0" and drop unused levels
+  if ("treatment" %in% colnames(long_df)) {
+    long_df <- long_df %>%
+      dplyr::filter(treatment != "0")
+    
+    long_df$treatment <- droplevels(factor(long_df$treatment))
+  }
+
+  # Build formulas with correct species interactions
+  poisson_formula <- build_formula_with_species_interaction(
+    rhs = poisson_rhs,
+    response = "y",
+    species_var = "OTU",
+    lower_level = replicate_var
+  )
+  
+  binomial_formula <- build_formula_with_species_interaction(
+    rhs = binomial_rhs,
+    response = "z_sim",
+    species_var = "OTU",
+    lower_level = replicate_var
+  )
+  
+  # Fit model
+  result <- simulate_glm_burnin_iterations(
+    data_glm = long_df,
+    poisson_formula = poisson_formula,
+    binomial_formula = binomial_formula,
+    num_iterations = num_iterations,
+    burn_in = burn_in
+  )
+  
+  return(result)
+}
+
+
+out <- FitModel(
+  phyloseq = physeq_50,
+  poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment),
+  binomial_rhs = quote((1 | Site) + treatment),
+  num_iterations = 100,
+  burn_in = 50,
+  sampletype_keep = "biologicalsample"
+)
+
+
+
+
 
 ######################################## Dynamic code #############################################
 library(phyloseq)
@@ -103,14 +389,14 @@ out <- simulate_glm_burnin_iterations(
 
      poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
      interaction_terms <- poisson_fixed_all %>%
-       filter(grepl("treatment.*:i", term))
+       filter(grepl("treatment.*:OTU", term))
      
      any(grepl("OTU1005", interaction_terms$term))  # SHOULD be FALSE
     
      
      binomial_fixed_all <- extract_fixed(out$binomial_models, "binomial")
      interaction_terms <- binomial_fixed_all %>%
-       filter(grepl("treatment.*:i", term))
+       filter(grepl("treatment.*:OTU", term))
 
 
 ## for the plot apply the following once for poisson and then onece for binomial.
@@ -120,7 +406,7 @@ out <- simulate_glm_burnin_iterations(
      
      # Step 1: Extract OTU from term
      interaction_terms_clean <- interaction_terms %>%
-       mutate(OTU = gsub("treatmentRats:i", "", term))
+       mutate(OTU = gsub("treatmentRats:OTU", "", term))
      
      # Step 2: Compute mean and SD of estimates for each OTU
      otu_estimates <- interaction_terms_clean %>%
@@ -164,7 +450,7 @@ p_detect_mat <- 1 - exp(-lambda_mat)
 
 # ---------- Step 5: Summarize per OTU ----------
 otu_summary <- data.frame(
-  OTU           = otu_subset$i,
+  OTU           = otu_subset$OTU,
   psi_mean      = rowMeans(psi_mat),
   psi_se        = apply(psi_mat, 1, sd),
   psi_lwr       = apply(psi_mat, 1, quantile, probs = 0.025),
@@ -244,7 +530,7 @@ ggplot(otu_summary_ordered, aes(x = OTU, y = p_detect_mean)) +
   theme_minimal()
 
 
-otu_predictions <- otu_subset[, c("i", "treatment")] %>%
+otu_predictions <- otu_subset[, c("OTU", "treatment")] %>%
        mutate(
          psi_mean      = rowMeans(psi_mat),
          psi_se        = apply(psi_mat, 1, sd),
@@ -255,7 +541,7 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
        )
      
      otu_treatment_summary <- otu_predictions %>%
-       group_by(i, treatment) %>%
+       group_by(OTU, treatment) %>%
        summarise(
          psi_mean        = mean(psi_mean),
          psi_se          = mean(psi_se),
@@ -274,10 +560,10 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
      
      # Reorder OTUs for better visual clarity
      otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(i = factor(i, levels = unique(i[order(psi_mean)])))
+       mutate(OTU = factor(OTU, levels = unique(OTU[order(psi_mean)])))
      
      # Plot psi_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = psi_mean, y = i, color = treatment)) +
+     ggplot(otu_treatment_summary, aes(x = psi_mean, y = OTU, color = treatment)) +
        geom_point() +
        geom_errorbarh(aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se), height = 0.2) +
        labs(
@@ -296,10 +582,10 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
      
      # Reorder OTUs by detection probability for clarity
      otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(i = factor(i, levels = unique(i[order(p_detect_mean)])))
+       mutate(OTU = factor(OTU, levels = unique(OTU[order(p_detect_mean)])))
      
      # Plot p_detect_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = p_detect_mean, y = i, color = treatment)) +
+     ggplot(otu_treatment_summary, aes(x = p_detect_mean, y = OTU, color = treatment)) +
        geom_point() +
        geom_errorbarh(aes(xmin = p_detect_mean - p_detect_se, xmax = p_detect_mean + p_detect_se), height = 0.2) +
        labs(
@@ -320,7 +606,7 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
      library(dplyr)
      
      otu_pred_df <- otu_subset %>%
-       dplyr::select(i, Site) %>%
+       dplyr::select(OTU, Site) %>%
        mutate(
          psi = rowMeans(psi_mat),
          p_detect = rowMeans(p_detect_mat),
@@ -329,10 +615,10 @@ otu_predictions <- otu_subset[, c("i", "treatment")] %>%
        )
      
      otu_pred_df <- otu_pred_df %>%
-       mutate(i = factor(i, levels = unique(i[order(-psi)])))
+       mutate(OTU = factor(OTU, levels = unique(OTU[order(-psi)])))
      
      # Step 3: Plot heatmap with Site on x-axis and OTU on y-axis
-     ggplot(otu_pred_df, aes(x = Site, y = i)) +
+     ggplot(otu_pred_df, aes(x = Site, y = OTU)) +
        geom_tile(data = filter(otu_pred_df, detected), fill = "grey70") +
        geom_tile(data = filter(otu_pred_df, !detected), aes(fill = display_psi)) +
        scale_fill_gradient(low = "blue", high = "orange", name = "Occupancy\nProbability (ψ)") +

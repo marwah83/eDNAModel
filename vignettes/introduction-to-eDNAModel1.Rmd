@@ -153,99 +153,6 @@ FitModel <- function(phyloseq,
                      poisson_rhs,
                      binomial_rhs,
                      min_species_sum = 50,
-                     sampletype_keep = NULL,      # ✅ default NULL now
-                     num_iterations = 100,
-                     burn_in = 50) {
-  
-  # Prepare data
-  prep <- prepare_long_data(
-    physeq_obj = phyloseq,
-    min_species_sum = min_species_sum,
-    sampletype_keep = sampletype_keep  # ✅ Pass user value (or NULL)
-  )
-  
-  long_df <- prep$long_df
-  replicate_var <- "Replicate"
-  
-  # Build formulas with correct species interactions
-  poisson_formula <- build_formula_with_species_interaction(
-    rhs = poisson_rhs,
-    response = "y",
-    species_var = "OTU",
-    lower_level = replicate_var
-  )
-  
-  binomial_formula <- build_formula_with_species_interaction(
-    rhs = binomial_rhs,
-    response = "z_sim",
-    species_var = "OTU",
-    lower_level = replicate_var
-  )
-  
-  # Fit model
-  result <- simulate_glm_burnin_iterations(
-    data_glm = long_df,
-    poisson_formula = poisson_formula,
-    binomial_formula = binomial_formula,
-    num_iterations = num_iterations,
-    burn_in = burn_in
-  )
-  
-return(list(
-  poisson_models = result$poisson_models,
-  binomial_models = result$binomial_models,
-  data_glm = long_df  # ✅ Add this line
-))
-
-}
-
-
-build_formula_with_species_interaction <- function(rhs, response = "y", species_var = "OTU", lower_level = "Replicate") {
-  rhs_str <- paste(deparse(rhs), collapse = "")
-  terms <- strsplit(rhs_str, "\\s*\\+\\s*")[[1]]
-  terms <- trimws(terms)
-  
-  new_terms <- vapply(terms, function(term) {
-    if (grepl("^offset\\s*\\(", term)) {
-      return(term)
-    } else if (grepl(lower_level, term)) {
-      return(term)
-    } else {
-      return(paste0("(", term, ") * ", species_var))
-    }
-  }, character(1))
-  
-  full_formula_str <- paste(response, "~", paste(new_terms, collapse = " + "))
-  as.formula(full_formula_str)
-}
-
-# Define model right-hand sides using formula()
-poisson_rhs <- quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment)
-binomial_rhs <- quote((1 | Site) + treatment)
-
-
-# Fit the model
-out <- FitModel(
-  phyloseq = physeq,
-  poisson_rhs = poisson_rhs,
-  binomial_rhs = binomial_rhs,
-  num_iterations = 100,
-  burn_in = 50,
-  sampletype_keep = "biologicalsample"
-)
-
-
-# Get the names of the first 50 OTUs (or any 50 you want)
-otu_names_to_keep <- taxa_names(physeq)[1:50]
-
-# Subset the phyloseq object to those OTUs
-physeq_50 <- prune_taxa(otu_names_to_keep, physeq)
-
-
-FitModel <- function(phyloseq,
-                     poisson_rhs,
-                     binomial_rhs,
-                     min_species_sum = 50,
                      sampletype_keep = NULL,
                      num_iterations = 100,
                      burn_in = 50) {
@@ -299,6 +206,50 @@ FitModel <- function(phyloseq,
   
   return(result)
 }
+
+
+build_formula_with_species_interaction <- function(rhs, response = "y", species_var = "OTU", lower_level = "Replicate") {
+  rhs_str <- paste(deparse(rhs), collapse = "")
+  terms <- strsplit(rhs_str, "\\s*\\+\\s*")[[1]]
+  terms <- trimws(terms)
+  
+  new_terms <- vapply(terms, function(term) {
+    if (grepl("^offset\\s*\\(", term)) {
+      return(term)
+    } else if (grepl(lower_level, term)) {
+      return(term)
+    } else {
+      return(paste0("(", term, ") * ", species_var))
+    }
+  }, character(1))
+  
+  full_formula_str <- paste(response, "~", paste(new_terms, collapse = " + "))
+  as.formula(full_formula_str)
+}
+
+# Define model right-hand sides using formula()
+poisson_rhs <- quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment)
+binomial_rhs <- quote((1 | Site) + treatment)
+
+
+# Fit the model
+out <- FitModel(
+  phyloseq = physeq,
+  poisson_rhs = poisson_rhs,
+  binomial_rhs = binomial_rhs,
+  num_iterations = 100,
+  burn_in = 50,
+  sampletype_keep = "biologicalsample"
+)
+
+
+# Get the names of the first 50 OTUs (or any 50 you want)
+otu_names_to_keep <- taxa_names(physeq)[1:50]
+
+# Subset the phyloseq object to those OTUs
+physeq_50 <- prune_taxa(otu_names_to_keep, physeq)
+
+
 
 
 out <- FitModel(

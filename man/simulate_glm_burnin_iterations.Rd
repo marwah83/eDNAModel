@@ -2,42 +2,46 @@
 % Please edit documentation in R/simulate_glm_burnin_iterations.R
 \name{simulate_glm_burnin_iterations}
 \alias{simulate_glm_burnin_iterations}
-\title{Simulate ZIP (Zero-Inflated Poisson) Models with Burn-in}
+\title{Simulate Latent Occupancy-Abundance Models via GLMMs}
 \usage{
 simulate_glm_burnin_iterations(
   data_glm,
-  poisson_rhs,
-  binomial_rhs,
+  poisson_formula,
+  binomial_formula,
   num_iterations = 100,
   burn_in = 50,
-  species_var = "i"
+  species_var = "OTU"
 )
 }
 \arguments{
-\item{data_glm}{A data frame in long format with count column `y`, OTU ID column (e.g., `i`),
-treatment, site, sample, replicate, and optionally an offset column.}
+\item{data_glm}{A long-format data frame prepared from a `phyloseq` object. Must include species, count (`y`), and covariate columns.}
 
-\item{poisson_rhs}{A quoted formula object representing the right-hand side of the Poisson model,
-e.g., `quote((1 | Site) + treatment + offset(log_total_reads))`.}
+\item{poisson_formula}{A `formula` specifying the abundance (Poisson) model.}
 
-\item{binomial_rhs}{A quoted formula object representing the right-hand side of the Binomial model.}
+\item{binomial_formula}{A `formula` specifying the occupancy (Binomial) model.}
 
-\item{num_iterations}{Total number of simulation iterations (default: 100).}
+\item{num_iterations}{Total number of iterations to run (default: 100).}
 
-\item{burn_in}{Number of burn-in iterations to discard before saving models (default: 50).}
+\item{burn_in}{Number of burn-in iterations to discard from the results (default: 50).}
 
-\item{species_var}{A string name of the species (OTU) column to interact with (default: "i").}
+\item{species_var}{Name of the column representing the species (default: "OTU").}
 }
 \value{
-A list with:
+A list containing:
 \describe{
-  \item{poisson_models}{List of fitted Poisson `glmmTMB` model objects after burn-in.}
-  \item{binomial_models}{List of fitted Binomial `glmmTMB` model objects after burn-in.}
+  \item{poisson_models}{A list of fitted Poisson GLMMs post burn-in.}
+  \item{binomial_models}{A list of fitted Binomial GLMMs post burn-in.}
 }
 }
 \description{
-This function performs iterative fitting of a zero-inflated Poisson model using
-separate Poisson and Binomial components. It automatically constructs model formulas
-by multiplying all fixed and random terms by the species variable (default: `"i"`),
-while keeping offsets unmodified.
+Performs iterative fitting of Poisson (abundance) and Binomial (occupancy) 
+generalized linear mixed models (GLMMs) using the `glmmTMB` package. 
+The method introduces a latent binary variable (`z_sim`) to separate 
+detection from true presence and iteratively refines model estimates 
+across multiple iterations, with burn-in.
+}
+\details{
+This function implements a form of multi-species occupancy-abundance
+modeling using latent variables. At each iteration, species with `y > 0` are
+assumed present, while those with `y == 0` are assigned occupancy probabilistically.
 }

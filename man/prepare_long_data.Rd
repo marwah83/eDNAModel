@@ -4,39 +4,25 @@
 \alias{prepare_long_data}
 \title{Prepare Long-format OTU Data from a phyloseq Object}
 \usage{
-prepare_long_data(
-  physeq_obj,
-  min_species_sum = 50,
-  sampletype_keep = "biologicalsample",
-  col_vars = list(sampletype = "sampletype", location = "location", treatment =
-    "treatment", sample = "sample", samplerep = "samplerep"),
-  save_path = NULL
-)
+prepare_long_data(physeq_obj, min_species_sum = 50, sampletype_keep = NULL)
 }
 \arguments{
-\item{physeq_obj}{A `phyloseq` object.}
+\item{physeq_obj}{A [`phyloseq::phyloseq`] object containing OTU table and sample metadata.}
 
-\item{min_species_sum}{Minimum abundance to retain a taxon (default: 50).}
+\item{min_species_sum}{Minimum total abundance required to retain a taxon (default: 50).}
 
-\item{sampletype_keep}{The value of `sampletype` to retain (default: "biologicalsample").}
-
-\item{col_vars}{A named list mapping the following required fields:
-- "sampletype"
-- "location"
-- "treatment"
-- "sample"
-- "samplerep"
-Any other variables in the list will also be carried through to output.}
-
-\item{save_path}{Optional path to save the filtered object.}
+\item{sampletype_keep}{Optional value of `sampletype` column to filter by (e.g., `"biologicalsample"`).}
 }
 \value{
 A list with:
 \describe{
-  \item{physeq_filtered}{Filtered `phyloseq` object}
-  \item{long_df}{Long-format data frame with counts and metadata}
+  \item{physeq_filtered}{Filtered `phyloseq` object after abundance and sample type filtering.}
+  \item{long_df}{Long-format `data.frame` with OTU counts, metadata, and parsed identifiers.}
 }
 }
 \description{
-Filters and reshapes a phyloseq object into long format for occupancy-abundance modeling.
+Filters and reshapes a `phyloseq` object into a long-format data frame for
+occupancy-abundance modeling. The function optionally filters on a sample type
+(e.g., `"biologicalsample"`), parses replicate and sample identifiers, renames
+location to `Site`, and transforms the OTU matrix to long format.
 }

@@ -192,6 +192,9 @@ FitModel <- function(phyloseq,
     species_var = "OTU",
     lower_level = replicate_var
   )
+
+message("📌 Poisson model formula: ", deparse(poisson_formula))
+message("📌 Binomial model formula: ", deparse(binomial_formula))
   
   # Fit model
   result <- simulate_glm_burnin_iterations(
@@ -258,6 +261,8 @@ out <- FitModel(
   burn_in = 50,
   sampletype_keep = "biologicalsample"
 )
+
+otu_subset <- out$data_glm  # Assuming you modify FitModel to return this. If not, re-run prepare_long_data()
 
 ```
 

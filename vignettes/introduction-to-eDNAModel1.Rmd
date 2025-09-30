@@ -27,8 +27,6 @@ library(Matrix)
 ---
 
 ```{r example, include=FALSE}
-```
-
 
 library(phyloseq)
 library(eDNAModel)

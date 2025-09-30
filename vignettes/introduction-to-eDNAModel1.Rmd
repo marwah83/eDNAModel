@@ -204,8 +204,14 @@ message("📌 Binomial model formula: ", deparse(binomial_formula))
     num_iterations = num_iterations,
     burn_in = burn_in
   )
-  
-  return(result)
+  result$data_glm <- long_df
+
+  return(list(
+  poisson_models = result$poisson_models,
+  binomial_models = result$binomial_models,
+  data_glm = long_df  # ✅ Add this line
+))
+
 }
 
 

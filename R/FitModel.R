@@ -83,6 +83,10 @@ FitModel <- function(phyloseq,
     burn_in = burn_in
   )
   
-  return(result)
+  return(list(
+  poisson_models = result$poisson_models,
+  binomial_models = result$binomial_models,
+  data_glm = long_df  # ✅ Add this line
+))
 }
 

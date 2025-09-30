@@ -71,6 +71,8 @@ FitModel <- function(phyloseq,
     species_var = "OTU",
     lower_level = replicate_var
   )
+  message("📌 Poisson model formula: ", deparse(poisson_formula))
+  message("📌 Binomial model formula: ", deparse(binomial_formula))
   
   # Step 5: Fit the models
   result <- simulate_glm_burnin_iterations(

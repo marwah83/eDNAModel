@@ -133,6 +133,9 @@ library(glmmTMB)
 
 
 # ---------- Step 4: Extract predictions ----------
+
+otu_subset <- out$data_glm
+
 # Occupancy predictions (psi)
 psi_mat <- do.call(cbind, lapply(out$binomial_models, function(model) {
   predict(model, type = "response", newdata = otu_subset)

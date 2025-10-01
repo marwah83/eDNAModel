@@ -52,21 +52,22 @@ out <- FitModel(
 )
 
 
-# Get the names of the first 50 OTUs (or any 50 you want)
-otu_names_to_keep <- taxa_names(physeq)[1:50]
 
-# Subset the phyloseq object to those OTUs
-physeq_50 <- prune_taxa(otu_names_to_keep, physeq)
+# Randomly sample 100 OTUs
+set.seed(123)
+selected_otus <- sample(taxa_names(physeq), 100)
+physeq_subset <- prune_taxa(selected_otus, physeq)
 
-
+# Fit the model
 out <- FitModel(
-  phyloseq = physeq_50,
+  phyloseq = physeq_subset,
   poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment),
   binomial_rhs = quote((1 | Site) + treatment),
   num_iterations = 100,
   burn_in = 50,
   sampletype_keep = "biologicalsample"
 )
+
 
 otu_subset <- out$data_glm  # Assuming you modify FitModel to return this. If not, re-run prepare_long_data()
 

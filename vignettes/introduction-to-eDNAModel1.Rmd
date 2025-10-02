@@ -305,7 +305,51 @@ otu_predictions <- otu_subset[, c("OTU", "treatment")] %>%
      
 ########################################heat map##########################################
 #####################Heat map######################################
-     library(dplyr)
+
+Clustered Heatmap of Occupancy Probabilities (ψ)
+
+# Install if needed
+# install.packages("pheatmap")
+
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+
+# Step 1: Compute average ψ (occupancy) for each Site–OTU pair
+otu_pred_df <- otu_subset %>%
+  select(Site, OTU) %>%
+  mutate(psi = rowMeans(psi_mat, na.rm = TRUE)) %>%
+  group_by(Site, OTU) %>%
+  summarise(psi = mean(psi, na.rm = TRUE), .groups = "drop")
+
+# Step 2: Pivot to wide matrix: rows = Sites, columns = OTUs
+psi_matrix <- otu_pred_df %>%
+  pivot_wider(names_from = OTU, values_from = psi) %>%
+  column_to_rownames("Site") %>%
+  as.matrix()
+
+# Step 3: Generate clustered heatmap
+pheatmap(
+  mat = psi_matrix,
+  cluster_rows = TRUE,     # Cluster Sites
+  cluster_cols = TRUE,     # Cluster OTUs
+  color = colorRampPalette(c("blue", "white", "orange"))(100),
+  main = "Clustered Heatmap of Occupancy Probabilities (ψ)",
+  fontsize_row = 8,
+  fontsize_col = 6,
+  border_color = NA,
+  show_rownames = TRUE,
+  show_colnames = TRUE
+)
+
+
+
+
+#####################################
+
+
+
+library(dplyr)
      
      otu_pred_df <- otu_subset %>%
        dplyr::select(OTU, Site) %>%

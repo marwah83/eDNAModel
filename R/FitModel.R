@@ -53,10 +53,10 @@ FitModel <- function(phyloseq,
 
   # Step 3: Optional - clean treatment variable
   if ("treatment" %in% names(long_df)) {
-    long_df <- long_df %>%
-      dplyr::filter(treatment != "0")
-    long_df$treatment <- droplevels(factor(long_df$treatment))
-  }
+  long_df <- long_df %>%
+    dplyr::filter(treatment != "0")
+  long_df$treatment <- droplevels(factor(long_df$treatment))
+}
 
   # Step 4: Build model formulas with species interaction (except replicate)
   poisson_formula <- build_formula_with_species_interaction(

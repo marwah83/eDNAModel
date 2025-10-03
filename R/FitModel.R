@@ -52,10 +52,17 @@ FitModel <- function(phyloseq,
   long_df$OTU <- relevel(factor(long_df$OTU), ref = top_otu)
 
   # Step 3: Optional - clean treatment variable
-  if ("treatment" %in% names(long_df)) {
+ # Step 3: Clean treatment variable and check levels
+if ("treatment" %in% names(long_df)) {
   long_df <- long_df %>%
-    dplyr::filter(treatment != "0")
-  long_df$treatment <- droplevels(factor(long_df$treatment))
+    dplyr::filter(treatment != "0") %>%
+    mutate(treatment = droplevels(factor(treatment)))
+  
+  # ✅ Stop if fewer than 2 levels remain
+  if (nlevels(long_df$treatment) < 2) {
+    stop("❌ Error: 'treatment' must have at least 2 levels after filtering. Current levels: ",
+         paste(levels(long_df$treatment), collapse = ", "))
+  }
 }
 
   # Step 4: Build model formulas with species interaction (except replicate)

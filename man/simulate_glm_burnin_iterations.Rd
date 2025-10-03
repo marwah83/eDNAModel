@@ -10,6 +10,7 @@ simulate_glm_burnin_iterations(
   binomial_formula,
   num_iterations = 100,
   burn_in = 50,
+  site_var = "Site",
   species_var = "OTU"
 )
 }

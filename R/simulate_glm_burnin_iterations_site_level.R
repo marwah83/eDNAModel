@@ -1,36 +1,9 @@
-#' Simulate Latent Occupancy-Abundance Models via GLMMs
-#'
-#' Performs iterative fitting of Poisson (abundance) and Binomial (occupancy) 
-#' generalized linear mixed models (GLMMs) using the `glmmTMB` package. 
-#' The method introduces a latent binary variable (`z_sim`) to separate 
-#' detection from true presence and iteratively refines model estimates 
-#' across multiple iterations, with burn-in.
-#'
-#' @param data_glm A long-format data frame prepared from a `phyloseq` object. Must include species, count (`y`), and covariate columns.
-#' @param poisson_formula A `formula` specifying the abundance (Poisson) model.
-#' @param binomial_formula A `formula` specifying the occupancy (Binomial) model.
-#' @param num_iterations Total number of iterations to run (default: 100).
-#' @param burn_in Number of burn-in iterations to discard from the results (default: 50).
-#' @param species_var Name of the column representing the species (default: "OTU").
-#'
-#' @return A list containing:
-#' \describe{
-#'   \item{poisson_models}{A list of fitted Poisson GLMMs post burn-in.}
-#'   \item{binomial_models}{A list of fitted Binomial GLMMs post burn-in.}
-#' }
-#'
-#' @details This function implements a form of multi-species occupancy-abundance
-#' modeling using latent variables. At each iteration, species with `y > 0` are
-#' assumed present, while those with `y == 0` are assigned occupancy probabilistically.
-#'
-#' @importFrom glmmTMB glmmTMB
-#' @export
-simulate_glm_burnin_iterations <- function(data_glm,
+simulate_glm_burnin_iterations_site_level <- function(data_glm,
                                                       poisson_formula,
                                                       binomial_formula,
                                                       num_iterations = 100,
                                                       burn_in = 50,
-                                                      site_var = "Site",species_var="OTU") {
+                                                      site_var = "Site") {
   # Step 1: Aggregate data to one row per Site
   data_binom <- data_glm %>%
     group_by(.data[[site_var]]) %>%
@@ -86,4 +59,3 @@ simulate_glm_burnin_iterations <- function(data_glm,
     data_binom = data_binom
   ))
 }
-

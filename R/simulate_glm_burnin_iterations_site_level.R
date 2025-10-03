@@ -4,58 +4,54 @@ simulate_glm_burnin_iterations_site_level <- function(data_glm,
                                                       num_iterations = 100,
                                                       burn_in = 50,
                                                       site_var = "Site") {
-  # Step 1: Aggregate data to one row per Site
-  data_binom <- data_glm %>%
-    group_by(.data[[site_var]]) %>%
-    summarise(
-      z_sim = as.integer(any(y > 0)),  # at least one detection per site
-      across(-y, first),               # grab one value per covariate (assuming same across site)
-      .groups = "drop"
-    )
-
+  # STEP 0: Initialize z_sim in full data
+  data_glm$z_sim <- ifelse(data_glm$y > 0, 1, rbinom(nrow(data_glm), 1, 0.5))
+  
+  # Storage for models
   poisson_models <- list()
   binomial_models <- list()
-
+  
   for (iter in 1:num_iterations) {
-    # Step 2: Fit binomial model on reduced (site-level) data
-    model_binom <- glmmTMB::glmmTMB(binomial_formula,
-                                    data = data_binom,
-                                    family = binomial)
-
-    # Step 3: Predict occupancy probabilities (P) for each site
-    P_i <- predict(model_binom, type = "response", newdata = data_binom)
-
-    # Step 4: Update z_sim (latent occupancy for each site)
-    lambda_dummy <- rep(0, nrow(data_binom))  # λ not used yet here
-    prob_z1_given_y0 <- P_i * exp(-lambda_dummy) / (P_i * exp(-lambda_dummy) + (1 - P_i))
-    prob_z1_given_y0 <- pmin(pmax(prob_z1_given_y0, 1e-6), 1 - 1e-6)
-
-    data_binom$z_sim[data_binom$z_sim == 0] <-
-      rbinom(sum(data_binom$z_sim == 0), 1, prob_z1_given_y0[data_binom$z_sim == 0])
-
-    # Step 5: Write site-level z_sim back to full data
+    
+    # STEP 1: Aggregate to site-level
+    data_binom <- data_glm %>%
+      dplyr::group_by(.data[[site_var]]) %>%
+      dplyr::summarise(
+        z_sim = as.integer(any(y > 0)),
+        across(-y, dplyr::first),
+        .groups = "drop"
+      )
+    
+    # STEP 2: Fit binomial model on site-level data
+    model_binomial <- glmmTMB::glmmTMB(binomial_formula, data = data_binom, family = binomial)
+    
+    # STEP 3: Predict site-level occupancy probabilities
+    psi_pred <- predict(model_binomial, type = "response", newdata = data_binom)
+    
+    # STEP 4: Simulate new z_sim for site-level data
+    data_binom$z_sim <- rbinom(nrow(data_binom), 1, psi_pred)
+    
+    # STEP 5: Write z_sim back to full data
     data_glm <- data_glm %>%
-      left_join(data_binom %>% select(.data[[site_var]], z_sim), by = site_var)
-
-    # Step 6: Subset full data where z_sim == 1
+      dplyr::left_join(data_binom[, c(site_var, "z_sim")], by = site_var, suffix = c("", ".new")) %>%
+      dplyr::mutate(z_sim = .data$z_sim.new) %>%
+      dplyr::select(-z_sim.new)
+    
+    # STEP 6: Subset full data where site was occupied
     Q <- data_glm[data_glm$z_sim == 1, ]
-
-    # Step 7: Fit Poisson model on full data
-    model_pois <- glmmTMB::glmmTMB(poisson_formula,
-                                   family = poisson,
-                                   data = Q)
-
-    # Step 8: Save post-burn-in models
+    
+    # STEP 7: Fit Poisson model on full (filtered) data
+    model_poisson <- glmmTMB::glmmTMB(poisson_formula, family = poisson, data = Q)
+    
+    # STEP 8: Store models after burn-in
     if (iter > burn_in) {
-      poisson_models[[iter - burn_in]] <- model_pois
-      binomial_models[[iter - burn_in]] <- model_binom
+      binomial_models[[iter - burn_in]] <- model_binomial
+      poisson_models[[iter - burn_in]] <- model_poisson
     }
   }
-
+  
   return(list(
     poisson_models = poisson_models,
-    binomial_models = binomial_models,
-    data_glm = data_glm,
-    data_binom = data_binom
+    binomial_models = binomial_models
   ))
 }

@@ -97,7 +97,7 @@ if ("treatment" %in% names(long_df)) {
   return(list(
     poisson_models = result$poisson_models,
     binomial_models = result$binomial_models,
-    data_glm = long_df  # for inspection or reuse
+    data_glm = long_df,  # for inspection or reuse
     data_binom = data_binom
   ))
 }

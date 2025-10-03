@@ -78,17 +78,19 @@ FitModel <- function(phyloseq,
 
   # Step 5: Fit the model using iterative GLMMs
   result <- simulate_glm_burnin_iterations(
-    data_glm = long_df,
-    poisson_formula = poisson_formula,
-    binomial_formula = binomial_formula,
-    num_iterations = num_iterations,
-    burn_in = burn_in
-  )
-
+  data_glm = long_df,
+  poisson_formula = poisson_formula,
+  binomial_formula = binomial_formula,
+  num_iterations = num_iterations,
+  burn_in = burn_in,
+  site_var = "Site"  # or adjust if you name it differently
+)
+  
   # Step 6: Return model output
   return(list(
     poisson_models = result$poisson_models,
     binomial_models = result$binomial_models,
     data_glm = long_df  # for inspection or reuse
+    data_binom = data_binom
   ))
 }

@@ -1,7 +1,8 @@
 test_that("FitModel_SiteLevelOccupancy", {
   library(phyloseq)
   library(glmmTMB)
-  library(dplyr)  # Add this line
+  library(dplyr) 
+  library(tidyr) # Add this line
   # -------------------------------
   # Simulate small eDNA-like dataset
   # -------------------------------

@@ -1,4 +1,4 @@
-test_that("FitModel_SiteLevelOccupancy", {
+test_that("FitModel", {
   library(phyloseq)
   library(glmmTMB)
   library(dplyr) 
@@ -36,7 +36,7 @@ test_that("FitModel_SiteLevelOccupancy", {
   # ----------------------------------------
   
   result <- suppressWarnings(
-    FitModel_SiteLevelOccupancy(
+    FitModel(
       phyloseq = physeq,
       poisson_rhs = quote((1 | OTU) + (1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment * OTU),
       binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),

@@ -12,7 +12,7 @@
 #'
 #' @return A list with summaries and iteration-level posterior samples.
 #'
-FitModel_SiteLevelOccupancy <- function(phyloseq,
+FitModel <- function(phyloseq,
                                         poisson_rhs,
                                         binomial_rhs,
                                         min_species_sum = 50,

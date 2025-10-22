@@ -1,4 +1,4 @@
-test_that("FitModel runs correctly on simulated eDNA-like data", {
+test_that("FitModel", {
   library(phyloseq)
   library(glmmTMB)
   library(dplyr)

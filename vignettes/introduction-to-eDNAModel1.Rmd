@@ -36,424 +36,235 @@ library(dplyr)
 physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
 physeq <- readRDS(physeq_path)
 
-# Define model right-hand sides using formula()
-poisson_rhs <- quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment)
-binomial_rhs <- quote((1 | Site) + treatment)
-
-
-# Fit the model
-out <- FitModel(
-  phyloseq = physeq,
-  poisson_rhs = poisson_rhs,
-  binomial_rhs = binomial_rhs,
-  num_iterations = 100,
-  burn_in = 50,
-  sampletype_keep = "biologicalsample"
-)
-
-
-
 # Randomly sample 100 OTUs
 set.seed(123)
 selected_otus <- sample(taxa_names(physeq), 100)
 physeq_subset <- prune_taxa(selected_otus, physeq)
 
-# Fit the model
 out <- FitModel(
-  phyloseq = physeq_subset,
-  poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment),
-  binomial_rhs = quote((1 | Site) + treatment),
-  num_iterations = 100,
-  burn_in = 50,
-  sampletype_keep = "biologicalsample"
+  phyloseq = physeq_100,
+  poisson_rhs = quote((1|OTU)+(1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment*OTU),
+  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
+  sampletype_keep = "biologicalsample",
+  abundance_threshold = 1,
+  treatment_exclude = "0",
+  n_iter = 50,
+  burn_in = 10
 )
 
-
-otu_subset <- out$data_glm  # Assuming you modify FitModel to return this. If not, re-run prepare_long_data()
-
-```
-
-
-
-######################################## Dynamic code #############################################
-library(phyloseq)
-library(eDNAModel)
+library(ggplot2)
 library(dplyr)
-library(tidyr)
-library(tibble)
-library(glmmTMB)
 
+# Extract detection data
+p_detect_data <- out$summary %>%
+  select(OTU, Site, treatment, 
+         p_detect_mean, p_detect_lwr, p_detect_upr)
 
-  # plot the interaction, first extract the poisson and plot , then extract from binomial and plot
-
-     poisson_fixed_all <- extract_fixed(out$poisson_models, "poisson")
-     interaction_terms <- poisson_fixed_all %>%
-       filter(grepl("treatment.*:OTU", term))
-     
-     any(grepl("OTU1005", interaction_terms$term))  # SHOULD be FALSE
-    
-     
-     binomial_fixed_all <- extract_fixed(out$binomial_models, "binomial")
-     interaction_terms <- binomial_fixed_all %>%
-       filter(grepl("treatment.*:OTU", term))
-
-
-## for the plot apply the following once for poisson and then onece for binomial.
-     
-     library(dplyr)
-     library(ggplot2)
-     
-     # Step 1: Extract OTU from term
-     interaction_terms_clean <- interaction_terms %>%
-       mutate(OTU = gsub("treatmentRats:OTU", "", term))
-     
-     # Step 2: Compute mean and SD of estimates for each OTU
-     otu_estimates <- interaction_terms_clean %>%
-       group_by(OTU) %>%
-       summarise(
-         mean_estimate = mean(Estimate, na.rm = TRUE),
-         sd_estimate   = sd(Estimate, na.rm = TRUE)
-       ) %>%                                       
-       arrange(mean_estimate) %>%
-       mutate(OTU = factor(OTU, levels = OTU))  # Ensure ordered factor for plotting
-     
-     # Step 3: Caterpillar plot with error bars (SD)
-     ggplot(otu_estimates, aes(x = OTU, y = mean_estimate)) +
-       geom_point() +
-       geom_errorbar(aes(ymin = mean_estimate - 1.96*sd_estimate,
-                         ymax = mean_estimate + 1.96*sd_estimate),
-                     width = 0.2) +
-       geom_hline(yintercept = 0, linetype = "dashed") +
-       coord_flip() +
-       labs(
-         title = "Caterpillar Plot: treatmentRats × OTU Interaction Effects",
-         x = "OTU",
-         y = "Mean Estimate ± SD"
-       ) +
-       theme_minimal()
-
-
-# ---------- Step 4: Extract predictions ----------
-
-otu_subset <- out$data_glm
-
-# Occupancy predictions (psi)
-psi_mat <- do.call(cbind, lapply(out$binomial_models, function(model) {
-  predict(model, type = "response", newdata = otu_subset)
-}))
-
-# Abundance predictions (lambda)
-lambda_mat <- do.call(cbind, lapply(out$poisson_models, function(model) {
-  predict(model, type = "response", newdata = otu_subset)
-}))
-
-# Detection probability
-p_detect_mat <- 1 - exp(-lambda_mat)
-
-# ---------- Step 5: Summarize per OTU ----------
-otu_summary <- data.frame(
-  OTU           = otu_subset$OTU,
-  psi_mean      = rowMeans(psi_mat),
-  psi_se        = apply(psi_mat, 1, sd),
-  psi_lwr       = apply(psi_mat, 1, quantile, probs = 0.025),
-  psi_upr       = apply(psi_mat, 1, quantile, probs = 0.975),
-  lambda_mean   = rowMeans(lambda_mat),
-  lambda_se     = apply(lambda_mat, 1, sd),
-  p_detect_mean = rowMeans(p_detect_mat),
-  p_detect_se   = apply(p_detect_mat, 1, sd),
-  p_detect_lwr  = apply(p_detect_mat, 1, quantile, probs = 0.025),
-  p_detect_upr  = apply(p_detect_mat, 1, quantile, probs = 0.975)
-) %>%
+# Arrange OTUs by average detection probability for plotting
+p_detect_data <- p_detect_data %>%
   group_by(OTU) %>%
-  summarise(
-    psi_mean        = mean(psi_mean),
-    psi_se          = mean(psi_se),
-    psi_lwr         = mean(psi_lwr),
-    psi_upr         = mean(psi_upr),
-    lambda_mean     = mean(lambda_mean),
-    lambda_se       = mean(lambda_se),
-    p_detect_mean   = mean(p_detect_mean),
-    p_detect_se     = mean(p_detect_se),
-    p_detect_lwr    = mean(p_detect_lwr),
-    p_detect_upr    = mean(p_detect_upr),
-    .groups = "drop"
+  mutate(mean_over_sites = mean(p_detect_mean, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(mean_over_sites) %>%
+  mutate(OTU = factor(OTU, levels = unique(OTU)))
+
+# Caterpillar plot
+ggplot(p_detect_data, aes(x = p_detect_mean, y = OTU)) +
+  geom_point(color = "darkblue") +
+  geom_errorbarh(aes(xmin = p_detect_lwr, xmax = p_detect_upr), height = 0.2) +
+  labs(
+    title = "Caterpillar Plot of Detection Probability by OTU",
+    x = "Probability of Detection",
+    y = "OTU"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 7),
+    plot.title = element_text(hjust = 0.5)
   )
 
-# ---------- View Results ----------
-print(otu_summary)
+library(ggplot2)
+library(dplyr)
+
+# Extract occupancy data
+psi_data <- out$summary %>%
+  select(OTU, Site, treatment,
+         psi_mean, psi_lwr, psi_upr)
+
+# Arrange OTUs by average psi_mean for consistent ordering on y-axis
+psi_data <- psi_data %>%
+  group_by(OTU) %>%
+  mutate(mean_over_sites = mean(psi_mean, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(mean_over_sites) %>%
+  mutate(OTU = factor(OTU, levels = unique(OTU)))
+
+# Plot
+ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
+  geom_point(color = "darkgreen") +
+  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2) +
+  labs(
+    title = "Caterpillar Plot of Occupancy Probability by OTU",
+    x = "Probability of Occupancy (ψ)",
+    y = "OTU"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 7),
+    plot.title = element_text(hjust = 0.5)
+  )
 
 library(ggplot2)
 library(dplyr)
 
-# Assuming otu_summary is already loaded in your environment
-# If not, read or create it accordingly
+# Prepare occupancy data
+psi_data <- out$summary %>%
+  select(OTU, treatment, psi_mean, psi_lwr, psi_upr) %>%
+  group_by(OTU) %>%
+  mutate(mean_overall = mean(psi_mean, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(mean_overall) %>%
+  mutate(OTU = factor(OTU, levels = unique(OTU)))  # Order OTUs
 
-# Ensure OTUs are ordered by psi_mean for plotting
-otu_summary_ordered <- otu_summary %>%
-  arrange(psi_mean) %>%
-  mutate(OTU = factor(OTU, levels = OTU))
-
-# Caterpillar plot
-ggplot(otu_summary_ordered, aes(x = OTU, y = psi_mean)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = psi_lwr, ymax = psi_upr), width = 0.2) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  coord_flip() +
-  labs(
-    title = "Caterpillar Plot of OTU Occupancy Probabilities (ψ)",
-    x = "OTU",
-    y = "Mean ψ (with 95% CI)"
+# Plot
+ggplot(psi_data, aes(x = psi_mean, y = OTU, color = treatment)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbarh(
+    aes(xmin = psi_lwr, xmax = psi_upr),
+    height = 0.2,
+    position = position_dodge(width = 0.5)
   ) +
-  theme_minimal()
-
-
-library(ggplot2)
-library(dplyr)
-
-# Assuming otu_summary is already loaded in your environment
-# If not, read or create it accordingly
-
-# Ensure OTUs are ordered by psi_mean for plotting
-otu_summary_ordered <- otu_summary %>%
-  arrange(p_detect_mean) %>%
-  mutate(OTU = factor(OTU, levels = OTU))
-
-# Caterpillar plot
-ggplot(otu_summary_ordered, aes(x = OTU, y = p_detect_mean)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = p_detect_lwr, ymax = p_detect_upr), width = 0.2) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  coord_flip() +
   labs(
-    title = "Caterpillar Plot of OTU detection Probabilities (ψ)",
-    x = "OTU",
-    y = "Detection (with 95% CI)"
+    title = "Probability of Occupancy (ψ) by OTU and Treatment",
+    x = "Occupancy Probability (ψ)",
+    y = "OTU",
+    color = "Treatment"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5)
+  )
 
-
-otu_predictions <- otu_subset[, c("OTU", "treatment")] %>%
-       mutate(
-         psi_mean      = rowMeans(psi_mat),
-         psi_se        = apply(psi_mat, 1, sd),
-         lambda_mean   = rowMeans(lambda_mat),
-         lambda_se     = apply(lambda_mat, 1, sd),
-         p_detect_mean = rowMeans(p_detect_mat),
-         p_detect_se   = apply(p_detect_mat, 1, sd)
-       )
+```
      
-     otu_treatment_summary <- otu_predictions %>%
-       group_by(OTU, treatment) %>%
-       summarise(
-         psi_mean        = mean(psi_mean),
-         psi_se          = mean(psi_se),
-         lambda_mean     = mean(lambda_mean),
-         lambda_se       = mean(lambda_se),
-         p_detect_mean   = mean(p_detect_mean),
-         p_detect_se     = mean(p_detect_se),
-         .groups = "drop"
-       )
-     
-     
-     library(ggplot2)
-     library(dplyr)
-     
-     # Assuming `otu_treatment_summary` is your data frame
-     
-     # Reorder OTUs for better visual clarity
-     otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(OTU = factor(OTU, levels = unique(OTU[order(psi_mean)])))
-     
-     # Plot psi_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = psi_mean, y = OTU, color = treatment)) +
-       geom_point() +
-       geom_errorbarh(aes(xmin = psi_mean - psi_se, xmax = psi_mean + psi_se), height = 0.2) +
-       labs(
-         x = "Psi Mean (Occupancy Probability)",
-         y = "OTU",
-         title = "Caterpillar Plot for Psi Estimates by OTU and Treatment"
-       ) +
-       theme_minimal() +
-       theme(
-         legend.position = "top",
-         axis.text.y = element_text(size = 7)
-       )
-    
-     library(ggplot2)
-     library(dplyr)
-     
-     # Reorder OTUs by detection probability for clarity
-     otu_treatment_summary <- otu_treatment_summary %>%
-       mutate(OTU = factor(OTU, levels = unique(OTU[order(p_detect_mean)])))
-     
-     # Plot p_detect_mean with standard error bars
-     ggplot(otu_treatment_summary, aes(x = p_detect_mean, y = OTU, color = treatment)) +
-       geom_point() +
-       geom_errorbarh(aes(xmin = p_detect_mean - p_detect_se, xmax = p_detect_mean + p_detect_se), height = 0.2) +
-       labs(
-         x = "Detection Probability",
-         y = "OTU",
-         title = "Caterpillar Plot for Detection Probability by OTU and Treatment"
-       ) +
-       theme_minimal() +
-       theme(
-         legend.position = "top",
-         axis.text.y = element_text(size = 7)
-       )
-
-
-     
-########################################heat map##########################################
-#####################Heat map######################################
-
+```{r example3, include=FALSE}
 Clustered Heatmap of Occupancy Probabilities (ψ)
-
-# Install if needed
-# install.packages("pheatmap")
 
 library(dplyr)
 library(tidyr)
 library(pheatmap)
 
-# Step 1: Compute average ψ (occupancy) for each Site–OTU pair
-otu_pred_df <- otu_subset %>%
-  select(Site, OTU) %>%
-  mutate(psi = rowMeans(psi_mat, na.rm = TRUE)) %>%
-  group_by(Site, OTU) %>%
-  summarise(psi = mean(psi, na.rm = TRUE), .groups = "drop")
+psi_summary <- out$summary %>%
+  select(Site, OTU, treatment, psi_mean)
 
-# Step 2: Pivot to wide matrix: rows = Sites, columns = OTUs
-psi_matrix <- otu_pred_df %>%
-  pivot_wider(names_from = OTU, values_from = psi) %>%
+# Step 1: Summarise duplicated rows
+psi_matrix <- psi_summary %>%
+  group_by(Site, OTU) %>%
+  summarise(psi_mean = mean(psi_mean, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = OTU, values_from = psi_mean) %>%
   column_to_rownames("Site") %>%
   as.matrix()
 
-# Step 3: Generate clustered heatmap
-pheatmap(
-  mat = psi_matrix,
-  cluster_rows = TRUE,     # Cluster Sites
-  cluster_cols = TRUE,     # Cluster OTUs
-  color = colorRampPalette(c("blue", "white", "orange"))(100),
-  main = "Clustered Heatmap of Occupancy Probabilities (ψ)",
-  fontsize_row = 8,
-  fontsize_col = 6,
-  border_color = NA,
-  show_rownames = TRUE,
-  show_colnames = TRUE
-)
+# Step 2: Replace NAs (optional but recommended)
+psi_matrix[is.na(psi_matrix)] <- 0
 
-
-
-
-#####################################
-
-
-
-library(dplyr)
-     
-     otu_pred_df <- otu_subset %>%
-       dplyr::select(OTU, Site) %>%
-       mutate(
-         psi = rowMeans(psi_mat),
-         p_detect = rowMeans(p_detect_mat),
-         detected = p_detect == 1,
-         display_psi = ifelse(detected, 1, psi)
-       )
-     
-     otu_pred_df <- otu_pred_df %>%
-       mutate(OTU = factor(OTU, levels = unique(OTU[order(-psi)])))
-     
-     # Step 3: Plot heatmap with Site on x-axis and OTU on y-axis
-     ggplot(otu_pred_df, aes(x = Site, y = OTU)) +
-       geom_tile(data = filter(otu_pred_df, detected), fill = "grey70") +
-       geom_tile(data = filter(otu_pred_df, !detected), aes(fill = display_psi)) +
-       scale_fill_gradient(low = "blue", high = "orange", name = "Occupancy\nProbability (ψ)") +
-       labs(
-         x = "Site",
-         y = "OTU",
-         title = "Predicted Probability of Species Occupancy by OTU and Site\nGrey = Detected (p_detect = 1)"
-       ) +
-       theme_minimal() +
-       theme(
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.text.y = element_text(size = 6),
-         legend.position = "right"
-       )
-     
+# Step 3: Draw heatmap
+pheatmap(psi_matrix,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         scale = "none",
+         main = "Clustered Heatmap of Occupancy Probabilities (ψ)",
+         color = colorRampPalette(c("white", "blue"))(100))
+```
 
 ############################### model comparison#########################################
 
+```{r example0, include=FALSE}
+
 ##For example 
 
-
 out1 <- FitModel(
-  phyloseq = physeq_50,
-  poisson_rhs = quote((1 | Site) + (1 | Sample) + (1 | Replicate) + treatment),
-  binomial_rhs = quote((1 | Site) + treatment),
-  num_iterations = 100,
-  burn_in = 50,
-  sampletype_keep = "biologicalsample"
+  phyloseq = physeq_100,
+  poisson_rhs = quote((1|OTU)+(1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment*OTU),
+  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
+  sampletype_keep = "biologicalsample",
+  abundance_threshold = 1,
+  treatment_exclude = "0",
+  n_iter = 50,
+  burn_in = 10
 )
 
-
-out2 <- FitModel(
-  phyloseq = physeq_50,
-  poisson_rhs = quote((1 | Site)  + treatment),
-  binomial_rhs = quote((1 | Site) + treatment),
-  num_iterations = 100,
-  burn_in = 50,
-  sampletype_keep = "biologicalsample"
+out2<- FitModel(
+  phyloseq = physeq_100,
+  poisson_rhs = quote((1|OTU)+(1 | Site/OTU)),
+  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
+  sampletype_keep = "biologicalsample",
+  abundance_threshold = 1,
+  treatment_exclude = "0",
+  n_iter = 50,
+  burn_in = 10
 )
 
-
-
+# Extract model metrics (AIC, BIC, NegLogLik) across multiple iterations
 extract_model_metrics <- function(model_list) {
   metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
-    data.frame(
-      AIC = AIC(mod),
-      BIC = BIC(mod),
-      NegLogLik = -logLik(mod)[1]
-    )
+    if (inherits(mod, "glmmTMB")) {
+      data.frame(
+        AIC = AIC(mod),
+        BIC = BIC(mod),
+        NegLogLik = -as.numeric(logLik(mod))
+      )
+    } else {
+      warning("Non-glmmTMB object in list, skipping.")
+      NULL
+    }
   }))
   return(metrics_df)
 }
 
-# Poisson model metrics
+# Extract metrics for each result object (after burn-in)
 poisson_metrics_out1 <- extract_model_metrics(out1$poisson_models)
 poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
 
-# Binomial model metrics
 binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
 binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
 
-
+# Combine summary
 summary_metrics <- data.frame(
   Model = c("Poisson_Out1", "Poisson_Out2", "Binomial_Out1", "Binomial_Out2"),
-  AIC   = c(mean(poisson_metrics_out1$AIC),
-            mean(poisson_metrics_out2$AIC),
-            mean(binomial_metrics_out1$AIC),
-            mean(binomial_metrics_out2$AIC)),
-  BIC   = c(mean(poisson_metrics_out1$BIC),
-            mean(poisson_metrics_out2$BIC),
-            mean(binomial_metrics_out1$BIC),
-            mean(binomial_metrics_out2$BIC)),
-  NegLogLik = c(mean(poisson_metrics_out1$NegLogLik),
-                mean(poisson_metrics_out2$NegLogLik),
-                mean(binomial_metrics_out1$NegLogLik),
-                mean(binomial_metrics_out2$NegLogLik))
+  AIC   = c(mean(poisson_metrics_out1$AIC, na.rm = TRUE),
+            mean(poisson_metrics_out2$AIC, na.rm = TRUE),
+            mean(binomial_metrics_out1$AIC, na.rm = TRUE),
+            mean(binomial_metrics_out2$AIC, na.rm = TRUE)),
+  BIC   = c(mean(poisson_metrics_out1$BIC, na.rm = TRUE),
+            mean(poisson_metrics_out2$BIC, na.rm = TRUE),
+            mean(binomial_metrics_out1$BIC, na.rm = TRUE),
+            mean(binomial_metrics_out2$BIC, na.rm = TRUE)),
+  NegLogLik = c(mean(poisson_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(poisson_metrics_out2$NegLogLik, na.rm = TRUE),
+                mean(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(binomial_metrics_out2$NegLogLik, na.rm = TRUE))
 )
 
+# Display the result
 print(summary_metrics)
+
 ############################ model comparison model as whole ############################
 
-# Helper function to extract metrics
+# Helper function to extract model metrics safely
 extract_model_metrics <- function(model_list) {
   metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
-    data.frame(
-      AIC = AIC(mod),
-      BIC = BIC(mod),
-      NegLogLik = -logLik(mod)[1]
-    )
+    if (inherits(mod, "glmmTMB")) {
+      data.frame(
+        AIC = AIC(mod),
+        BIC = BIC(mod),
+        NegLogLik = -as.numeric(logLik(mod))
+      )
+    } else {
+      warning("Skipping non-glmmTMB model object.")
+      NULL
+    }
   }))
   return(metrics_df)
 }
@@ -466,24 +277,25 @@ binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
 poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
 binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
 
-# Sum metrics across both model types
+# Compute total (sum) of metrics across both models for each run
 overall_metrics <- data.frame(
   Model = c("out1", "out2"),
   Total_AIC = c(
-    sum(poisson_metrics_out1$AIC) + sum(binomial_metrics_out1$AIC),
-    sum(poisson_metrics_out2$AIC) + sum(binomial_metrics_out2$AIC)
+    sum(poisson_metrics_out1$AIC, na.rm = TRUE) + sum(binomial_metrics_out1$AIC, na.rm = TRUE),
+    sum(poisson_metrics_out2$AIC, na.rm = TRUE) + sum(binomial_metrics_out2$AIC, na.rm = TRUE)
   ),
   Total_BIC = c(
-    sum(poisson_metrics_out1$BIC) + sum(binomial_metrics_out1$BIC),
-    sum(poisson_metrics_out2$BIC) + sum(binomial_metrics_out2$BIC)
+    sum(poisson_metrics_out1$BIC, na.rm = TRUE) + sum(binomial_metrics_out1$BIC, na.rm = TRUE),
+    sum(poisson_metrics_out2$BIC, na.rm = TRUE) + sum(binomial_metrics_out2$BIC, na.rm = TRUE)
   ),
   Total_NegLogLik = c(
-    sum(poisson_metrics_out1$NegLogLik) + sum(binomial_metrics_out1$NegLogLik),
-    sum(poisson_metrics_out2$NegLogLik) + sum(binomial_metrics_out2$NegLogLik)
+    sum(poisson_metrics_out1$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
+    sum(poisson_metrics_out2$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out2$NegLogLik, na.rm = TRUE)
   )
 )
 
-# View the comparison
+# Print the comparison summary
 print(overall_metrics)
+
 
 ```

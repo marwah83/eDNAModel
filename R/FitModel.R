@@ -31,10 +31,10 @@ FitModel <- function(phyloseq,
   )
   long_df <- prep$long_df
 
-  message("🔍 Calculating most abundant OTU from filtered phyloseq object...")
+  message(" Calculating most abundant OTU from filtered phyloseq object...")
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
-  message("📌 Using most abundant OTU as reference: ", top_otu)
+  message(" Using most abundant OTU as reference: ", top_otu)
 
   long_df$OTU <- factor(long_df$OTU, levels = unique(long_df$OTU))
   long_df$OTU <- relevel(long_df$OTU, ref = top_otu)
@@ -68,18 +68,18 @@ FitModel <- function(phyloseq,
     )
 
   if (nlevels(reduced_data$treatment) < 2) {
-    stop("❌ Error: 'treatment' must have at least 2 levels.")
+    stop(" Error: 'treatment' must have at least 2 levels.")
   }
 
   # ──────────────────────────────────────
   # 3. Iterative Model Fitting
   # ──────────────────────────────────────
   for (i in 1:n_iter) {
-    message("🔁 Iteration ", i)
+    message(" Iteration ", i)
 
     # --- Binomial model ---
     binomial_formula <- reformulate(termlabels = deparse(binomial_rhs), response = "z_sim")
-    message("📌 Binomial model formula: ", deparse(binomial_formula))
+    message(" Binomial model formula: ", deparse(binomial_formula))
 
     model_binomial <- glmmTMB::glmmTMB(
       formula = binomial_formula,
@@ -109,7 +109,7 @@ FitModel <- function(phyloseq,
     poisson_data <- full_data %>% filter(z_sim == 1)
 
     poisson_formula <- reformulate(termlabels = deparse(poisson_rhs), response = "y")
-    message("📌 Poisson model formula: ", deparse(poisson_formula))
+    message(" Poisson model formula: ", deparse(poisson_formula))
 
     model_poisson <- glmmTMB::glmmTMB(
       formula = poisson_formula,

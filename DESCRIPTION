@@ -20,7 +20,8 @@ Imports:
     dplyr,
     ggplot2,
     tidyr,
-    BiocManager
+    BiocManager,
+    glmmTMB
 LinkingTo: 
     TMB, 
     RcppEigen
@@ -28,7 +29,7 @@ Suggests:
     rcmdcheck,
     testthat (>= 3.0.0),
     covr,
-    knitr,
-    rmarkdown
+    rmarkdown,
+    pheatmap
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3

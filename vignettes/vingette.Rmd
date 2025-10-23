@@ -1,18 +1,16 @@
 ---
-title: 'eDNAModel: Updated Workflow with Phyloseq'
+title: "eDNAModel: Updated Workflow with Phyloseq"
 author: "Marwah Soliman, Bert van der Veen"
 date: "`r Sys.Date()`"
-output:
-  html_document:
-    toc: true
-    toc_depth: '3'
-    df_print: paged
+output: 
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 3
     number_sections: true
-vignette: "%\\VignetteIndexEntry{eDNAModel: Updated Workflow with Phyloseq} %\\VignetteEngine{knitr::rmarkdown}
-  %\\VignetteEncoding{UTF-8}\n"
+vignette: >
+  %\VignetteIndexEntry{eDNAModel: Updated Workflow with Phyloseq}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}
@@ -161,4 +159,123 @@ pheatmap(psi_matrix,
          scale = "none",
          main = "Clustered Heatmap of Occupancy Probabilities (ψ)",
          color = colorRampPalette(c("white", "blue"))(100))
+```
+
+```{r example0, include=TRUE}
+
+##For example 
+
+out1 <- FitModel(
+  phyloseq = physeq_100,
+  poisson_rhs = quote((1|OTU)+(1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment*OTU),
+  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
+  sampletype_keep = "biologicalsample",
+  abundance_threshold = 1,
+  treatment_exclude = "0",
+  n_iter = 50,
+  burn_in = 10
+)
+
+out2<- FitModel(
+  phyloseq = physeq_100,
+  poisson_rhs = quote((1|OTU)+(1 | Site/OTU)),
+  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
+  sampletype_keep = "biologicalsample",
+  abundance_threshold = 1,
+  treatment_exclude = "0",
+  n_iter = 50,
+  burn_in = 10
+)
+
+# Extract model metrics (AIC, BIC, NegLogLik) across multiple iterations
+extract_model_metrics <- function(model_list) {
+  metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
+    if (inherits(mod, "glmmTMB")) {
+      data.frame(
+        AIC = AIC(mod),
+        BIC = BIC(mod),
+        NegLogLik = -as.numeric(logLik(mod))
+      )
+    } else {
+      warning("Non-glmmTMB object in list, skipping.")
+      NULL
+    }
+  }))
+  return(metrics_df)
+}
+
+# Extract metrics for each result object (after burn-in)
+poisson_metrics_out1 <- extract_model_metrics(out1$poisson_models)
+poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
+
+binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
+binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
+
+# Combine summary
+summary_metrics <- data.frame(
+  Model = c("Poisson_Out1", "Poisson_Out2", "Binomial_Out1", "Binomial_Out2"),
+  AIC   = c(mean(poisson_metrics_out1$AIC, na.rm = TRUE),
+            mean(poisson_metrics_out2$AIC, na.rm = TRUE),
+            mean(binomial_metrics_out1$AIC, na.rm = TRUE),
+            mean(binomial_metrics_out2$AIC, na.rm = TRUE)),
+  BIC   = c(mean(poisson_metrics_out1$BIC, na.rm = TRUE),
+            mean(poisson_metrics_out2$BIC, na.rm = TRUE),
+            mean(binomial_metrics_out1$BIC, na.rm = TRUE),
+            mean(binomial_metrics_out2$BIC, na.rm = TRUE)),
+  NegLogLik = c(mean(poisson_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(poisson_metrics_out2$NegLogLik, na.rm = TRUE),
+                mean(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(binomial_metrics_out2$NegLogLik, na.rm = TRUE))
+)
+
+# Display the result
+print(summary_metrics)
+
+############################ model comparison model as whole ############################
+
+# Helper function to extract model metrics safely
+extract_model_metrics <- function(model_list) {
+  metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
+    if (inherits(mod, "glmmTMB")) {
+      data.frame(
+        AIC = AIC(mod),
+        BIC = BIC(mod),
+        NegLogLik = -as.numeric(logLik(mod))
+      )
+    } else {
+      warning("Skipping non-glmmTMB model object.")
+      NULL
+    }
+  }))
+  return(metrics_df)
+}
+
+# Extract metrics for out1
+poisson_metrics_out1 <- extract_model_metrics(out1$poisson_models)
+binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
+
+# Extract metrics for out2
+poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
+binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
+
+# Compute total (sum) of metrics across both models for each run
+overall_metrics <- data.frame(
+  Model = c("out1", "out2"),
+  Total_AIC = c(
+    sum(poisson_metrics_out1$AIC, na.rm = TRUE) + sum(binomial_metrics_out1$AIC, na.rm = TRUE),
+    sum(poisson_metrics_out2$AIC, na.rm = TRUE) + sum(binomial_metrics_out2$AIC, na.rm = TRUE)
+  ),
+  Total_BIC = c(
+    sum(poisson_metrics_out1$BIC, na.rm = TRUE) + sum(binomial_metrics_out1$BIC, na.rm = TRUE),
+    sum(poisson_metrics_out2$BIC, na.rm = TRUE) + sum(binomial_metrics_out2$BIC, na.rm = TRUE)
+  ),
+  Total_NegLogLik = c(
+    sum(poisson_metrics_out1$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
+    sum(poisson_metrics_out2$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out2$NegLogLik, na.rm = TRUE)
+  )
+)
+
+# Print the comparison summary
+print(overall_metrics)
+
 ```

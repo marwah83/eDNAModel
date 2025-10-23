@@ -57,7 +57,7 @@ otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
   physeq_filtered <- prune_samples(rownames(otu_mat), physeq_filtered)
 
   # === Step 6: Validation checks ===
-  message("\n🔎 Running validation checks...")
+  message("\n  Running validation checks...")
 
   if (any(colSums(otu_table(physeq_filtered)) == 0)) {
     warning("Some species still have all zeros.")

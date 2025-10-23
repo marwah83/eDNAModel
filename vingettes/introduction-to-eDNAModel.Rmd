@@ -53,7 +53,7 @@ physeq_100 <- prune_taxa(selected_otus, physeq)
 
 # 3. Fit the Occupancy–Detection Model
 
-```{r fit-model}
+```{r fit-model, echo=FALSE}
 out <- FitModel(
   phyloseq = physeq_100,
   poisson_rhs = quote((1|OTU)+(1|Site/OTU)+(1|Sample/OTU)+(1|Replicate/OTU)+treatment*OTU),
@@ -72,7 +72,7 @@ out <- FitModel(
 
 ## 4.1 Detection Probability Caterpillar Plot
 
-```{r plot-detect}
+```{r plot-detect, fig.width=10, fig.height=9}
 p_detect_data <- out$summary %>%
   select(OTU, Site, treatment, p_detect_mean, p_detect_lwr, p_detect_upr) %>%
   group_by(OTU) %>%
@@ -95,7 +95,7 @@ ggplot(p_detect_data, aes(x = p_detect_mean, y = OTU)) +
 
 ## 4.2 Occupancy Probability Caterpillar Plot
 
-```{r plot-occupancy}
+```{r plot-occupancy,fig.width=10, fig.height=9}
 psi_data <- out$summary %>%
   select(OTU, Site, treatment, psi_mean, psi_lwr, psi_upr) %>%
   group_by(OTU) %>%
@@ -118,7 +118,7 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
 
 ## 4.3 Occupancy by Treatment
 
-```{r plot-psi-treatment}
+```{r plot-psi-treatment,fig.width=10, fig.height=9}
 psi_treatment <- out$summary %>%
   select(OTU, treatment, psi_mean, psi_lwr, psi_upr) %>%
   group_by(OTU) %>%
@@ -142,7 +142,7 @@ ggplot(psi_treatment, aes(x = psi_mean, y = OTU, color = treatment)) +
 
 ## 4.4 Clustered Heatmap of Occupancy Probabilities
 
-```{r heatmap-psi}
+```{r heatmap-psi,fig.width=10, fig.height=9}
 psi_matrix <- out$summary %>%
   select(Site, OTU, treatment, psi_mean) %>%
   group_by(Site, OTU) %>%
@@ -162,7 +162,7 @@ pheatmap(psi_matrix,
 ```
 
 
-```{r model-comparison-full, include=TRUE}
+```{r model-comparison-full, include=TRUE, echo=FALSE}
 
 ##For example 
 

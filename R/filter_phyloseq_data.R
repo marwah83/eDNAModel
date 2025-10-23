@@ -21,10 +21,10 @@ filter_phyloseq_data <- function(phyloseq_obj, min_species_sum = 30, save_path =
 
   # === Validate input ===
   if (!inherits(phyloseq_obj, "phyloseq")) {
-    stop("❌ Input must be a valid `phyloseq` object.")
+    stop("Input must be a valid `phyloseq` object.")
   }
 
-  message("🔍 Starting phyloseq data filtering process...")
+  message("Starting phyloseq data filtering process...")
 
   # === Step 1: Extract OTU matrix ===
   otu_mat <- if (phyloseq::taxa_are_rows(phyloseq_obj)) {
@@ -36,19 +36,19 @@ filter_phyloseq_data <- function(phyloseq_obj, min_species_sum = 30, save_path =
 
   # === Step 2: Remove all-zero species ===
   species_to_keep <- colSums(otu_mat) > 0
-  if (!any(species_to_keep)) stop("❌ No species left after removing all-zero species.")
+  if (!any(species_to_keep)) stop("No species left after removing all-zero species.")
   otu_mat <- otu_mat[, species_to_keep, drop = FALSE]
 
   # === Step 3: Remove all-zero samples ===
   samples_to_keep <- rowSums(otu_mat) > 0
-  if (!any(samples_to_keep)) stop("❌ No samples left after removing all-zero samples.")
+  if (!any(samples_to_keep)) stop("No samples left after removing all-zero samples.")
   otu_mat <- otu_mat[samples_to_keep, , drop = FALSE]
-  message("✅ Removed all-zero samples. Remaining: ", nrow(otu_mat))
+  message(" Removed all-zero samples. Remaining: ", nrow(otu_mat))
 
   # === Step 4: Filter rare species ===
   species_to_keep_final <- colSums(otu_mat) >= min_species_sum
 if (!any(species_to_keep_final)) {
-  stop("❌ No species meet the min_species_sum of ", min_species_sum)
+  stop(" No species meet the min_species_sum of ", min_species_sum)
 }
 otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
 
@@ -60,35 +60,35 @@ otu_mat <- otu_mat[, species_to_keep_final, drop = FALSE]
   message("\n🔎 Running validation checks...")
 
   if (any(colSums(otu_table(physeq_filtered)) == 0)) {
-    warning("⚠️ Some species still have all zeros.")
+    warning("Some species still have all zeros.")
   } else {
-    message("✅ All-zero species removed.")
+    message(" All-zero species removed.")
   }
 
   if (any(rowSums(otu_table(physeq_filtered)) == 0)) {
-    warning("⚠️ Some samples still have all zeros.")
+    warning(" Some samples still have all zeros.")
   } else {
-    message("✅ All-zero samples removed.")
+    message(" All-zero samples removed.")
   }
 
   if (any(colSums(otu_table(physeq_filtered)) < min_species_sum)) {
-    warning("⚠️ Some species with total counts <", min_species_sum, " still remain.")
+    warning(" Some species with total counts <", min_species_sum, " still remain.")
   } else {
-    message("✅ All species below threshold successfully removed.")
+    message(" All species below threshold successfully removed.")
   }
 
   # === Step 7: Save object ===
   if (!is.null(save_path)) {
     tryCatch({
       saveRDS(physeq_filtered, file = save_path)
-      message("💾 Filtered phyloseq object saved as: ", save_path)
+      message("Filtered phyloseq object saved as: ", save_path)
     }, error = function(e) {
-      warning("❌ Failed to save filtered object: ", e$message)
+      warning(" Failed to save filtered object: ", e$message)
     })
   }
 
   # === Final Summary ===
-  message("\n📦 Final filtered phyloseq object:")
+  message("\n Final filtered phyloseq object:")
   message("   Samples: ", nsamples(physeq_filtered))
   message("   Species: ", ntaxa(physeq_filtered))
   message("   Non-zero entries: ", sum(otu_table(physeq_filtered) > 0))

@@ -21,7 +21,8 @@ Imports:
     ggplot2,
     tidyr,
     BiocManager,
-    glmmTMB
+    glmmTMB,
+    tibble
 LinkingTo: 
     TMB, 
     RcppEigen

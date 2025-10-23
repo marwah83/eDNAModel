@@ -11,7 +11,7 @@
 #' @param burn_in Number of burn-in iterations to discard.
 #'
 #' @return A list with summaries and iteration-level posterior samples.
-#'
+#' @export
 FitModel <- function(phyloseq,
                      poisson_rhs,
                      binomial_rhs,

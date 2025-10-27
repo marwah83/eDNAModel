@@ -162,7 +162,7 @@ pheatmap(psi_matrix,
 ```
 
 
-```{r model-comparison-full, include=TRUE, echo=FALSE}
+```{r model-comparison-full, echo=FALSE}
 
 ##For example 
 

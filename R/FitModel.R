@@ -108,7 +108,7 @@ FitModel <- function(phyloseq,
 
     poisson_data <- full_data %>% filter(z_sim == 1)
 
-    poisson_formula <- reformulate(termlabels = deparse(poisson_rhs), response = "y")
+    poisson_formula <- reformulate(termlabels = deparse1(poisson_rhs), response = "y")
     message(" Poisson model formula: ", deparse1(poisson_formula))
 
     model_poisson <- glmmTMB::glmmTMB(

@@ -118,24 +118,25 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
 
 ## 4.3 Occupancy by Treatment
 
-```{r plot-psi-treatment,fig.width=10, fig.height=9}
-psi_treatment <- out$summary %>%
-  select(OTU, treatment, psi_mean, psi_lwr, psi_upr) %>%
+```{r plot-psi-Samplingmonth,fig.width=10, fig.height=9}
+psi_samplingmonth <- out$summary %>%
+  select(OTU, Samplingmonth, psi_mean, psi_lwr, psi_upr) %>%
   group_by(OTU) %>%
   mutate(mean_overall = mean(psi_mean, na.rm = TRUE)) %>%
   ungroup() %>%
   arrange(mean_overall) %>%
   mutate(OTU = factor(OTU, levels = unique(OTU)))
 
-ggplot(psi_treatment, aes(x = psi_mean, y = OTU, color = treatment)) +
+ggplot(psi_samplingmonth, aes(x = psi_mean, y = OTU, color = Samplingmonth)) +
   geom_point(position = position_dodge(width = 0.5)) +
   geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2,
                  position = position_dodge(width = 0.5)) +
-  labs(title = "Occupancy (ψ) by OTU and Treatment",
-       x = "Occupancy Probability (ψ)", y = "OTU", color = "Treatment") +
+  labs(title = "Occupancy (ψ) by OTU and Sampling Month",
+       x = "Occupancy Probability (ψ)", y = "OTU", color = "Sampling Month") +
   theme_minimal() +
   theme(axis.text.y = element_text(size = 6),
         plot.title = element_text(hjust = 0.5))
+
 ```
 
 ---

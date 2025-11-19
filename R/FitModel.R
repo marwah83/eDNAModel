@@ -47,11 +47,9 @@ FitModel <- function(phyloseq,
     group_by(Site, OTU) %>%
     summarise(
       z_obs = as.integer(sum(y > 0) > abundance_threshold),
-      treatment = dplyr::first(treatment),  # Capture treatment group
       across(-y, dplyr::first),
       .groups = "drop"
     )
-  
   # Optional exclusion of treatment group
   if (!is.null(treatment_exclude)) {
     reduced_data <- reduced_data %>% filter(treatment != treatment_exclude)

@@ -45,7 +45,6 @@ test_that("FitModel", {
       sampletype_keep = "biologicalsample",
       min_species_sum = 1,
       abundance_threshold = 1,
-      treatment_exclude = NULL,
       n_iter = n_iter_test,
       burn_in = burn_in_test
     )

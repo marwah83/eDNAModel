@@ -18,6 +18,7 @@ FitModel <- function(phyloseq,
                      min_species_sum = 50,
                      sampletype_keep = NULL,
                      abundance_threshold = 1,
+                     treatment_exclude = NULL,
                      n_iter = 50,
                      burn_in = 10) {
   
@@ -46,10 +47,25 @@ FitModel <- function(phyloseq,
     group_by(Site, OTU) %>%
     summarise(
       z_obs = as.integer(sum(y > 0) > abundance_threshold),
+      treatment = dplyr::first(treatment),  # Capture treatment group
       across(-y, dplyr::first),
       .groups = "drop"
-    ) %>%
-    mutate(z_sim = z_obs)
+    )
+  
+  # Optional exclusion of treatment group
+  if (!is.null(treatment_exclude)) {
+    reduced_data <- reduced_data %>% filter(treatment != treatment_exclude)
+  }
+
+  reduced_data <- reduced_data %>%
+    mutate(
+      treatment = droplevels(factor(treatment)),
+      z_sim = z_obs
+    )
+  
+  if (nlevels(reduced_data$treatment) < 2) {
+    stop("Error: 'treatment' must have at least 2 levels.")
+  }
   
   # ──────────────────────────────────────
   # 3. Iterative Model Fitting
@@ -63,7 +79,7 @@ FitModel <- function(phyloseq,
   for (i in 1:n_iter) {
     message(" Iteration ", i)
     
-    # --- Binomial model ---
+    # Binomial model
     binomial_formula <- reformulate(termlabels = deparse(binomial_rhs), response = "z_sim")
     message(" Binomial model formula: ", deparse(binomial_formula))
     
@@ -77,20 +93,30 @@ FitModel <- function(phyloseq,
     logit_draw <- rnorm(n = nrow(reduced_data), mean = pred_link$fit, sd = pred_link$se.fit)
     psi_pred <- plogis(logit_draw)
     
-    psi_list[[i]] <- data.frame(Site = reduced_data$Site, OTU = reduced_data$OTU, eta = logit_draw)
+    psi_list[[i]] <- data.frame(
+      Site = reduced_data$Site,
+      OTU = reduced_data$OTU,
+      treatment = reduced_data$treatment,
+      eta = logit_draw
+    )
+    
     binomial_models[[i]] <- model_binomial
     
-    # --- Poisson model ---
-    full_data <- long_df %>%
+    # Poisson model
+    full_data <- long_df
+    if (!is.null(treatment_exclude)) {
+      full_data <- full_data %>% filter(treatment != treatment_exclude)
+    }
+    
+    full_data <- full_data %>%
+      mutate(treatment = droplevels(factor(treatment))) %>%
       select(-any_of("z_sim")) %>%
       left_join(reduced_data[, c("Site", "OTU", "z_sim")], by = c("Site", "OTU"))
     
     poisson_data <- full_data %>% filter(z_sim == 1)
     
     poisson_formula <- reformulate(termlabels = deparse1(poisson_rhs), response = "y")
-    
     message(" Poisson model formula: ", deparse1(poisson_formula))
-    
     
     model_poisson <- glmmTMB::glmmTMB(
       formula = poisson_formula,
@@ -101,8 +127,19 @@ FitModel <- function(phyloseq,
     lambda_pred <- predict(model_poisson, type = "link", se.fit = TRUE, newdata = poisson_data)
     lambda <- exp(lambda_pred$fit)
     
-    lambda_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU, eta = lambda_pred$fit)
-    p_detect_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU, eta = lambda_pred$fit)
+    lambda_list[[i]] <- data.frame(
+      Site = poisson_data$Site,
+      OTU = poisson_data$OTU,
+      treatment = poisson_data$treatment,
+      eta = lambda_pred$fit
+    )
+    
+    p_detect_list[[i]] <- data.frame(
+      Site = poisson_data$Site,
+      OTU = poisson_data$OTU,
+      treatment = poisson_data$treatment,
+      eta = lambda_pred$fit
+    )
     
     poisson_models[[i]] <- model_poisson
     
@@ -123,22 +160,22 @@ FitModel <- function(phyloseq,
   }
   
   # ──────────────────────────────────────
-  # 4. Posterior Summaries (without treatment)
+  # 4. Posterior Summaries with treatment
   # ──────────────────────────────────────
   bind_summary_link <- function(lst, link_type = c("logit", "log", "cloglog")) {
     link_type <- match.arg(link_type)
     df <- bind_rows(lst)
     
     df_summary <- df %>%
-      group_by(Site, OTU) %>%
+      group_by(Site, OTU, treatment) %>%
       summarise(eta_mean = mean(eta, na.rm = TRUE), eta_var = var(eta, na.rm = TRUE), .groups = "drop")
     
     df <- df %>%
-      left_join(df_summary, by = c("Site", "OTU")) %>%
+      left_join(df_summary, by = c("Site", "OTU", "treatment")) %>%
       mutate(weight = 1 / ifelse(is.na(eta_var) | eta_var == 0, 1e-6, eta_var))
     
     weighted_summary <- df %>%
-      group_by(Site, OTU) %>%
+      group_by(Site, OTU, treatment) %>%
       summarise(
         eta_mean = sum(eta * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
         eta_var = sum(weight * (eta - eta_mean)^2, na.rm = TRUE) /
@@ -166,27 +203,26 @@ FitModel <- function(phyloseq,
         ),
         se = se_eta
       ) %>%
-      select(Site, OTU, mean, se, lwr, upr)
+      select(Site, OTU, treatment, mean, se, lwr, upr)
     
     return(weighted_summary)
   }
   
-  # Apply burn-in
+  # ──────────────────────────────────────
+  # 5. Final Summaries
+  # ──────────────────────────────────────
   psi_list_burned      <- psi_list[-seq_len(burn_in)]
   lambda_list_burned   <- lambda_list[-seq_len(burn_in)]
   p_detect_list_burned <- p_detect_list[-seq_len(burn_in)]
   
-  # Final summaries
   psi_summary      <- bind_summary_link(psi_list_burned,      link_type = "logit")
   lambda_summary   <- bind_summary_link(lambda_list_burned,   link_type = "log")
   p_detect_summary <- bind_summary_link(p_detect_list_burned, link_type = "cloglog")
   
   final_summary <- psi_summary %>%
-    rename_with(~paste0("psi_", .), -c(Site, OTU)) %>%
-    left_join(rename_with(lambda_summary, ~paste0("lambda_", .), -c(Site, OTU)),
-              by = c("Site", "OTU")) %>%
-    left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -c(Site, OTU)),
-              by = c("Site", "OTU"))
+    rename_with(~paste0("psi_", .), -c(Site, OTU, treatment)) %>%
+    left_join(rename_with(lambda_summary, ~paste0("lambda_", .), -c(Site, OTU, treatment)), by = c("Site", "OTU", "treatment")) %>%
+    left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -c(Site, OTU, treatment)), by = c("Site", "OTU", "treatment"))
   
   return(list(
     summary = final_summary,
@@ -198,4 +234,3 @@ FitModel <- function(phyloseq,
     reduced_data = reduced_data
   ))
 }
-

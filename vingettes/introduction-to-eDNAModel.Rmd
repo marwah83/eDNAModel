@@ -116,11 +116,11 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
 
 ---
 
-## 4.3 Occupancy by Samplingmonth
+## 4.3 Occupancy by treatment
 
 ```{r plot-psi-Samplingmonth,fig.width=10, fig.height=9}
 psi_samplingmonth <- out$summary %>%
-  select(OTU, Samplingmonth, psi_mean, psi_lwr, psi_upr) %>%
+  select(OTU, treatment, psi_mean, psi_lwr, psi_upr) %>%
   group_by(OTU) %>%
   mutate(mean_overall = mean(psi_mean, na.rm = TRUE)) %>%
   ungroup() %>%

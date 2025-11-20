@@ -21,7 +21,6 @@ FitModel <- function(phyloseq,
                      treatment_exclude = NULL,
                      n_iter = 50,
                      burn_in = 10) {
-  
   # ──────────────────────────────────────
   # 1. Prepare data
   # ──────────────────────────────────────
@@ -31,78 +30,69 @@ FitModel <- function(phyloseq,
     sampletype_keep = sampletype_keep
   )
   long_df <- prep$long_df
-  
+
   message(" Calculating most abundant OTU from filtered phyloseq object...")
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   message(" Using most abundant OTU as reference: ", top_otu)
-  
+
   long_df$OTU <- factor(long_df$OTU, levels = unique(long_df$OTU))
   long_df$OTU <- relevel(long_df$OTU, ref = top_otu)
+
+  # Initialize storage lists
+  psi_list <- list()
+  lambda_list <- list()
+  p_detect_list <- list()
+  binomial_models <- list()
+  poisson_models  <- list()
 
   # ──────────────────────────────────────
   # 2. Create occupancy (z_obs)
   # ──────────────────────────────────────
   reduced_data <- long_df %>%
-    group_by(Site, OTU, treatment) %>%
+    group_by(Site, OTU) %>%
     summarise(
       z_obs = as.integer(sum(y > 0) > abundance_threshold),
       across(-y, dplyr::first),
       .groups = "drop"
     )
-  
-  # Optional treatment exclusion
+
   if (!is.null(treatment_exclude)) {
-    reduced_data <- reduced_data %>%
-      filter(treatment != treatment_exclude)
+    reduced_data <- reduced_data %>% filter(treatment != treatment_exclude)
   }
 
-  # Drop unused levels and refactor
   reduced_data <- reduced_data %>%
     mutate(
       treatment = droplevels(factor(treatment)),
       z_sim = z_obs
     )
 
-  # Debug: print treatment distribution after filtering
-  cat("Treatment levels AFTER filtering:\n")
-  print(table(reduced_data$treatment))
-  print(levels(reduced_data$treatment))
-
   if (nlevels(reduced_data$treatment) < 2) {
-    stop("Error: 'treatment' must have at least 2 levels after filtering. Check abundance_threshold or sampletype_keep.")
+    stop(" Error: 'treatment' must have at least 2 levels.")
   }
 
   # ──────────────────────────────────────
   # 3. Iterative Model Fitting
   # ──────────────────────────────────────
-  psi_list <- list()
-  lambda_list <- list()
-  p_detect_list <- list()
-  binomial_models <- list()
-  poisson_models  <- list()
-  
   for (i in 1:n_iter) {
     message(" Iteration ", i)
-    
+
     # --- Binomial model ---
     binomial_formula <- reformulate(termlabels = deparse(binomial_rhs), response = "z_sim")
+    message(" Binomial model formula: ", deparse(binomial_formula))
+
     model_binomial <- glmmTMB::glmmTMB(
       formula = binomial_formula,
       data = reduced_data,
       family = binomial
     )
-    
+
     pred_link <- predict(model_binomial, type = "link", se.fit = TRUE, newdata = reduced_data)
     logit_draw <- rnorm(n = nrow(reduced_data), mean = pred_link$fit, sd = pred_link$se.fit)
     psi_pred <- plogis(logit_draw)
-    
-    psi_list[[i]] <- data.frame(
-      Site = reduced_data$Site,
-      OTU = reduced_data$OTU,
-      treatment = reduced_data$treatment,
-      eta = logit_draw
-    )
+
+    psi_list[[i]] <- data.frame(Site = reduced_data$Site, OTU = reduced_data$OTU,
+                                treatment = reduced_data$treatment, eta = logit_draw)
     binomial_models[[i]] <- model_binomial
 
     # --- Poisson model ---
@@ -114,44 +104,39 @@ FitModel <- function(phyloseq,
     full_data <- full_data %>%
       mutate(treatment = droplevels(factor(treatment))) %>%
       select(-any_of("z_sim")) %>%
-      left_join(reduced_data[, c("Site", "OTU", "treatment", "z_sim")], 
-                by = c("Site", "OTU", "treatment"))
+      left_join(reduced_data[, c("Site", "OTU", "z_sim")], by = c("Site", "OTU"))
 
     poisson_data <- full_data %>% filter(z_sim == 1)
 
+    poisson_formula <- reformulate(termlabels = deparse(poisson_rhs), response = "y")
     poisson_formula <- reformulate(termlabels = deparse1(poisson_rhs), response = "y")
-    
+    message(" Poisson model formula: ", deparse1(poisson_formula))
+
     model_poisson <- glmmTMB::glmmTMB(
       formula = poisson_formula,
       data = poisson_data,
       family = poisson
     )
-    
+
     lambda_pred <- predict(model_poisson, type = "link", se.fit = TRUE, newdata = poisson_data)
     lambda <- exp(lambda_pred$fit)
 
-    lambda_list[[i]] <- data.frame(
-      Site = poisson_data$Site,
-      OTU = poisson_data$OTU,
-      treatment = poisson_data$treatment,
-      eta = lambda_pred$fit
-    )
-    p_detect_list[[i]] <- lambda_list[[i]]
+    lambda_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU,
+                                   treatment = poisson_data$treatment, eta = lambda_pred$fit)
+
+    p_detect_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU,
+                                     treatment = poisson_data$treatment, eta = lambda_pred$fit)
+
     poisson_models[[i]] <- model_poisson
 
     # Update z_sim
-    lambda_total <- data.frame(
-      Site = poisson_data$Site,
-      OTU = poisson_data$OTU,
-      treatment = poisson_data$treatment,
-      lambda_pred = lambda
-    ) %>%
-      group_by(Site, OTU, treatment) %>%
+    lambda_total <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU, lambda_pred = lambda) %>%
+      group_by(Site, OTU) %>%
       summarise(lambda_prod = 1 - prod(1 - exp(-lambda_pred)), .groups = "drop")
-    
+
     reduced_data <- reduced_data %>%
       select(-any_of("lambda_prod")) %>%
-      left_join(lambda_total, by = c("Site", "OTU", "treatment")) %>%
+      left_join(lambda_total, by = c("Site", "OTU")) %>%
       mutate(lambda_prod = tidyr::replace_na(lambda_prod, 0))
 
     zero_indices <- which(reduced_data$z_obs == 0)
@@ -169,11 +154,7 @@ FitModel <- function(phyloseq,
 
     df_summary <- df %>%
       group_by(Site, OTU, treatment) %>%
-      summarise(
-        eta_mean = mean(eta, na.rm = TRUE),
-        eta_var = var(eta, na.rm = TRUE),
-        .groups = "drop"
-      )
+      summarise(eta_mean = mean(eta, na.rm = TRUE), eta_var = var(eta, na.rm = TRUE), .groups = "drop")
 
     df <- df %>%
       left_join(df_summary, by = c("Site", "OTU", "treatment")) %>%

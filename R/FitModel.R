@@ -93,12 +93,8 @@ FitModel <- function(phyloseq,
     lambda_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU,
                                    treatment = poisson_data$treatment, eta = lambda_pred$fit)
 
-    p_detect_list[[i]] <- data.frame(
-      Site = poisson_data$Site,
-      OTU = poisson_data$OTU,
-      treatment = poisson_data$treatment,
-      eta = log(-log(1 - (1 - exp(-lambda))))  # cloglog link
-    )
+    p_detect_list[[i]] <- data.frame(Site = poisson_data$Site, OTU = poisson_data$OTU,
+                                     treatment = poisson_data$treatment, eta = lambda_pred$fit)
 
     poisson_models[[i]] <- model_poisson
 

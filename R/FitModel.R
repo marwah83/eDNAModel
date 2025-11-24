@@ -65,7 +65,7 @@ FitModel <- function(phyloseq,
   long_df <- prep$long_df
 
   # --- Setup OTU factors ---
-  message("📊 Calculating most abundant OTU...")
+  message(" Calculating most abundant OTU...")
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   long_df$OTU <- factor(long_df$OTU, levels = unique(long_df$OTU))

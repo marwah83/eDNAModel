@@ -1,88 +1,93 @@
-#' Prepare Long-format OTU Data from a phyloseq Object
+#' Prepare Long-format OTU Data from Phyloseq Object
 #'
-#' Filters and reshapes a `phyloseq` object into a long-format data frame for
-#' occupancy-abundance modeling. The function optionally filters on a sample type
-#' (e.g., `"biologicalsample"`), parses replicate and sample identifiers, renames
-#' location to `Site`, and transforms the OTU matrix to long format.
+#' Filters rare taxa, auto-detects sample and replicate columns, and returns long-format data
+#' with OTU abundances and metadata merged. Assumes presence of consistent metadata columns.
 #'
-#' @param physeq_obj A [`phyloseq::phyloseq`] object containing OTU table and sample metadata.
-#' @param min_species_sum Minimum total abundance required to retain a taxon (default: 50).
-#' @param sampletype_keep Optional value of `sampletype` column to filter by (e.g., `"biologicalsample"`).
+#' @param physeq_obj A \code{phyloseq} object containing OTU table and sample metadata.
+#' @param min_species_sum Integer. Minimum total abundance for a species (OTU) to be retained.
+#' @param site_col Character string. Name of the column in metadata corresponding to site identity.
 #'
 #' @return A list with:
 #' \describe{
-#'   \item{physeq_filtered}{Filtered `phyloseq` object after abundance and sample type filtering.}
-#'   \item{long_df}{Long-format `data.frame` with OTU counts, metadata, and parsed identifiers.}
+#'   \item{\code{physeq_filtered}}{Filtered phyloseq object with rare taxa removed}
+#'   \item{\code{long_df}}{Long-format data frame with OTU abundances and metadata}
+#'   \item{\code{sample_col}}{Auto-detected column used as sample ID}
+#'   \item{\code{replicate_col}}{Auto-detected column used as replicate ID}
 #' }
 #' 
-#' @importFrom phyloseq sample_data otu_table taxa_are_rows filter_taxa prune_samples sample_names
+#'
+#' @importFrom phyloseq sample_data otu_table taxa_are_rows filter_taxa
+#' @importFrom dplyr mutate left_join across
 #' @importFrom tibble rownames_to_column
-#' @importFrom dplyr left_join mutate
 #' @importFrom tidyr pivot_longer
-#' 
 #' @export
 prepare_long_data <- function(physeq_obj,
                               min_species_sum = 50,
-                              sampletype_keep = NULL) {
-  
-  # Filter by total abundance
+                              site_col) {
+
+  # --- Step 1: Filter low-abundance taxa ---
   physeq_filtered <- filter_phyloseq_data(physeq_obj, min_species_sum = min_species_sum)
-  
-  # Extract sample metadata
+
+  # --- Step 2: Extract metadata ---
   sample_meta <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
-  
-  # Optional filtering by sampletype
-  if (!is.null(sampletype_keep)) {
-    if (!"sampletype" %in% names(sample_meta)) {
-      stop("sampletype column missing in sample_data")
-    }
-    keep_samples <- rownames(sample_meta[sample_meta$sampletype == sampletype_keep, ])
-    physeq_filtered <- prune_samples(keep_samples, physeq_filtered)
+
+  # --- Step 3: Auto-detect replicate and sample columns ---
+  col_names <- colnames(sample_meta)
+
+  replicate_col_candidates <- col_names[grepl("rep", col_names, ignore.case = TRUE)]
+  sample_col_candidates    <- col_names[grepl("name|id|sample", col_names, ignore.case = TRUE)]
+
+  # Ensure sample != replicate
+  sample_col_candidates <- setdiff(sample_col_candidates, replicate_col_candidates)
+
+  if (length(sample_col_candidates) == 0 || length(replicate_col_candidates) == 0) {
+    stop(" Could not detect 'sample_col' or 'replicate_col'. Check metadata column names.")
   }
-  
-  # Parse replicate and sample
-  sample_names_vec <- sample_names(physeq_filtered)
-  parsed <- strcapture("^(.*)_r([0-9]+)$", sample_names_vec,
-                       proto = list(Sample = character(), Replicate = integer()))
-  parsed$Sample[is.na(parsed$Sample)] <- sample_names_vec[is.na(parsed$Sample)]
-  parsed$Replicate[is.na(parsed$Replicate)] <- 1
-  parsed$Sample <- factor(parsed$Sample)
-  parsed$Replicate <- factor(parsed$Replicate)
-  
-  sample_data(physeq_filtered)$Sample <- parsed$Sample
-  sample_data(physeq_filtered)$Replicate <- parsed$Replicate
-  sample_data(physeq_filtered)$SampleRep <- interaction(parsed$Sample, parsed$Replicate)
-  
-  # Pull out metadata again, and rename "location" to "Site"
+
+  sample_col    <- sample_col_candidates[1]
+  replicate_col <- replicate_col_candidates[1]
+
+  message(" Auto-detected sample_col: ", sample_col)
+  message(" Auto-detected replicate_col: ", replicate_col)
+
+  # --- Step 4: Add interaction column SampleRep ---
+  sample_data(physeq_filtered)$SampleRep <- interaction(
+    sample_data(physeq_filtered)[[sample_col]],
+    sample_data(physeq_filtered)[[replicate_col]]
+  )
+
+  # --- Step 5: Get updated metadata with SampleRep ---
   meta_df <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
-  if (!"location" %in% names(meta_df)) {
-    stop("location column missing in sample_data")
-  }
-  meta_df$Site <- factor(trimws(meta_df$location))
   meta_df$SampleRep <- rownames(meta_df)
-  
-  # Filter low-prevalence taxa
+
+  # --- Step 6: Remove taxa detected in ≤5 samples ---
   physeq_filtered <- filter_taxa(physeq_filtered, function(x) sum(x > 0) > 5, prune = TRUE)
-  
-  # Prepare OTU long format
+
+  # --- Step 7: Extract OTU table and convert to long format ---
   otu_mat <- as(otu_table(physeq_filtered), "matrix")
   if (taxa_are_rows(physeq_filtered)) {
     otu_mat <- t(otu_mat)
   }
-  
+
   otu_long <- as.data.frame(otu_mat) %>%
-    tibble::rownames_to_column("SampleRep") %>%
-    tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
-  
-  # Merge OTU and metadata
+    rownames_to_column("SampleRep") %>%
+    pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
+
+  # --- Step 8: Merge metadata with long OTU table ---
   long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
     mutate(
       OTU = factor(OTU),
-      y = as.integer(y)
+      y = as.integer(y),
+      Site = .data[[site_col]],
+      Sample = .data[[sample_col]],
+      Replicate = .data[[replicate_col]]
     )
-  
+
+  # --- Return ---
   return(list(
     physeq_filtered = physeq_filtered,
-    long_df = long_df
+    long_df = long_df,
+    sample_col = sample_col,
+    replicate_col = replicate_col
   ))
 }

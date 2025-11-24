@@ -92,7 +92,7 @@ FitModel <- function(phyloseq,
   if (!is.null(treatment_col)) {
     reduced_data[[treatment_col]] <- factor(reduced_data[[treatment_col]], levels = treatment_levels)
     if (nlevels(reduced_data[[treatment_col]]) < 2) {
-      stop(" treatment_col must have ≥ 2 levels.")
+      stop("treatment_col must have less than 2 levels.")
     }
   }
 

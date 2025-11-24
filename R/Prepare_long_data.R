@@ -41,14 +41,14 @@ prepare_long_data <- function(physeq_obj,
   sample_col_candidates <- setdiff(sample_col_candidates, replicate_col_candidates)
 
   if (length(sample_col_candidates) == 0 || length(replicate_col_candidates) == 0) {
-    stop("❌ Could not detect 'sample_col' or 'replicate_col'. Check metadata column names.")
+    stop(" Could not detect 'sample_col' or 'replicate_col'. Check metadata column names.")
   }
 
   sample_col    <- sample_col_candidates[1]
   replicate_col <- replicate_col_candidates[1]
 
-  message("🧠 Auto-detected sample_col: ", sample_col)
-  message("🧠 Auto-detected replicate_col: ", replicate_col)
+  message(" Auto-detected sample_col: ", sample_col)
+  message(" Auto-detected replicate_col: ", replicate_col)
 
   # --- Step 4: Add interaction column SampleRep ---
   sample_data(physeq_filtered)$SampleRep <- interaction(

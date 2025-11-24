@@ -218,7 +218,7 @@ FitModel <- function(phyloseq,
     left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -all_of(psi_cols)),
               by = psi_cols)
 
-  rreturn(list(
+  return(list(
          summary = final_summary,
         psi_list = psi_list[-seq_len(burn_in)],
          lambda_list = lambda_list[-seq_len(burn_in)],

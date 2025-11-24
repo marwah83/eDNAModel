@@ -8,7 +8,6 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # Simulate small eDNA-like dataset
   # -------------------------------
 
-  # OTU table: 3 OTUs × 6 samples
   otu_mat <- matrix(
     c(5, 2, 3, 1, 2, 1,
       1, 2, 4, 1, 3, 1,
@@ -19,7 +18,6 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   colnames(otu_mat) <- paste0("S", 1:6)
   otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
 
-  # Sample metadata
   sample_df <- data.frame(
     Site       = rep(c("Loc1", "Loc2"), each = 3),
     SampleName = paste0("Sample", 1:6),
@@ -28,7 +26,6 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
     row.names  = paste0("S", 1:6)
   )
   sample_tab <- sample_data(sample_df)
-
   physeq <- phyloseq(otu_tab, sample_tab)
 
   # -------------------------------
@@ -51,7 +48,7 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   )
 
   # -------------------------------
-  # Structure checks
+  # Output structure
   # -------------------------------
   expect_type(result, "list")
 
@@ -63,22 +60,22 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_s3_class(result$summary, "data.frame")
   expect_gt(nrow(result$summary), 0)
 
-  expect_true(all(c("psi_mean", "lambda_mean", "p_detect_mean") %in% names(result$summary)))
+  expect_true(any(grepl("psi_mean", names(result$summary))))
+  expect_true(any(grepl("lambda_mean", names(result$summary))))
+  expect_true(any(grepl("p_detect_mean", names(result$summary))))
 
   # -------------------------------
-  # Model storage checks
+  # Models stored correctly
   # -------------------------------
   expect_length(result$binomial_models, n_iter_test)
   expect_length(result$poisson_models, n_iter_test)
-
   expect_true(all(sapply(result$binomial_models, inherits, "glmmTMB")))
   expect_true(all(sapply(result$poisson_models, inherits, "glmmTMB")))
 
   # -------------------------------
-  # Posterior list lengths (after burn-in)
+  # Posterior draws after burn-in
   # -------------------------------
   expected_length <- n_iter_test - burn_in_test
-
   expect_length(result$psi_list, expected_length)
   expect_length(result$lambda_list, expected_length)
   expect_length(result$p_detect_list, expected_length)

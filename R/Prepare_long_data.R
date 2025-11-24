@@ -1,25 +1,19 @@
-#' Prepare Long-format OTU Data from Phyloseq Object
+#' Prepare long-format OTU data with inferred sample and replicate columns
 #'
-#' Filters rare taxa, auto-detects sample and replicate columns, and returns long-format data
-#' with OTU abundances and metadata merged. Assumes presence of consistent metadata columns.
+#' Converts a phyloseq object into a long-format data frame for modeling.
 #'
-#' @param physeq_obj A \code{phyloseq} object containing OTU table and sample metadata.
-#' @param min_species_sum Integer. Minimum total abundance for a species (OTU) to be retained.
-#' @param site_col Character string. Name of the column in metadata corresponding to site identity.
+#' @param physeq_obj A phyloseq object.
+#' @param min_species_sum Minimum total abundance required to keep a species.
+#' @param site_col Name of the column indicating the site or location.
+#' @param nested_cols (Optional) Character vector of column names that are nested with OTU (e.g., sample, replicate).
 #'
 #' @return A list with:
 #' \describe{
-#'   \item{\code{physeq_filtered}}{Filtered phyloseq object with rare taxa removed}
-#'   \item{\code{long_df}}{Long-format data frame with OTU abundances and metadata}
-#'   \item{\code{sample_col}}{Auto-detected column used as sample ID}
-#'   \item{\code{replicate_col}}{Auto-detected column used as replicate ID}
+#'   \item{physeq_filtered}{Filtered phyloseq object.}
+#'   \item{long_df}{Long-format data frame.}
+#'   \item{sample_col}{Auto-detected sample column name.}
+#'   \item{replicate_col}{Auto-detected replicate column name.}
 #' }
-#' 
-#'
-#' @importFrom phyloseq sample_data otu_table taxa_are_rows filter_taxa
-#' @importFrom dplyr mutate left_join across
-#' @importFrom tibble rownames_to_column
-#' @importFrom tidyr pivot_longer
 #' @export
 prepare_long_data <- function(physeq_obj,
                               min_species_sum = 50,

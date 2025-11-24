@@ -1,52 +1,67 @@
 test_that("prepare_long_data returns correctly formatted output", {
   set.seed(123)
 
+  # -----------------------------
   # Simulate metadata
+  # -----------------------------
   sites <- paste0("Site", 1:2)
   otus <- paste0("OTU", 1:5)
   treatments <- c("Control", "Rats")
-  replicates <- 1:2
+  reps <- 1:2
 
   meta_data <- expand.grid(
-    Site = sites,
-    treatment = treatments,
-    Replicate = replicates
+    site_field = sites,                  # simulate site
+    treat_field = treatments,            # simulate treatment
+    rep_field = reps                     # simulate replicate
   )
 
-  meta_data$SampleID <- paste0(meta_data$Site, "_", meta_data$treatment, "_r", meta_data$Replicate)
+  meta_data$unique_id <- paste0(meta_data$site_field, "_", meta_data$treat_field, "_r", meta_data$rep_field)
   meta_data$sampletype <- "biologicalsample"
-  meta_data$location <- meta_data$Site
+  meta_data$location <- meta_data$site_field
 
-  rownames(meta_data) <- meta_data$SampleID
+  rownames(meta_data) <- meta_data$unique_id
 
-  # Simulate OTU count matrix: 5 OTUs × n samples
+  # -----------------------------
+  # Simulate OTU table (5 OTUs × N samples)
+  # -----------------------------
   otu_mat <- matrix(
-    data = rpois(n = 5 * nrow(meta_data), lambda = 10),
+    rpois(n = 5 * nrow(meta_data), lambda = 10),
     nrow = 5,
     ncol = nrow(meta_data),
-    dimnames = list(otus, meta_data$SampleID)
+    dimnames = list(otus, meta_data$unique_id)
   )
 
-  # Construct phyloseq object
   otu <- phyloseq::otu_table(otu_mat, taxa_are_rows = TRUE)
-  sample_df <- phyloseq::sample_data(meta_data)
-  physeq <- phyloseq::phyloseq(otu, sample_df)
+  sample_tab <- phyloseq::sample_data(meta_data)
+  physeq <- phyloseq::phyloseq(otu, sample_tab)
 
+  # -----------------------------
   # Run the function
-  result <- prepare_long_data(physeq_obj = physeq, min_species_sum = 10, sampletype_keep = "biologicalsample")
+  # -----------------------------
+  result <- prepare_long_data(
+    physeq_obj = physeq,
+    min_species_sum = 10,
+    site_col = "site_field"
+  )
 
-  # Validate structure
+  # -----------------------------
+  # Structural checks
+  # -----------------------------
   expect_type(result, "list")
-  expect_named(result, c("physeq_filtered", "long_df"))
+  expect_named(result, c("physeq_filtered", "long_df", "sample_col", "replicate_col"))
 
-  # Check filtered phyloseq object
+  # Check physeq_filtered is still a phyloseq object
   expect_s4_class(result$physeq_filtered, "phyloseq")
 
-  # Check long_df
+  # Check long_df content
   long_df <- result$long_df
   expect_s3_class(long_df, "data.frame")
   expect_true(all(c("Site", "OTU", "SampleRep", "Sample", "Replicate", "y") %in% names(long_df)))
   expect_type(long_df$y, "integer")
   expect_s3_class(long_df$OTU, "factor")
   expect_s3_class(long_df$Site, "factor")
+
+  # Confirm auto-detected fields returned
+  expect_true(is.character(result$sample_col))
+  expect_true(is.character(result$replicate_col))
 })

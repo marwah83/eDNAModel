@@ -14,11 +14,11 @@
 #' @param burn_in Number of iterations to discard as burn-in.
 #'
 #' @return A list with `summary`, `psi_list`, `lambda_list`, `p_detect_list`, models, and `reduced_data`.
-#' @export
 #'
 #' @importFrom dplyr group_by summarise mutate select filter left_join arrange ungroup across
 #' @importFrom glmmTMB glmmTMB
 #' @importFrom stats predict rnorm reformulate plogis var
+#' @export
 FitModel <- function(phyloseq,
                      site_col,
                      poisson_rhs,
@@ -42,15 +42,15 @@ FitModel <- function(phyloseq,
     grepl(paste0("OTU\\s*/\\s*\\b", x, "\\b"), rhs_text))]
 
   if (length(treatment_candidates) == 0)
-    stop("❌ No treatment variable (e.g., Samplingmonth * OTU) found.")
+    stop(" No treatment variable (e.g., Samplingmonth * OTU) found.")
   if (length(nested_candidates) < 2)
-    stop("❌ Need at least two nested variables (e.g., Sample / OTU, Replicate / OTU).")
+    stop(" Need at least two nested variables (e.g., Sample / OTU, Replicate / OTU).")
 
   treatment_col <- treatment_candidates[1]
   sample_col    <- nested_candidates[1]
   replicate_col <- nested_candidates[2]
 
-  message("📌 Detected columns:",
+  message(" Detected columns:",
           "\n   Treatment: ", treatment_col,
           "\n   Sample: ", sample_col,
           "\n   Replicate: ", replicate_col)
@@ -79,7 +79,7 @@ FitModel <- function(phyloseq,
   poisson_models <- list()
 
   treatment_levels <- levels(factor(long_df[[treatment_col]]))
-  message("🧪 Treatment levels: ", paste(treatment_levels, collapse = ", "))
+  message(" Treatment levels: ", paste(treatment_levels, collapse = ", "))
 
   # --- Site-level reduction ---
   reduced_data <- long_df %>%
@@ -92,12 +92,12 @@ FitModel <- function(phyloseq,
     )
 
   if (nlevels(reduced_data[[treatment_col]]) < 2) {
-    stop("❌ treatment_col must have ≥ 2 levels.")
+    stop(" treatment_col must have ≥ 2 levels.")
    }
 
   # --- Iterative estimation ---
   for (i in 1:n_iter) {
-    message("🔁 Iteration ", i)
+    message(" Iteration ", i)
 
     model_binomial <- glmmTMB::glmmTMB(
       formula = reformulate(deparse(binomial_rhs), response = "z_sim"),

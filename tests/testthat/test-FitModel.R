@@ -1,4 +1,4 @@
-test_that("FitModel", {
+test_that("FitModel runs with minimal arguments and inferred metadata", {
   library(phyloseq)
   library(glmmTMB)
   library(dplyr)
@@ -21,8 +21,8 @@ test_that("FitModel", {
 
   # Sample metadata
   sample_df <- data.frame(
-    sampletype = rep("biologicalsample", 6),
-    location   = rep(c("Loc1", "Loc2"), each = 3),
+    Site       = rep(c("Loc1", "Loc2"), each = 3),
+    SampleName = paste0("Sample", 1:6),
     treatment  = c("control", "control", "control", "rats", "rats", "rats"),
     Replicate  = rep(1:3, 2),
     row.names  = paste0("S", 1:6)
@@ -40,9 +40,9 @@ test_that("FitModel", {
   result <- suppressWarnings(
     FitModel(
       phyloseq = physeq,
-      poisson_rhs = quote((1 | OTU) + (1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment * OTU),
-      binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
-      sampletype_keep = "biologicalsample",
+      site_col = "Site",
+      poisson_rhs = quote((1 | OTU) + (1 | Site / OTU) + (1 | SampleName / OTU) + (1 | Replicate / OTU) + treatment * OTU),
+      binomial_rhs = quote((1 | OTU) + (1 | Site / OTU)),
       min_species_sum = 1,
       abundance_threshold = 1,
       n_iter = n_iter_test,

@@ -47,8 +47,8 @@ FitModel <- function(phyloseq,
   nested_cols   <- if (length(nested_candidates) > 0) nested_candidates else NULL
 
   message(" Detected columns:")
-  if (!is.null(treatment_col)) message("   Treatment: ", treatment_col)
-  if (!is.null(nested_cols))   message("   Nested: ", paste(nested_cols, collapse = ", "))
+  if (!is.null(treatment_col)) message(" Treatment: ", treatment_col)
+  if (!is.null(nested_cols))   message(" Nested: ", paste(nested_cols, collapse = ", "))
 
   # --- Prepare long data ---
   prep <- prepare_long_data(

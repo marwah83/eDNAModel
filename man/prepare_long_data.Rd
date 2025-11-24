@@ -4,7 +4,12 @@
 \alias{prepare_long_data}
 \title{Prepare Long-format OTU Data from Phyloseq Object}
 \usage{
-prepare_long_data(physeq_obj, min_species_sum = 50, site_col)
+prepare_long_data(
+  physeq_obj,
+  min_species_sum = 50,
+  site_col,
+  nested_cols = NULL
+)
 }
 \arguments{
 \item{physeq_obj}{A \code{phyloseq} object containing OTU table and sample metadata.}

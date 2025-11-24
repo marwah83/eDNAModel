@@ -2,7 +2,7 @@
 % Please edit documentation in R/Prepare_long_data.R
 \name{prepare_long_data}
 \alias{prepare_long_data}
-\title{Prepare Long-format OTU Data from Phyloseq Object}
+\title{Prepare long-format OTU data with inferred sample and replicate columns}
 \usage{
 prepare_long_data(
   physeq_obj,
@@ -12,22 +12,23 @@ prepare_long_data(
 )
 }
 \arguments{
-\item{physeq_obj}{A \code{phyloseq} object containing OTU table and sample metadata.}
+\item{physeq_obj}{A phyloseq object.}
 
-\item{min_species_sum}{Integer. Minimum total abundance for a species (OTU) to be retained.}
+\item{min_species_sum}{Minimum total abundance required to keep a species.}
 
-\item{site_col}{Character string. Name of the column in metadata corresponding to site identity.}
+\item{site_col}{Name of the column indicating the site or location.}
+
+\item{nested_cols}{(Optional) Character vector of column names that are nested with OTU (e.g., sample, replicate).}
 }
 \value{
 A list with:
 \describe{
-  \item{\code{physeq_filtered}}{Filtered phyloseq object with rare taxa removed}
-  \item{\code{long_df}}{Long-format data frame with OTU abundances and metadata}
-  \item{\code{sample_col}}{Auto-detected column used as sample ID}
-  \item{\code{replicate_col}}{Auto-detected column used as replicate ID}
+  \item{physeq_filtered}{Filtered phyloseq object.}
+  \item{long_df}{Long-format data frame.}
+  \item{sample_col}{Auto-detected sample column name.}
+  \item{replicate_col}{Auto-detected replicate column name.}
 }
 }
 \description{
-Filters rare taxa, auto-detects sample and replicate columns, and returns long-format data
-with OTU abundances and metadata merged. Assumes presence of consistent metadata columns.
+Converts a phyloseq object into a long-format data frame for modeling.
 }

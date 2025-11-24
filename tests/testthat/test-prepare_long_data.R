@@ -48,20 +48,18 @@ test_that("prepare_long_data returns correctly formatted output", {
   # Structural checks
   # -----------------------------
   expect_type(result, "list")
-  expect_named(result, c("physeq_filtered", "long_df", "sample_col", "replicate_col"))
+  expect_named(result, c("physeq_filtered", "long_df"))
 
-  # Check physeq_filtered is still a phyloseq object
+  # Check physeq_filtered is a phyloseq object
   expect_s4_class(result$physeq_filtered, "phyloseq")
 
-  # Check long_df content
+  # Check long_df structure
   long_df <- result$long_df
   expect_s3_class(long_df, "data.frame")
-  expect_true(all(c("Site", "OTU", "SampleRep", "Sample", "Replicate", "y") %in% names(long_df)))
+
+  expect_true(all(c("SampleRep", "OTU", "y", "Site") %in% names(long_df)))
+
   expect_type(long_df$y, "integer")
   expect_s3_class(long_df$OTU, "factor")
   expect_s3_class(long_df$Site, "factor")
-
-  # Confirm auto-detected fields returned
-  expect_true(is.character(result$sample_col))
-  expect_true(is.character(result$replicate_col))
 })

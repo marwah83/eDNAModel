@@ -93,7 +93,7 @@ FitModel <- function(phyloseq,
 
   if (nlevels(reduced_data[[treatment_col]]) < 2) {
     stop("❌ treatment_col must have ≥ 2 levels.")
-  }
+   }
 
   # --- Iterative estimation ---
   for (i in 1:n_iter) {

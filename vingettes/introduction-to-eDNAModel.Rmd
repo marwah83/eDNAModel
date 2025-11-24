@@ -38,15 +38,17 @@ This vignette demonstrates the updated occupancy–detection model workflow usin
 ---
 
 # 2. Load and Subset Data
-
 ```{r load-data}
-physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
-physeq <- readRDS(physeq_path)
+physeq_new=readRDS("~/Downloads/BGE_Port_sampling.rds")
+physeq_one=physeq_new$`Marine invasive species Thessaloniki`
+
+#physeq_path <- system.file("extdata", "longdataexample.RDS", package = "eDNAModel")
+#physeq <- readRDS(physeq_path)
 
 # Subset 100 random OTUs
-set.seed(123)
-selected_otus <- sample(taxa_names(physeq), 100)
-physeq_100 <- prune_taxa(selected_otus, physeq)
+#set.seed(123)
+#selected_otus <- sample(taxa_names(physeq), 100)
+#physeq_100 <- prune_taxa(selected_otus, physeq)
 ```
 
 ---
@@ -54,13 +56,12 @@ physeq_100 <- prune_taxa(selected_otus, physeq)
 # 3. Fit the Occupancy–Detection Model
 
 ```{r fit-model, echo=FALSE}
-out <- FitModel(
-  phyloseq = physeq_100,
-  poisson_rhs = quote((1|OTU)+(1|Site/OTU)+(1|Sample/OTU)+(1|Replicate/OTU)+treatment*OTU),
-  binomial_rhs = quote((1|OTU)+(1|Site/OTU)),
-  sampletype_keep = "biologicalsample",
-  abundance_threshold = 1,
-  treatment_exclude = "0",
+out=FitModel(
+    phyloseq = physeq_one,
+    site_col = "Sampling.area.Name",
+    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
+                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU),
+    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
   n_iter = 50,
   burn_in = 10
 )
@@ -70,48 +71,71 @@ out <- FitModel(
 
 # 4. Visualization
 
-## 4.1 Detection Probability Caterpillar Plot
+## 4.1 Occupancy Probability Caterpillar Plot
 
 ```{r plot-detect, fig.width=10, fig.height=9}
-p_detect_data <- out$summary %>%
-  select(OTU, Site, treatment, p_detect_mean, p_detect_lwr, p_detect_upr) %>%
-  group_by(OTU) %>%
-  mutate(mean_over_sites = mean(p_detect_mean, na.rm = TRUE)) %>%
-  ungroup() %>%
-  arrange(mean_over_sites) %>%
-  mutate(OTU = factor(OTU, levels = unique(OTU)))
 
-ggplot(p_detect_data, aes(x = p_detect_mean, y = OTU)) +
-  geom_point(color = "darkblue") +
-  geom_errorbarh(aes(xmin = p_detect_lwr, xmax = p_detect_upr), height = 0.2) +
-  labs(title = "Caterpillar Plot of Detection Probability by OTU",
-       x = "Probability of Detection", y = "OTU") +
-  theme_minimal() +
-  theme(axis.text.y = element_text(size = 7),
-        plot.title = element_text(hjust = 0.5))
+# Summarize occupancy across treatments
+psi_otu_summary <- out$summary %>%
+    group_by(OTU) %>%
+    summarise(
+        psi_mean = mean(psi_mean, na.rm = TRUE),
+        psi_lwr = mean(psi_lwr, na.rm = TRUE),
+        psi_upr = mean(psi_upr, na.rm = TRUE),
+        .groups = "drop"
+    ) %>%
+    arrange(psi_mean) %>%
+    mutate(OTU = factor(OTU, levels = unique(OTU)))
+
+# Plot
+ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
+    geom_point(color = "darkgreen") +
+    geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2) +
+    labs(
+        title = "Caterpillar Plot: Occupancy Probability by OTU",
+        x = "Occupancy Probability (ψ)",
+        y = "OTU"
+    ) +
+    theme_minimal() +
+    theme(
+        axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5)
+    )
+
 ```
 
 ---
 
-## 4.2 Occupancy Probability Caterpillar Plot
+## 4.2 Detection Probability Caterpillar Plot
 
 ```{r plot-occupancy,fig.width=10, fig.height=9}
-psi_data <- out$summary %>%
-  select(OTU, Site, treatment, psi_mean, psi_lwr, psi_upr) %>%
-  group_by(OTU) %>%
-  mutate(mean_over_sites = mean(psi_mean, na.rm = TRUE)) %>%
-  ungroup() %>%
-  arrange(mean_over_sites) %>%
-  mutate(OTU = factor(OTU, levels = unique(OTU)))
+# Summarize detection probability across treatments
+p_detect_otu_summary <- out$summary %>%
+    group_by(OTU) %>%
+    summarise(
+        p_detect_mean = mean(p_detect_mean, na.rm = TRUE),
+        p_detect_lwr = mean(p_detect_lwr, na.rm = TRUE),
+        p_detect_upr = mean(p_detect_upr, na.rm = TRUE),
+        .groups = "drop"
+    ) %>%
+    arrange(p_detect_mean) %>%
+    mutate(OTU = factor(OTU, levels = unique(OTU)))
 
-ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
-  geom_point(color = "darkgreen") +
-  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2) +
-  labs(title = "Caterpillar Plot of Occupancy Probability by OTU",
-       x = "Probability of Occupancy (ψ)", y = "OTU") +
-  theme_minimal() +
-  theme(axis.text.y = element_text(size = 7),
-        plot.title = element_text(hjust = 0.5))
+# Plot
+ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
+    geom_point(color = "steelblue") +
+    geom_errorbarh(aes(xmin = p_detect_lwr, xmax = p_detect_upr), height = 0.2) +
+    labs(
+        title = "Caterpillar Plot: Detection Probability by OTU",
+        x = "Detection Probability (p)",
+        y = "OTU"
+    ) +
+    theme_minimal() +
+    theme(
+        axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5)
+    )
+
 ```
 
 ---
@@ -119,23 +143,38 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU)) +
 ## 4.3 Occupancy by treatment
 
 ```{r plot-psi-Samplingmonth,fig.width=10, fig.height=9}
-psi_treatment <- out$summary %>%
-  select(OTU, treatment, psi_mean, psi_lwr, psi_upr) %>%
-  group_by(OTU) %>%
-  mutate(mean_overall = mean(psi_mean, na.rm = TRUE)) %>%
-  ungroup() %>%
-  arrange(mean_overall) %>%
-  mutate(OTU = factor(OTU, levels = unique(OTU)))
+# Set treatment variable (replace if needed)
+treatment_col <- "Samplingmonth"
 
-ggplot(psi_treatment, aes(x = psi_mean, y = OTU, color = treatment)) +
-  geom_point(position = position_dodge(width = 0.5)) +
-  geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2,
-                 position = position_dodge(width = 0.5)) +
-  labs(title = "Occupancy (ψ) by OTU and Treatment",
-       x = "Occupancy Probability (ψ)", y = "OTU", color = "Treatment") +
-  theme_minimal() +
-  theme(axis.text.y = element_text(size = 6),
-        plot.title = element_text(hjust = 0.5))
+# Prepare data
+psi_data <- out$summary %>%
+    select(OTU, all_of(treatment_col), psi_mean, psi_lwr, psi_upr) %>%
+    group_by(OTU) %>%
+    mutate(otu_mean = mean(psi_mean, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(otu_mean) %>%
+    mutate(OTU = factor(OTU, levels = unique(OTU)))
+
+# Plot with treatment as color
+ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
+    geom_point(position = position_dodge(width = 0.5)) +
+    geom_errorbarh(
+        aes(xmin = psi_lwr, xmax = psi_upr),
+        position = position_dodge(width = 0.5),
+        height = 0.2
+    ) +
+    labs(
+        title = "Caterpillar Plot: Occupancy Probability by OTU and Treatment",
+        x = "Occupancy Probability (ψ)",
+        y = "OTU",
+        color = treatment_col
+    ) +
+    theme_minimal() +
+    theme(
+        axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5)
+    )
+
 ```
 
 ---
@@ -143,22 +182,41 @@ ggplot(psi_treatment, aes(x = psi_mean, y = OTU, color = treatment)) +
 ## 4.4 Clustered Heatmap of Occupancy Probabilities
 
 ```{r heatmap-psi,fig.width=10, fig.height=9}
+# Load required libraries
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(pheatmap)
+
+# Set site column name
+site_col <- "Sampling.area.Name"  # change if needed
+
+# Step 1: Create Site × OTU matrix of psi_mean
 psi_matrix <- out$summary %>%
-  select(Site, OTU, treatment, psi_mean) %>%
-  group_by(Site, OTU) %>%
-  summarise(psi_mean = mean(psi_mean, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = OTU, values_from = psi_mean) %>%
-  column_to_rownames("Site") %>%
+  select(OTU, !!sym(site_col), psi_mean) %>%
+  pivot_wider(
+    names_from = OTU,
+    values_from = psi_mean,
+    values_fn = mean  # average if duplicates exist
+  ) %>%
+  column_to_rownames(site_col) %>%
   as.matrix()
 
-psi_matrix[is.na(psi_matrix)] <- 0
+# Step 2: Replace NAs (optional)
+psi_matrix[is.na(psi_matrix)] <- 0  # Replace with 0 or other value
 
-pheatmap(psi_matrix,
-         cluster_rows = TRUE,
-         cluster_cols = TRUE,
-         scale = "none",
-         main = "Clustered Heatmap of Occupancy Probabilities (ψ)",
-         color = colorRampPalette(c("white", "blue"))(100))
+# Step 3: Plot the heatmap
+pheatmap(
+  psi_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("white", "darkblue"))(100),
+  main = "Heatmap of Occupancy Probability (ψ): Sites × OTUs",
+  fontsize_row = 8,
+  fontsize_col = 7,
+  angle_col = 45
+)
+
 ```
 
 
@@ -166,24 +224,21 @@ pheatmap(psi_matrix,
 
 ##For example 
 
-out1 <- FitModel(
-  phyloseq = physeq_100,
-  poisson_rhs = quote((1|OTU)+(1 | Site/OTU) + (1 | Sample/OTU) + (1 | Replicate/OTU) + treatment*OTU),
-  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
-  sampletype_keep = "biologicalsample",
-  abundance_threshold = 1,
-  treatment_exclude = "0",
+out1 =FitModel(
+    phyloseq = physeq_one,
+    site_col = "Sampling.area.Name",
+    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
+                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU),
+    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
   n_iter = 50,
   burn_in = 10
 )
 
-out2<- FitModel(
-  phyloseq = physeq_100,
-  poisson_rhs = quote((1|OTU)+(1 | Site/OTU)),
-  binomial_rhs = quote((1 | OTU) + (1 | Site/OTU)),
-  sampletype_keep = "biologicalsample",
-  abundance_threshold = 1,
-  treatment_exclude = "0",
+out2 =FitModel(
+    phyloseq = physeq_one,
+    site_col = "Sampling.area.Name",
+    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)) ,
+    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
   n_iter = 50,
   burn_in = 10
 )

@@ -2,27 +2,27 @@
 % Please edit documentation in R/Prepare_long_data.R
 \name{prepare_long_data}
 \alias{prepare_long_data}
-\title{Prepare Long-format OTU Data from a phyloseq Object}
+\title{Prepare Long-format OTU Data from Phyloseq Object}
 \usage{
-prepare_long_data(physeq_obj, min_species_sum = 50, sampletype_keep = NULL)
+prepare_long_data(physeq_obj, min_species_sum = 50, site_col)
 }
 \arguments{
-\item{physeq_obj}{A [`phyloseq::phyloseq`] object containing OTU table and sample metadata.}
+\item{physeq_obj}{A \code{phyloseq} object containing OTU table and sample metadata.}
 
-\item{min_species_sum}{Minimum total abundance required to retain a taxon (default: 50).}
+\item{min_species_sum}{Integer. Minimum total abundance for a species (OTU) to be retained.}
 
-\item{sampletype_keep}{Optional value of `sampletype` column to filter by (e.g., `"biologicalsample"`).}
+\item{site_col}{Character string. Name of the column in metadata corresponding to site identity.}
 }
 \value{
 A list with:
 \describe{
-  \item{physeq_filtered}{Filtered `phyloseq` object after abundance and sample type filtering.}
-  \item{long_df}{Long-format `data.frame` with OTU counts, metadata, and parsed identifiers.}
+  \item{\code{physeq_filtered}}{Filtered phyloseq object with rare taxa removed}
+  \item{\code{long_df}}{Long-format data frame with OTU abundances and metadata}
+  \item{\code{sample_col}}{Auto-detected column used as sample ID}
+  \item{\code{replicate_col}}{Auto-detected column used as replicate ID}
 }
 }
 \description{
-Filters and reshapes a `phyloseq` object into a long-format data frame for
-occupancy-abundance modeling. The function optionally filters on a sample type
-(e.g., `"biologicalsample"`), parses replicate and sample identifiers, renames
-location to `Site`, and transforms the OTU matrix to long format.
+Filters rare taxa, auto-detects sample and replicate columns, and returns long-format data
+with OTU abundances and metadata merged. Assumes presence of consistent metadata columns.
 }

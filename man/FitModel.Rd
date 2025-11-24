@@ -2,42 +2,41 @@
 % Please edit documentation in R/FitModel.R
 \name{FitModel}
 \alias{FitModel}
-\title{Fit Site-Level Occupancy Model with Detection and Abundance Components}
+\title{Fit Hierarchical Occupancy-Detection Model using GLMMs}
 \usage{
 FitModel(
   phyloseq,
+  site_col,
   poisson_rhs,
   binomial_rhs,
   min_species_sum = 50,
-  sampletype_keep = NULL,
   abundance_threshold = 1,
-  treatment_exclude = NULL,
   n_iter = 50,
   burn_in = 10
 )
 }
 \arguments{
-\item{phyloseq}{A `phyloseq` object with OTU table and sample data.}
+\item{phyloseq}{A phyloseq object with OTU table and sample metadata.}
 
-\item{poisson_rhs}{Right-hand side formula (quoted) for the Poisson (abundance) model.}
+\item{site_col}{Name of the column representing site-level grouping.}
 
-\item{binomial_rhs}{Right-hand side formula (quoted) for the binomial (occupancy) model.}
+\item{poisson_rhs}{Right-hand-side of Poisson model (as a formula inside quote()).}
 
-\item{min_species_sum}{Minimum OTU abundance threshold to retain OTUs.}
+\item{binomial_rhs}{Right-hand-side of Binomial model (as a formula inside quote()).}
 
-\item{sampletype_keep}{Sample type to filter for (e.g., "biologicalsample").}
+\item{min_species_sum}{Minimum total abundance required to retain a taxon.}
 
-\item{abundance_threshold}{Integer threshold for detecting presence/absence.}
+\item{abundance_threshold}{Minimum detection threshold to consider presence at site level.}
 
-\item{treatment_exclude}{Optional character to exclude a treatment level (e.g., "control").}
+\item{n_iter}{Number of Gibbs iterations.}
 
-\item{n_iter}{Number of MCMC iterations.}
-
-\item{burn_in}{Number of burn-in iterations to discard.}
+\item{burn_in}{Number of iterations to discard as burn-in.}
 }
 \value{
-A list with summaries and iteration-level posterior samples.
+A list with `summary`, `psi_list`, `lambda_list`, `p_detect_list`, models, and `reduced_data`.
 }
 \description{
-Fit Site-Level Occupancy Model with Detection and Abundance Components
+Automatically detects treatment, sample, and replicate columns from model formulae.
+Uses a Gibbs-style loop for estimating detection (lambda), occupancy (psi), and 
+detection probability (p_detect).
 }

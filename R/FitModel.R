@@ -218,13 +218,13 @@ FitModel <- function(phyloseq,
     left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -all_of(psi_cols)),
               by = psi_cols)
 
-  return(list(
-    summary = final_summary,
-    psi_list = psi_list,
-    lambda_list = lambda_list,
-    p_detect_list = p_detect_list,
-    binomial_models = binomial_models,
-    poisson_models = poisson_models,
-    reduced_data = reduced_data
-  ))
+  rreturn(list(
+         summary = final_summary,
+        psi_list = psi_list[-seq_len(burn_in)],
+         lambda_list = lambda_list[-seq_len(burn_in)],
+         p_detect_list = p_detect_list[-seq_len(burn_in)],
+         binomial_models = binomial_models,
+         poisson_models = poisson_models,
+         reduced_data = reduced_data
+     ))
 }

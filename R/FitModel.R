@@ -41,10 +41,10 @@ FitModel <- function(phyloseq,
     grepl(paste0("\\b", x, "\\b\\s*/\\s*OTU"), rhs_text) |
     grepl(paste0("OTU\\s*/\\s*\\b", x, "\\b"), rhs_text))]
 
-  if (length(treatment_candidates) == 0)
-    stop(" No treatment variable (e.g., Samplingmonth * OTU) found.")
-  if (length(nested_candidates) < 2)
-    stop(" Need at least two nested variables (e.g., Sample / OTU, Replicate / OTU).")
+  #if (length(treatment_candidates) == 0)
+   # stop(" No treatment variable (e.g., Samplingmonth * OTU) found.")
+  #if (length(nested_candidates) < 2)
+    #stop(" Need at least two nested variables (e.g., Sample / OTU, Replicate / OTU).")
 
   treatment_col <- treatment_candidates[1]
   sample_col    <- nested_candidates[1]

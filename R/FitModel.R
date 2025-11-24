@@ -28,97 +28,107 @@ FitModel <- function(phyloseq,
                      n_iter = 50,
                      burn_in = 10) {
 
-  # --- Detect column names from model terms ---
+  # --- Detect columns from model formula ---
   rhs_text <- paste(deparse(poisson_rhs), collapse = " ")
-  rhs_text <- gsub("`", "", rhs_text)  # Remove backticks
+  rhs_text <- gsub("`", "", rhs_text)
   rhs_terms <- unique(all.vars(poisson_rhs))
 
+  # Detect treatment (interaction with OTU)
   treatment_candidates <- rhs_terms[sapply(rhs_terms, function(x)
     grepl(paste0("\\b", x, "\\b\\s*\\*\\s*OTU"), rhs_text) |
     grepl(paste0("OTU\\s*\\*\\s*\\b", x, "\\b"), rhs_text))]
 
+  # Detect nested variables (/ OTU)
   nested_candidates <- rhs_terms[sapply(rhs_terms, function(x)
     grepl(paste0("\\b", x, "\\b\\s*/\\s*OTU"), rhs_text) |
     grepl(paste0("OTU\\s*/\\s*\\b", x, "\\b"), rhs_text))]
 
-  #if (length(treatment_candidates) == 0)
-   # stop(" No treatment variable (e.g., Samplingmonth * OTU) found.")
-  #if (length(nested_candidates) < 2)
-    #stop(" Need at least two nested variables (e.g., Sample / OTU, Replicate / OTU).")
+  treatment_col <- if (length(treatment_candidates) > 0) treatment_candidates[1] else NULL
+  nested_cols   <- if (length(nested_candidates) > 0) nested_candidates else NULL
 
-  treatment_col <- treatment_candidates[1]
-  sample_col    <- nested_candidates[1]
-  replicate_col <- nested_candidates[2]
+  message(" Detected columns:")
+  if (!is.null(treatment_col)) message("   Treatment: ", treatment_col)
+  if (!is.null(nested_cols))   message("   Nested: ", paste(nested_cols, collapse = ", "))
 
-  message(" Detected columns:",
-          "\n   Treatment: ", treatment_col,
-          "\n   Sample: ", sample_col,
-          "\n   Replicate: ", replicate_col)
-
-  # --- Prepare data ---
+  # --- Prepare long data ---
   prep <- prepare_long_data(
     physeq_obj = phyloseq,
     min_species_sum = min_species_sum,
-    site_col = site_col
+    site_col = site_col,
+    nested_cols = nested_cols
   )
 
   long_df <- prep$long_df
 
-  # --- Setup OTU factors ---
+  # --- Most abundant OTU as reference ---
   message(" Calculating most abundant OTU...")
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   long_df$OTU <- factor(long_df$OTU, levels = unique(long_df$OTU))
   long_df$OTU <- relevel(long_df$OTU, ref = top_otu)
 
-  # --- Prepare storage ---
+  # --- Initialize ---
   psi_list <- list()
   lambda_list <- list()
   p_detect_list <- list()
   binomial_models <- list()
   poisson_models <- list()
 
-  treatment_levels <- levels(factor(long_df[[treatment_col]]))
-  message(" Treatment levels: ", paste(treatment_levels, collapse = ", "))
+  # Treatment levels (if present)
+  if (!is.null(treatment_col)) {
+    treatment_levels <- levels(factor(long_df[[treatment_col]]))
+    message(" Treatment levels: ", paste(treatment_levels, collapse = ", "))
+  }
 
-  # --- Site-level reduction ---
+  # --- Reduced site-OTU level data ---
+  group_vars <- c(site_col, "OTU")
   reduced_data <- long_df %>%
-    group_by(.data[[site_col]], OTU) %>%
+    group_by(across(all_of(group_vars))) %>%
     summarise(z_obs = as.integer(sum(y > 0) > abundance_threshold),
               across(-y, dplyr::first), .groups = "drop") %>%
-    mutate(
-      !!treatment_col := factor(.data[[treatment_col]], levels = treatment_levels),
-      z_sim = z_obs
-    )
+    mutate(z_sim = z_obs)
 
-  if (nlevels(reduced_data[[treatment_col]]) < 2) {
-    stop(" treatment_col must have ≥ 2 levels.")
-   }
+  # Assign treatment levels if treatment exists
+  if (!is.null(treatment_col)) {
+    reduced_data[[treatment_col]] <- factor(reduced_data[[treatment_col]], levels = treatment_levels)
+    if (nlevels(reduced_data[[treatment_col]]) < 2) {
+      stop(" treatment_col must have ≥ 2 levels.")
+    }
+  }
 
-  # --- Iterative estimation ---
+  # --- Gibbs sampling loop ---
   for (i in 1:n_iter) {
     message(" Iteration ", i)
 
+    # Binomial model
     model_binomial <- glmmTMB::glmmTMB(
       formula = reformulate(deparse(binomial_rhs), response = "z_sim"),
       data = reduced_data,
       family = binomial
     )
 
-    pred_link <- predict(model_binomial, type = "link", se.fit = TRUE)
+    pred_link <- predict(model_binomial, type = "link", se.fit = TRUE, newdata = reduced_data)
     logit_draw <- rnorm(nrow(reduced_data), mean = pred_link$fit, sd = pred_link$se.fit)
     psi_pred <- plogis(logit_draw)
 
+    psi_cols <- c(site_col, "OTU")
+    if (!is.null(treatment_col)) psi_cols <- c(psi_cols, treatment_col)
+
     psi_list[[i]] <- setNames(
-      data.frame(reduced_data[[site_col]], reduced_data$OTU, reduced_data[[treatment_col]], eta = logit_draw),
-      c(site_col, "OTU", treatment_col, "eta")
+      data.frame(reduced_data[psi_cols], eta = logit_draw),
+      c(psi_cols, "eta")
     )
     binomial_models[[i]] <- model_binomial
 
+    # Poisson model
     poisson_data <- long_df %>%
-      mutate(!!treatment_col := droplevels(factor(.data[[treatment_col]]))) %>%
-      left_join(reduced_data %>% select(all_of(c(site_col, "OTU", "z_sim"))), by = c(site_col, "OTU")) %>%
+      left_join(reduced_data %>% select(all_of(c(site_col, "OTU", "z_sim"))),
+                by = c(site_col, "OTU")) %>%
       filter(z_sim == 1)
+
+    if (!is.null(treatment_col)) {
+      poisson_data[[treatment_col]] <- droplevels(factor(poisson_data[[treatment_col]]))
+    }
 
     model_poisson <- glmmTMB::glmmTMB(
       formula = reformulate(deparse(poisson_rhs), response = "y"),
@@ -126,24 +136,24 @@ FitModel <- function(phyloseq,
       family = poisson
     )
 
-    lambda_pred <- predict(model_poisson, type = "link", se.fit = TRUE)
+    lambda_pred <- predict(model_poisson, type = "link", se.fit = TRUE, newdata = poisson_data)
     lambda <- exp(lambda_pred$fit)
 
     lambda_list[[i]] <- setNames(
-      data.frame(poisson_data[[site_col]], poisson_data$OTU, poisson_data[[treatment_col]], eta = lambda_pred$fit),
-      c(site_col, "OTU", treatment_col, "eta")
+      data.frame(poisson_data[psi_cols], eta = lambda_pred$fit),
+      c(psi_cols, "eta")
     )
 
     p_detect_list[[i]] <- setNames(
-      data.frame(poisson_data[[site_col]], poisson_data$OTU, poisson_data[[treatment_col]], eta = 1 - exp(-lambda)),
-      c(site_col, "OTU", treatment_col, "eta")
+      data.frame(poisson_data[psi_cols], eta = 1 - exp(-lambda)),
+      c(psi_cols, "eta")
     )
 
     poisson_models[[i]] <- model_poisson
 
     lambda_total <- poisson_data %>%
       mutate(lambda_pred = lambda) %>%
-      group_by(.data[[site_col]], OTU) %>%
+      group_by(across(all_of(c(site_col, "OTU")))) %>%
       summarise(lambda_prod = 1 - prod(1 - exp(-lambda_pred)), .groups = "drop")
 
     reduced_data <- reduced_data %>%
@@ -157,21 +167,21 @@ FitModel <- function(phyloseq,
                                                pmin(pmax(adjusted_prob, 0.001), 0.999))
   }
 
-  # --- Summary wrapper ---
+  # --- Posterior summaries ---
   bind_summary_link <- function(lst, link_type = c("logit", "log", "cloglog")) {
     link_type <- match.arg(link_type)
     df <- bind_rows(lst)
 
     df_summary <- df %>%
-      group_by(.data[[site_col]], OTU, .data[[treatment_col]]) %>%
+      group_by(across(all_of(psi_cols))) %>%
       summarise(eta_mean = mean(eta), eta_var = var(eta), .groups = "drop")
 
     df <- df %>%
-      left_join(df_summary, by = c(site_col, "OTU", treatment_col)) %>%
+      left_join(df_summary, by = psi_cols) %>%
       mutate(weight = 1 / ifelse(is.na(eta_var) | eta_var == 0, 1e-6, eta_var))
 
     df %>%
-      group_by(.data[[site_col]], OTU, .data[[treatment_col]]) %>%
+      group_by(across(all_of(psi_cols))) %>%
       summarise(
         eta_mean = sum(eta * weight) / sum(weight),
         eta_var = sum(weight * (eta - eta_mean)^2) /
@@ -194,20 +204,19 @@ FitModel <- function(phyloseq,
         se = se_eta,
         .groups = "drop"
       ) %>%
-      select(all_of(c(site_col, "OTU", treatment_col, "mean", "se", "lwr", "upr")))
+      select(all_of(psi_cols), mean, se, lwr, upr)
   }
 
-  # --- Final summary ---
   psi_summary      <- bind_summary_link(psi_list[-seq_len(burn_in)], "logit")
   lambda_summary   <- bind_summary_link(lambda_list[-seq_len(burn_in)], "log")
   p_detect_summary <- bind_summary_link(p_detect_list[-seq_len(burn_in)], "cloglog")
 
   final_summary <- psi_summary %>%
-    rename_with(~paste0("psi_", .), -all_of(c(site_col, "OTU", treatment_col))) %>%
-    left_join(rename_with(lambda_summary, ~paste0("lambda_", .), -all_of(c(site_col, "OTU", treatment_col))),
-              by = c(site_col, "OTU", treatment_col)) %>%
-    left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -all_of(c(site_col, "OTU", treatment_col))),
-              by = c(site_col, "OTU", treatment_col))
+    rename_with(~paste0("psi_", .), -all_of(psi_cols)) %>%
+    left_join(rename_with(lambda_summary, ~paste0("lambda_", .), -all_of(psi_cols)),
+              by = psi_cols) %>%
+    left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -all_of(psi_cols)),
+              by = psi_cols)
 
   return(list(
     summary = final_summary,

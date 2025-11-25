@@ -21,39 +21,47 @@
 #' @export
 FitModel <- function(phyloseq,
                      site_col,
-                     poisson_rhs,
-                     binomial_rhs,
+                     abundance_rhs,
+                     occupancy_rhs,
                      min_species_sum = 50,
                      abundance_threshold = 1,
                      n_iter = 50,
-                     burn_in = 10) {
+                     burn_in = 10,
+                     abundance_family = "poisson") {
 
-  poisson_rhs <- substitute(poisson_rhs)
-  binomial_rhs <- substitute(binomial_rhs)
+  abundance_rhs <- substitute(abundance_rhs)
+  occupancy_rhs <- substitute(occupancy_rhs)
 
-  # --- Detect columns from model formula ---
-  rhs_text <- paste(deparse(poisson_rhs), collapse = " ")
+  # Validate family input
+  valid_families <- c("poisson", "nbinom", "zip")
+  if (!abundance_family %in% valid_families) {
+    stop("❌ 'abundance_family' must be one of: ", paste(valid_families, collapse = ", "))
+  }
+
+  # Detect columns from abundance_rhs
+  rhs_text <- paste(deparse(abundance_rhs), collapse = " ")
   rhs_text <- gsub("`", "", rhs_text)
-  rhs_terms <- unique(all.vars(poisson_rhs))
+  rhs_terms <- unique(all.vars(abundance_rhs))
 
   # Detect treatment (interaction with OTU)
   treatment_candidates <- rhs_terms[sapply(rhs_terms, function(x)
     grepl(paste0("\\b", x, "\\b\\s*\\*\\s*OTU"), rhs_text) |
-    grepl(paste0("OTU\\s*\\*\\s*\\b", x, "\\b"), rhs_text))]
+      grepl(paste0("OTU\\s*\\*\\s*\\b", x, "\\b"), rhs_text))]
 
   # Detect nested variables (/ OTU)
   nested_candidates <- rhs_terms[sapply(rhs_terms, function(x)
     grepl(paste0("\\b", x, "\\b\\s*/\\s*OTU"), rhs_text) |
-    grepl(paste0("OTU\\s*/\\s*\\b", x, "\\b"), rhs_text))]
+      grepl(paste0("OTU\\s*/\\s*\\b", x, "\\b"), rhs_text))]
 
   treatment_col <- if (length(treatment_candidates) > 0) treatment_candidates[1] else NULL
   nested_cols   <- if (length(nested_candidates) > 0) nested_candidates else NULL
 
   message(" Detected columns:")
-  if (!is.null(treatment_col)) message(" Treatment: ", treatment_col)
-  if (!is.null(nested_cols))   message(" Nested: ", paste(nested_cols, collapse = ", "))
+  if (!is.null(treatment_col)) message("   Treatment: ", treatment_col)
+  if (!is.null(nested_cols))   message("   Nested: ", paste(nested_cols, collapse = ", "))
+  message(" Using abundance model family: ", abundance_family)
 
-  # --- Prepare long data ---
+  # Prepare long data
   prep <- prepare_long_data(
     physeq_obj = phyloseq,
     min_species_sum = min_species_sum,
@@ -63,54 +71,52 @@ FitModel <- function(phyloseq,
 
   long_df <- prep$long_df
 
-  # --- Most abundant OTU as reference ---
+  # Set reference OTU
   message(" Calculating most abundant OTU...")
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   long_df$OTU <- factor(long_df$OTU, levels = unique(long_df$OTU))
   long_df$OTU <- relevel(long_df$OTU, ref = top_otu)
 
-  # --- Initialize ---
+  # Initialize storage
   psi_list <- list()
   lambda_list <- list()
   p_detect_list <- list()
-  binomial_models <- list()
-  poisson_models <- list()
+  occupancy_models <- list()
+  abundance_models <- list()
 
-  # Treatment levels (if present)
   if (!is.null(treatment_col)) {
     treatment_levels <- levels(factor(long_df[[treatment_col]]))
     message(" Treatment levels: ", paste(treatment_levels, collapse = ", "))
   }
 
-  # --- Reduced site-OTU level data ---
+  # Reduce data: site × OTU
   group_vars <- c(site_col, "OTU")
   reduced_data <- long_df %>%
-    group_by(across(all_of(group_vars))) %>%
-    summarise(z_obs = as.integer(sum(y > 0) > abundance_threshold),
-              across(-y, dplyr::first), .groups = "drop") %>%
-    mutate(z_sim = z_obs)
+    dplyr::group_by(across(all_of(group_vars))) %>%
+    dplyr::summarise(z_obs = as.integer(sum(y > 0) > abundance_threshold),
+                     across(-y, dplyr::first), .groups = "drop") %>%
+    dplyr::mutate(z_sim = z_obs)
 
-  # Assign treatment levels if treatment exists
   if (!is.null(treatment_col)) {
     reduced_data[[treatment_col]] <- factor(reduced_data[[treatment_col]], levels = treatment_levels)
     if (nlevels(reduced_data[[treatment_col]]) < 2) {
-      stop("treatment_col must have less than 2 levels.")
+      stop("treatment_col must have ≥ 2 levels.")
     }
   }
 
-  # --- Gibbs sampling loop ---
+  # Gibbs sampling loop
   for (i in 1:n_iter) {
     message(" Iteration ", i)
 
-    # Binomial model
-    model_binomial <- glmmTMB::glmmTMB(
-      formula = reformulate(deparse(binomial_rhs), response = "z_sim"),
+    # Occupancy model
+    model_occupancy <- glmmTMB::glmmTMB(
+      formula = reformulate(deparse(occupancy_rhs), response = "z_sim"),
       data = reduced_data,
       family = binomial
     )
 
-    pred_link <- predict(model_binomial, type = "link", se.fit = TRUE, newdata = reduced_data)
+    pred_link <- predict(model_occupancy, type = "link", se.fit = TRUE, newdata = reduced_data)
     logit_draw <- rnorm(nrow(reduced_data), mean = pred_link$fit, sd = pred_link$se.fit)
     psi_pred <- plogis(logit_draw)
 
@@ -121,40 +127,46 @@ FitModel <- function(phyloseq,
       data.frame(reduced_data[psi_cols], eta = logit_draw),
       c(psi_cols, "eta")
     )
-    binomial_models[[i]] <- model_binomial
+    occupancy_models[[i]] <- model_occupancy
 
-    # Poisson model
-    poisson_data <- long_df %>%
+    # Abundance model
+    abundance_data <- long_df %>%
       left_join(reduced_data %>% select(all_of(c(site_col, "OTU", "z_sim"))),
                 by = c(site_col, "OTU")) %>%
       filter(z_sim == 1)
 
     if (!is.null(treatment_col)) {
-      poisson_data[[treatment_col]] <- droplevels(factor(poisson_data[[treatment_col]]))
+      abundance_data[[treatment_col]] <- droplevels(factor(abundance_data[[treatment_col]]))
     }
 
-    model_poisson <- glmmTMB::glmmTMB(
-      formula = reformulate(deparse(poisson_rhs), response = "y"),
-      data = poisson_data,
-      family = poisson
+    abundance_glmm_family <- switch(abundance_family,
+      poisson = poisson(),
+      nbinom  = nbinom2(),
+      zip     = glmmTMB::ziPoisson()
     )
 
-    lambda_pred <- predict(model_poisson, type = "link", se.fit = TRUE, newdata = poisson_data)
+    model_abundance <- glmmTMB::glmmTMB(
+      formula = reformulate(deparse(abundance_rhs), response = "y"),
+      data = abundance_data,
+      family = abundance_glmm_family
+    )
+
+    lambda_pred <- predict(model_abundance, type = "link", se.fit = TRUE, newdata = abundance_data)
     lambda <- exp(lambda_pred$fit)
 
     lambda_list[[i]] <- setNames(
-      data.frame(poisson_data[psi_cols], eta = lambda_pred$fit),
+      data.frame(abundance_data[psi_cols], eta = lambda_pred$fit),
       c(psi_cols, "eta")
     )
 
     p_detect_list[[i]] <- setNames(
-      data.frame(poisson_data[psi_cols], eta = 1 - exp(-lambda)),
+      data.frame(abundance_data[psi_cols], eta = 1 - exp(-lambda)),
       c(psi_cols, "eta")
     )
 
-    poisson_models[[i]] <- model_poisson
+    abundance_models[[i]] <- model_abundance
 
-    lambda_total <- poisson_data %>%
+    lambda_total <- abundance_data %>%
       mutate(lambda_pred = lambda) %>%
       group_by(across(all_of(c(site_col, "OTU")))) %>%
       summarise(lambda_prod = 1 - prod(1 - exp(-lambda_pred)), .groups = "drop")
@@ -170,7 +182,7 @@ FitModel <- function(phyloseq,
                                                pmin(pmax(adjusted_prob, 0.001), 0.999))
   }
 
-  # --- Posterior summaries ---
+  # Posterior summaries
   bind_summary_link <- function(lst, link_type = c("logit", "log", "cloglog")) {
     link_type <- match.arg(link_type)
     df <- bind_rows(lst)
@@ -222,12 +234,12 @@ FitModel <- function(phyloseq,
               by = psi_cols)
 
   return(list(
-         summary = final_summary,
-        psi_list = psi_list[-seq_len(burn_in)],
-         lambda_list = lambda_list[-seq_len(burn_in)],
-         p_detect_list = p_detect_list[-seq_len(burn_in)],
-         binomial_models = binomial_models,
-         poisson_models = poisson_models,
-         reduced_data = reduced_data
-     ))
+    summary = final_summary,
+    psi_list = psi_list[-seq_len(burn_in)],
+    lambda_list = lambda_list[-seq_len(burn_in)],
+    p_detect_list = p_detect_list[-seq_len(burn_in)],
+    occupancy_models = occupancy_models,
+    abundance_models = abundance_models,
+    reduced_data = reduced_data
+  ))
 }

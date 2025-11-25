@@ -1,23 +1,18 @@
-#' Fit Hierarchical Occupancy-Detection Model using GLMMs
+#' Fit Hierarchical Occupancy-Detection Model
 #'
-#' Automatically detects treatment, sample, and replicate columns from model formulae.
-#' Uses a Gibbs-style loop for estimating detection (lambda), occupancy (psi), and 
-#' detection probability (p_detect).
+#' This function fits occupancy-detection models using GLMMs.
 #'
 #' @param phyloseq A phyloseq object with OTU table and sample metadata.
-#' @param site_col Name of the column representing site-level grouping.
-#' @param poisson_rhs Right-hand-side of Poisson model (as a formula inside quote()).
-#' @param binomial_rhs Right-hand-side of Binomial model (as a formula inside quote()).
-#' @param min_species_sum Minimum total abundance required to retain a taxon.
-#' @param abundance_threshold Minimum detection threshold to consider presence at site level.
-#' @param n_iter Number of Gibbs iterations.
-#' @param burn_in Number of iterations to discard as burn-in.
+#' @param site_col Column name for site grouping.
+#' @param abundance_rhs Formula for abundance model (e.g. (1 | OTU) + ...).
+#' @param occupancy_rhs Formula for occupancy model.
+#' @param abundance_family GLMM family for abundance model ("poisson", "nbinom", "zip", "zinb").
+#' @param min_species_sum Filter OTUs by total abundance.
+#' @param abundance_threshold Detection threshold.
+#' @param n_iter Number of iterations.
+#' @param burn_in Number of burn-in iterations.
 #'
-#' @return A list with `summary`, `psi_list`, `lambda_list`, `p_detect_list`, models, and `reduced_data`.
-#'
-#' @importFrom dplyr group_by summarise mutate select filter left_join arrange ungroup across
-#' @importFrom glmmTMB glmmTMB
-#' @importFrom stats predict rnorm reformulate plogis var
+#' @return A list with model fits and summaries.
 #' @export
 FitModel <- function(phyloseq,
                      site_col,
@@ -35,7 +30,7 @@ FitModel <- function(phyloseq,
   # Validate family input
   valid_families <- c("poisson", "nbinom", "zip")
   if (!abundance_family %in% valid_families) {
-    stop("❌ 'abundance_family' must be one of: ", paste(valid_families, collapse = ", "))
+    stop(" 'abundance_family' must be one of: ", paste(valid_families, collapse = ", "))
   }
 
   # Detect columns from abundance_rhs
@@ -101,7 +96,7 @@ FitModel <- function(phyloseq,
   if (!is.null(treatment_col)) {
     reduced_data[[treatment_col]] <- factor(reduced_data[[treatment_col]], levels = treatment_levels)
     if (nlevels(reduced_data[[treatment_col]]) < 2) {
-      stop("treatment_col must have ≥ 2 levels.")
+      stop("treatment_col must have greater than or equal 2 levels.")
     }
   }
 
@@ -159,7 +154,7 @@ if (abundance_family == "poisson") {
   abundance_glmm_family <- nbinom2
   zi_formula <- ~1
 } else {
-  stop("❌ Invalid abundance_family. Use 'poisson', 'nbinom', 'zip', or 'zinb'.")
+  stop(" Invalid abundance_family. Use 'poisson', 'nbinom', 'zip', or 'zinb'.")
 }
 
 # Fit abundance model (using your variable name and structure)

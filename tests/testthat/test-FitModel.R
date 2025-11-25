@@ -7,7 +7,6 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # -------------------------------
   # Simulate small eDNA-like dataset
   # -------------------------------
-
   otu_mat <- matrix(
     c(5, 2, 3, 1, 2, 1,
       1, 2, 4, 1, 3, 1,
@@ -38,8 +37,9 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
     FitModel(
       phyloseq = physeq,
       site_col = "Site",
-      poisson_rhs = quote((1 | OTU) + (1 | Site / OTU) + (1 | SampleName / OTU) + (1 | Replicate / OTU) + treatment * OTU),
-      binomial_rhs = quote((1 | OTU) + (1 | Site / OTU)),
+      abundance_rhs = (1 | OTU) + (1 | Site / OTU) + (1 | SampleName / OTU) + (1 | Replicate / OTU) + treatment * OTU,
+      occupancy_rhs = (1 | OTU) + (1 | Site / OTU),
+      abundance_family = "poisson",
       min_species_sum = 1,
       abundance_threshold = 1,
       n_iter = n_iter_test,
@@ -54,7 +54,7 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
 
   expect_named(result, c(
     "summary", "psi_list", "lambda_list", "p_detect_list",
-    "binomial_models", "poisson_models", "reduced_data"
+    "occupancy_models", "abundance_models", "reduced_data"
   ))
 
   expect_s3_class(result$summary, "data.frame")
@@ -67,10 +67,10 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # -------------------------------
   # Models stored correctly
   # -------------------------------
-  expect_length(result$binomial_models, n_iter_test)
-  expect_length(result$poisson_models, n_iter_test)
-  expect_true(all(sapply(result$binomial_models, inherits, "glmmTMB")))
-  expect_true(all(sapply(result$poisson_models, inherits, "glmmTMB")))
+  expect_length(result$occupancy_models, n_iter_test)
+  expect_length(result$abundance_models, n_iter_test)
+  expect_true(all(sapply(result$occupancy_models, inherits, "glmmTMB")))
+  expect_true(all(sapply(result$abundance_models, inherits, "glmmTMB")))
 
   # -------------------------------
   # Posterior draws after burn-in

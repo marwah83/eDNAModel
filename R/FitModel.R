@@ -28,6 +28,9 @@ FitModel <- function(phyloseq,
                      n_iter = 50,
                      burn_in = 10) {
 
+  poisson_rhs <- substitute(poisson_rhs)
+  binomial_rhs <- substitute(binomial_rhs)
+
   # --- Detect columns from model formula ---
   rhs_text <- paste(deparse(poisson_rhs), collapse = " ")
   rhs_text <- gsub("`", "", rhs_text)

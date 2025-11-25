@@ -59,9 +59,9 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 out=FitModel(
     phyloseq = physeq_one,
     site_col = "Sampling.area.Name",
-    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
-                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU),
-    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
+    poisson_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
+                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU,
+    binomial_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
   n_iter = 50,
   burn_in = 10
 )
@@ -227,9 +227,9 @@ pheatmap(
 out1 =FitModel(
     phyloseq = physeq_one,
     site_col = "Sampling.area.Name",
-    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
-                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU),
-    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
+    poisson_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
+                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU,
+    binomial_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
   n_iter = 50,
   burn_in = 10
 )
@@ -237,8 +237,8 @@ out1 =FitModel(
 out2 =FitModel(
     phyloseq = physeq_one,
     site_col = "Sampling.area.Name",
-    poisson_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)) ,
-    binomial_rhs = quote((1 | OTU) + (1 | `Sampling.area.Name` / OTU)),
+    poisson_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) ,
+    binomial_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
   n_iter = 50,
   burn_in = 10
 )

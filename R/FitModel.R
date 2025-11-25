@@ -145,11 +145,31 @@ FitModel <- function(phyloseq,
       zip     = glmmTMB::ziPoisson()
     )
 
-    model_abundance <- glmmTMB::glmmTMB(
-      formula = reformulate(deparse(abundance_rhs), response = "y"),
-      data = abundance_data,
-      family = abundance_glmm_family
-    )
+    # Set abundance GLMM family and zero-inflation formula
+if (abundance_family == "poisson") {
+  abundance_glmm_family <- poisson
+  zi_formula <- ~0
+} else if (abundance_family == "nbinom") {
+  abundance_glmm_family <- nbinom2
+  zi_formula <- ~0
+} else if (abundance_family == "zip") {
+  abundance_glmm_family <- poisson
+  zi_formula <- ~1
+} else if (abundance_family == "zinb") {
+  abundance_glmm_family <- nbinom2
+  zi_formula <- ~1
+} else {
+  stop("❌ Invalid abundance_family. Use 'poisson', 'nbinom', 'zip', or 'zinb'.")
+}
+
+# Fit abundance model (using your variable name and structure)
+model_abundance <- glmmTMB::glmmTMB(
+  formula = reformulate(deparse(abundance_rhs), response = "y"),
+  data = abundance_data,
+  family = abundance_glmm_family,
+  ziformula = zi_formula
+)
+
 
     lambda_pred <- predict(model_abundance, type = "link", se.fit = TRUE, newdata = abundance_data)
     lambda <- exp(lambda_pred$fit)

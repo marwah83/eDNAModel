@@ -2,41 +2,42 @@
 % Please edit documentation in R/FitModel.R
 \name{FitModel}
 \alias{FitModel}
-\title{Fit Hierarchical Occupancy-Detection Model using GLMMs}
+\title{Fit Hierarchical Occupancy-Detection Model}
 \usage{
 FitModel(
   phyloseq,
   site_col,
-  poisson_rhs,
-  binomial_rhs,
+  abundance_rhs,
+  occupancy_rhs,
   min_species_sum = 50,
   abundance_threshold = 1,
   n_iter = 50,
-  burn_in = 10
+  burn_in = 10,
+  abundance_family = "poisson"
 )
 }
 \arguments{
 \item{phyloseq}{A phyloseq object with OTU table and sample metadata.}
 
-\item{site_col}{Name of the column representing site-level grouping.}
+\item{site_col}{Column name for site grouping.}
 
-\item{poisson_rhs}{Right-hand-side of Poisson model (as a formula inside quote()).}
+\item{abundance_rhs}{Formula for abundance model (e.g. (1 | OTU) + ...).}
 
-\item{binomial_rhs}{Right-hand-side of Binomial model (as a formula inside quote()).}
+\item{occupancy_rhs}{Formula for occupancy model.}
 
-\item{min_species_sum}{Minimum total abundance required to retain a taxon.}
+\item{min_species_sum}{Filter OTUs by total abundance.}
 
-\item{abundance_threshold}{Minimum detection threshold to consider presence at site level.}
+\item{abundance_threshold}{Detection threshold.}
 
-\item{n_iter}{Number of Gibbs iterations.}
+\item{n_iter}{Number of iterations.}
 
-\item{burn_in}{Number of iterations to discard as burn-in.}
+\item{burn_in}{Number of burn-in iterations.}
+
+\item{abundance_family}{GLMM family for abundance model ("poisson", "nbinom", "zip", "zinb").}
 }
 \value{
-A list with `summary`, `psi_list`, `lambda_list`, `p_detect_list`, models, and `reduced_data`.
+A list with model fits and summaries.
 }
 \description{
-Automatically detects treatment, sample, and replicate columns from model formulae.
-Uses a Gibbs-style loop for estimating detection (lambda), occupancy (psi), and 
-detection probability (p_detect).
+This function fits occupancy-detection models using GLMMs.
 }

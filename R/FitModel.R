@@ -139,11 +139,11 @@ FitModel <- function(phyloseq,
       abundance_data[[treatment_col]] <- droplevels(factor(abundance_data[[treatment_col]]))
     }
 
-    abundance_glmm_family <- switch(abundance_family,
-      poisson = poisson(),
-      nbinom  = nbinom2(),
-      zip     = glmmTMB::ziPoisson()
-    )
+    #abundance_glmm_family <- switch(abundance_family,
+     # poisson = poisson(),
+      #nbinom  = nbinom2(),
+      #zip     = glmmTMB::ziPoisson()
+    #)
 
     # Set abundance GLMM family and zero-inflation formula
 if (abundance_family == "poisson") {

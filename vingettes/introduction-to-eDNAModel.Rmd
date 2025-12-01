@@ -261,27 +261,27 @@ extract_model_metrics <- function(model_list) {
 }
 
 # Extract metrics for each result object (after burn-in)
-poisson_metrics_out1 <- extract_model_metrics(out1$poisson_models)
-poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
+abun_metrics_out1 <- extract_model_metrics(out1$abundance_models)
+abun_metrics_out2 <- extract_model_metrics(out2$abundance_models)
 
-binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
-binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
+occ_metrics_out1 <- extract_model_metrics(out1$occupancy_models)
+occ_metrics_out2 <- extract_model_metrics(out2$occupancy_models)
 
 # Combine summary
 summary_metrics <- data.frame(
-  Model = c("Poisson_Out1", "Poisson_Out2", "Binomial_Out1", "Binomial_Out2"),
-  AIC   = c(mean(poisson_metrics_out1$AIC, na.rm = TRUE),
-            mean(poisson_metrics_out2$AIC, na.rm = TRUE),
-            mean(binomial_metrics_out1$AIC, na.rm = TRUE),
-            mean(binomial_metrics_out2$AIC, na.rm = TRUE)),
-  BIC   = c(mean(poisson_metrics_out1$BIC, na.rm = TRUE),
-            mean(poisson_metrics_out2$BIC, na.rm = TRUE),
-            mean(binomial_metrics_out1$BIC, na.rm = TRUE),
-            mean(binomial_metrics_out2$BIC, na.rm = TRUE)),
-  NegLogLik = c(mean(poisson_metrics_out1$NegLogLik, na.rm = TRUE),
-                mean(poisson_metrics_out2$NegLogLik, na.rm = TRUE),
-                mean(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
-                mean(binomial_metrics_out2$NegLogLik, na.rm = TRUE))
+  Model = c("abun_Out1", "abun_Out2", "occ_Out1", "occ_Out2"),
+  AIC   = c(mean(abun_metrics_out1$AIC, na.rm = TRUE),
+            mean(abun_metrics_out2$AIC, na.rm = TRUE),
+            mean(occ_metrics_out1$AIC, na.rm = TRUE),
+            mean(occ_metrics_out2$AIC, na.rm = TRUE)),
+  BIC   = c(mean(abun_metrics_out1$BIC, na.rm = TRUE),
+            mean(abun_metrics_out2$BIC, na.rm = TRUE),
+            mean(occ_metrics_out1$BIC, na.rm = TRUE),
+            mean(occ_metrics_out2$BIC, na.rm = TRUE)),
+  NegLogLik = c(mean(abun_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(abun_metrics_out2$NegLogLik, na.rm = TRUE),
+                mean(occ_metrics_out1$NegLogLik, na.rm = TRUE),
+                mean(occ_metrics_out2$NegLogLik, na.rm = TRUE))
 )
 
 # Display the result
@@ -307,31 +307,29 @@ extract_model_metrics <- function(model_list) {
 }
 
 # Extract metrics for out1
-poisson_metrics_out1 <- extract_model_metrics(out1$poisson_models)
-binomial_metrics_out1 <- extract_model_metrics(out1$binomial_models)
+abun_metrics_out1 <- extract_model_metrics(out1$abundance_models)
+occ_metrics_out1 <- extract_model_metrics(out1$occupancy_models)
 
 # Extract metrics for out2
-poisson_metrics_out2 <- extract_model_metrics(out2$poisson_models)
-binomial_metrics_out2 <- extract_model_metrics(out2$binomial_models)
+abun_metrics_out2 <- extract_model_metrics(out2$abundance_models)
+occ_metrics_out2 <- extract_model_metrics(out2$occupancy_models)
 
 # Compute total (sum) of metrics across both models for each run
 overall_metrics <- data.frame(
   Model = c("out1", "out2"),
   Total_AIC = c(
-    sum(poisson_metrics_out1$AIC, na.rm = TRUE) + sum(binomial_metrics_out1$AIC, na.rm = TRUE),
-    sum(poisson_metrics_out2$AIC, na.rm = TRUE) + sum(binomial_metrics_out2$AIC, na.rm = TRUE)
+    sum(abun_metrics_out1$AIC, na.rm = TRUE) + sum(occ_metrics_out1$AIC, na.rm = TRUE),
+    sum(abun_metrics_out2$AIC, na.rm = TRUE) + sum(occ_metrics_out2$AIC, na.rm = TRUE)
   ),
   Total_BIC = c(
-    sum(poisson_metrics_out1$BIC, na.rm = TRUE) + sum(binomial_metrics_out1$BIC, na.rm = TRUE),
-    sum(poisson_metrics_out2$BIC, na.rm = TRUE) + sum(binomial_metrics_out2$BIC, na.rm = TRUE)
+    sum(abun_metrics_out1$BIC, na.rm = TRUE) + sum(occ_metrics_out1$BIC, na.rm = TRUE),
+    sum(abun_metrics_out2$BIC, na.rm = TRUE) + sum(occ_metrics_out2$BIC, na.rm = TRUE)
   ),
   Total_NegLogLik = c(
-    sum(poisson_metrics_out1$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out1$NegLogLik, na.rm = TRUE),
-    sum(poisson_metrics_out2$NegLogLik, na.rm = TRUE) + sum(binomial_metrics_out2$NegLogLik, na.rm = TRUE)
+    sum(abun_metrics_out1$NegLogLik, na.rm = TRUE) + sum(occ_metrics_out1$NegLogLik, na.rm = TRUE),
+    sum(abun_metrics_out2$NegLogLik, na.rm = TRUE) + sum(occ_metrics_out2$NegLogLik, na.rm = TRUE)
   )
 )
 
 # Print the comparison summary
 print(overall_metrics)
-
-```

@@ -1,19 +1,47 @@
-#' Prepare long-format OTU data with inferred sample and replicate columns
+#' Prepare Long Format Data from a Phyloseq Object
 #'
-#' Converts a phyloseq object into a long-format data frame for modeling.
+#' Converts a `phyloseq` object into a tidy long-format data frame for modeling, with options for filtering taxa and creating nested replicate groupings.
 #'
-#' @param physeq_obj A phyloseq object.
-#' @param min_species_sum Minimum total abundance required to keep a species.
-#' @param site_col Name of the column indicating the site or location.
-#' @param nested_cols (Optional) Character vector of column names that are nested with OTU (e.g., sample, replicate).
+#' @param physeq_obj A `phyloseq` object containing OTU (or ASV) abundance table and sample metadata.
+#' @param min_species_sum Integer. Minimum total count threshold across all samples for a taxon to be retained. Default is 50.
+#' @param site_col Character. Column name in `sample_data` representing the sampling site variable. This will be used to group data for site-level modeling.
+#' @param nested_cols Optional character vector. Column names in `sample_data` to be combined into a nested grouping factor (`SampleRep`). Used for hierarchical or repeated measures design. Default is `NULL`.
 #'
-#' @return A list with:
+#' @return A list with two elements:
 #' \describe{
-#'   \item{physeq_filtered}{Filtered phyloseq object.}
-#'   \item{long_df}{Long-format data frame.}
-#'   \item{sample_col}{Auto-detected sample column name.}
-#'   \item{replicate_col}{Auto-detected replicate column name.}
+#'   \item{physeq_filtered}{A filtered `phyloseq` object with low-abundance and low-prevalence taxa removed.}
+#'   \item{long_df}{A long-format `data.frame` with OTU counts and merged metadata. Contains one row per `SampleRep × OTU`. Columns include `SampleRep`, `OTU`, `y` (abundance), and all metadata variables.}
 #' }
+#'
+#' @details
+#' This function is designed to transform a `phyloseq` object into a format suitable for downstream generalized linear mixed modeling (GLMM). Key steps include:
+#' \itemize{
+#'   \item Taxa are filtered by total count (`min_species_sum`) and then by prevalence (present in more than 5 samples).
+#'   \item A `SampleRep` variable is constructed from `nested_cols` if provided, otherwise defaults to sample names.
+#'   \item The OTU table is melted into long format and joined with sample metadata using `SampleRep`.
+#'   \item A new column `Site` is created using the `site_col`, for grouping and site-level modeling.
+#' }
+#'
+#' The resulting data frame (`long_df`) can be used for modeling occupancy and abundance in ecological or microbiome analyses, including two-part models like those implemented in `FitModel()`.
+#'
+#' @section Example:
+#' \dontrun{
+#' # Assuming you have a phyloseq object `ps`
+#' result <- prepare_long_data(
+#'   physeq_obj = ps,
+#'   min_species_sum = 100,
+#'   site_col = "Site",
+#'   nested_cols = c("Subject", "Timepoint")
+#' )
+#'
+#' head(result$long_df)
+#' }
+#'
+#' @seealso \code{\link{FitModel}} for modeling based on this long-format data.
+#' @importFrom phyloseq filter_taxa sample_data taxa_are_rows otu_table sample_names
+#' @importFrom dplyr left_join mutate
+#' @importFrom tidyr pivot_longer
+#' @importFrom tibble rownames_to_column
 #' @export
 prepare_long_data <- function(physeq_obj,
                               min_species_sum = 50,

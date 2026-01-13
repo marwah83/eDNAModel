@@ -29,6 +29,9 @@ library(tidyr)
 library(ggplot2)
 library(pheatmap)
 library(tibble)
+library(gllvm)
+library(glmmTMB)
+library(reshape2)
 ```
 
 # 1. Introduction
@@ -66,15 +69,6 @@ out=FitModel(
   burn_in = 10
 )
 
-out <- FitModel_gllvm(
-       phyloseq = physeq_one,
-       site_col = "Name",
-       abundance_rhs = (1|Samplingmonth/OTU)+(1|OTU),
-       occupancy_covars = "Samplingmonth",
-       abundance_family = "poisson",
-       n_iter = 50,
-       burn_in = 10
-   )
 
 ```
 

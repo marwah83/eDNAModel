@@ -34,15 +34,6 @@
 #' 
 #' Each iteration updates simulated occupancy values (`z_sim`) based on predicted occupancy and detection.
 #' Final summaries are computed after discarding `burn_in` iterations.
-#'
-#' @importFrom phyloseq taxa_sums sample_data otu_table
-#' @importFrom gllvm gllvm
-#' @importFrom glmmTMB glmmTMB
-#' @importFrom dplyr group_by summarise mutate left_join select distinct bind_rows
-#' @importFrom tidyr replace_na
-#' @importFrom reshape2 acast melt
-#' @export
-#'
 #' @examples
 #' \dontrun{
 #' data("GlobalPatterns")
@@ -58,6 +49,13 @@
 #' )
 #' head(result$summary)
 #' }
+#' @importFrom phyloseq taxa_sums sample_data otu_table
+#' @importFrom gllvm gllvm
+#' @importFrom glmmTMB glmmTMB
+#' @importFrom dplyr group_by summarise mutate left_join select distinct bind_rows
+#' @importFrom tidyr replace_na
+#' @importFrom reshape2 acast melt
+#' @export
 
 FitModel_gllvm <- function(phyloseq,
                      site_col,

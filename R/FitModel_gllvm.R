@@ -209,14 +209,4 @@ FitModel_gllvm <- function(phyloseq,
   ))
 }
 
-out <- FitModel_gllvm(
-       phyloseq = physeq_one,
-       site_col = "Name",
-       abundance_rhs = (1|Samplingmonth/OTU)+(1|OTU),
-       occupancy_covars = "Samplingmonth",
-       abundance_family = "poisson",
-       n_iter = 50,
-       burn_in = 10
-   )
-
 

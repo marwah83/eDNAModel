@@ -43,7 +43,7 @@ This vignette demonstrates the updated occupancy–detection model workflow usin
 # 2. Load and Subset Data
 ```{r load-data}
 physeq_new=readRDS("~/Downloads/BGE_Port_sampling.rds")
-physeq_one=physeq_new$`Marine invasive species Thessaloniki`
+physeq_one=physeq_new$`Marine Invasive species Trondheim`
 ```
 
 # 3. Fit the Occupancy–Detection Model

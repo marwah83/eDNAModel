@@ -1,9 +1,63 @@
-
-library(gllvm)
-  library(glmmTMB)
-  library(reshape2)
-  library(dplyr)
-  library(tidyr)
+#' Fit a Multispecies Occupancy and Abundance Model Using GLLVM and GLMM
+#'
+#' This function fits a hierarchical multispecies site occupancy and abundance model to
+#' eDNA data stored in a `phyloseq` object. The occupancy component is modeled with a 
+#' generalized latent variable model (GLLVM), and the abundance component is modeled 
+#' using `glmmTMB`.
+#'
+#' @param phyloseq A `phyloseq` object containing OTU table and sample metadata.
+#' @param site_col Name of the column in `sample_data` indicating site ID.
+#' @param abundance_rhs A one-sided formula specifying the right-hand side of the abundance model.
+#' @param occupancy_covars Optional character vector of covariate names for the occupancy model.
+#' @param min_species_sum Minimum number of reads for an OTU to be included.
+#' @param abundance_threshold Threshold of reads to consider a species present (z = 1).
+#' @param n_iter Number of iterations to simulate latent occupancy (`z_sim`).
+#' @param burn_in Number of burn-in iterations to discard when summarizing posterior draws.
+#' @param abundance_family Distribution family for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`.
+#'
+#' @return A list with:
+#' \describe{
+#'   \item{summary}{Data frame summarizing posterior means and uncertainty of occupancy (`psi`), abundance (`lambda`), and detection (`p_detect`).}
+#'   \item{psi_list}{List of site-by-OTU occupancy predictions from each iteration.}
+#'   \item{lambda_list}{List of site-by-OTU abundance predictions from each iteration.}
+#'   \item{p_detect_list}{List of detection probabilities.}
+#'   \item{occupancy_models}{List of fitted `gllvm` occupancy models.}
+#'   \item{abundance_models}{List of fitted `glmmTMB` abundance models.}
+#'   \item{reduced_data}{Data used for final modeling, including simulated occupancy.}
+#' }
+#'
+#' @details
+#' This function uses a **two-stage modeling approach**:
+#' 
+#' 1. **Occupancy (`z`)** is estimated via a latent variable binomial model (`gllvm::gllvm`) using presence-absence data.
+#' 2. **Abundance (`y | z = 1`)** is modeled using `glmmTMB` with Poisson or negative binomial (and optional zero-inflation).
+#' 
+#' Each iteration updates simulated occupancy values (`z_sim`) based on predicted occupancy and detection.
+#' Final summaries are computed after discarding `burn_in` iterations.
+#'
+#' @importFrom phyloseq taxa_sums sample_data otu_table
+#' @importFrom gllvm gllvm
+#' @importFrom glmmTMB glmmTMB
+#' @importFrom dplyr group_by summarise mutate left_join select distinct bind_rows
+#' @importFrom tidyr replace_na
+#' @importFrom reshape2 acast melt
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' data("GlobalPatterns")
+#' physeq <- subset_samples(GlobalPatterns, SampleType %in% c("Feces", "Mock"))
+#' result <- FitModel_gllvm(
+#'   phyloseq = physeq,
+#'   site_col = "SampleType",
+#'   abundance_rhs = (1 | OTU),
+#'   occupancy_covars = c("SampleType"),
+#'   abundance_family = "poisson",
+#'   n_iter = 10,
+#'   burn_in = 2
+#' )
+#' head(result$summary)
+#' }
 
 FitModel_gllvm <- function(phyloseq,
                      site_col,

@@ -1,3 +1,10 @@
+
+library(gllvm)
+  library(glmmTMB)
+  library(reshape2)
+  library(dplyr)
+  library(tidyr)
+
 FitModel_gllvm <- function(phyloseq,
                      site_col,
                      abundance_rhs,
@@ -7,12 +14,6 @@ FitModel_gllvm <- function(phyloseq,
                      n_iter = 50,
                      burn_in = 10,
                      abundance_family = "poisson") {
-  
-  library(gllvm)
-  library(glmmTMB)
-  library(reshape2)
-  library(dplyr)
-  library(tidyr)
   
   abundance_rhs <- substitute(abundance_rhs)
   

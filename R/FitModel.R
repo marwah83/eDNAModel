@@ -1,18 +1,69 @@
-#' Fit Hierarchical Occupancy-Detection Model
+#' Fit a Two-Part Occupancy-Abundance Model for Microbiome Data
 #'
-#' This function fits occupancy-detection models using GLMMs.
+#' Implements a hierarchical Bayesian-style framework using repeated GLMM fitting
+#' to estimate microbial occupancy (presence/absence) and abundance conditional
+#' on presence, for OTU-level microbiome data stored in a `phyloseq` object.
 #'
-#' @param phyloseq A phyloseq object with OTU table and sample metadata.
-#' @param site_col Column name for site grouping.
-#' @param abundance_rhs Formula for abundance model (e.g. (1 | OTU) + ...).
-#' @param occupancy_rhs Formula for occupancy model.
-#' @param abundance_family GLMM family for abundance model ("poisson", "nbinom", "zip", "zinb").
-#' @param min_species_sum Filter OTUs by total abundance.
-#' @param abundance_threshold Detection threshold.
-#' @param n_iter Number of iterations.
-#' @param burn_in Number of burn-in iterations.
+#' @param phyloseq A `phyloseq` object containing OTU table, sample data, and taxonomy.
+#' @param site_col Character. Name of the column in `sample_data` representing sampling sites.
+#' @param abundance_rhs Right-hand side of the formula for abundance model (e.g., `Treatment * OTU`).
+#' @param occupancy_rhs Right-hand side of the formula for occupancy model (e.g., `Treatment + OTU`).
+#' @param min_species_sum Integer. Minimum total count for an OTU to be retained in analysis. Default: 50.
+#' @param abundance_threshold Integer. Minimum count threshold to consider OTU as present. Default: 1.
+#' @param n_iter Integer. Number of iterations for Gibbs-like sampling. Default: 50.
+#' @param burn_in Integer. Number of iterations to discard as burn-in. Default: 10.
+#' @param abundance_family Character. Family for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`. Default: `"poisson"`.
 #'
-#' @return A list with model fits and summaries.
+#' @return A list containing:
+#' \describe{
+#'   \item{summary}{A data frame with posterior summaries (mean, SE, 95% CI) for occupancy (`psi_`), abundance (`lambda_`), and detection probability (`p_detect_`).}
+#'   \item{psi_list}{List of occupancy predictions per iteration (after burn-in).}
+#'   \item{lambda_list}{List of abundance predictions per iteration (after burn-in).}
+#'   \item{p_detect_list}{List of detection probability estimates per iteration (after burn-in).}
+#'   \item{occupancy_models}{List of fitted `glmmTMB` occupancy models for each iteration.}
+#'   \item{abundance_models}{List of fitted `glmmTMB` abundance models for each iteration.}
+#'   \item{reduced_data}{Final occupancy dataset (`site × OTU` format) with observed and simulated presence.}
+#' }
+#'
+#' @details
+#' This function decomposes species occurrence into two processes:
+#' 1. **Occupancy** (presence/absence): modeled with a binomial GLMM (`glmmTMB`).
+#' 2. **Abundance** (counts given presence): modeled with Poisson, Negative Binomial, or Zero-Inflated Poisson/NegBin.
+#'
+#' At each iteration:
+#' - Simulate detection given occupancy and abundance.
+#' - Fit occupancy and abundance models.
+#' - Update simulated presence (`z_sim`) using current parameter estimates.
+#'
+#' Posterior summaries are computed using inverse-variance weighting across iterations (after burn-in).
+#'
+#' @section Model Features:
+#' - Supports nested or interaction terms with `OTU` (e.g., `Treatment * OTU`, `Group / OTU`).
+#' - Automatically detects treatment or nested variables used in the formula.
+#' - Applies reweighting based on prediction uncertainty to generate robust estimates.
+#' - Automatically relevels `OTU` to the most abundant taxon for model stability.
+#'
+#' @section Example:
+#' \dontrun{
+#' library(phyloseq)
+#' result <- FitModel(
+#'   phyloseq = ps_obj,
+#'   site_col = "Site",
+#'   abundance_rhs = Treatment * OTU,
+#'   occupancy_rhs = Treatment + OTU,
+#'   abundance_family = "nbinom",
+#'   n_iter = 100,
+#'   burn_in = 20
+#' )
+#'
+#' head(result$summary)
+#' }
+#'
+#' @importFrom glmmTMB glmmTMB
+#' @importFrom stats reformulate rnorm plogis predict
+#' @import dplyr
+#' @import tidyr
+#'
 #' @export
 FitModel <- function(phyloseq,
                      site_col,

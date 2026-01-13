@@ -44,8 +44,11 @@ This vignette demonstrates the updated occupancy–detection model workflow usin
 ```{r load-data}
 physeq_new=readRDS("~/Downloads/BGE_Port_sampling.rds")
 physeq_one=physeq_new$`Marine invasive species Thessaloniki`
+```
 
+# 3. Fit the Occupancy–Detection Model
 
+```{r fit-model, echo=FALSE}
 out <- FitModel_gllvm(
        phyloseq = physeq_one,
        site_col = "Name",
@@ -55,4 +58,6 @@ out <- FitModel_gllvm(
        n_iter = 50,
        burn_in = 10
    )
+
+```
 

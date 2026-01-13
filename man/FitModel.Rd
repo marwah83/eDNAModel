@@ -2,7 +2,7 @@
 % Please edit documentation in R/FitModel.R
 \name{FitModel}
 \alias{FitModel}
-\title{Fit Hierarchical Occupancy-Detection Model}
+\title{Fit a Two-Part Occupancy-Abundance Model for Microbiome Data}
 \usage{
 FitModel(
   phyloseq,
@@ -17,27 +17,67 @@ FitModel(
 )
 }
 \arguments{
-\item{phyloseq}{A phyloseq object with OTU table and sample metadata.}
+\item{phyloseq}{A `phyloseq` object containing OTU table, sample data, and taxonomy.}
 
-\item{site_col}{Column name for site grouping.}
+\item{site_col}{Character. Name of the column in `sample_data` representing sampling sites.}
 
-\item{abundance_rhs}{Formula for abundance model (e.g. (1 | OTU) + ...).}
+\item{abundance_rhs}{Right-hand side of the formula for abundance model (e.g., `Treatment * OTU`).}
 
-\item{occupancy_rhs}{Formula for occupancy model.}
+\item{occupancy_rhs}{Right-hand side of the formula for occupancy model (e.g., `Treatment + OTU`).}
 
-\item{min_species_sum}{Filter OTUs by total abundance.}
+\item{min_species_sum}{Integer. Minimum total count for an OTU to be retained in analysis. Default: 50.}
 
-\item{abundance_threshold}{Detection threshold.}
+\item{abundance_threshold}{Integer. Minimum count threshold to consider OTU as present. Default: 1.}
 
-\item{n_iter}{Number of iterations.}
+\item{n_iter}{Integer. Number of iterations for Gibbs-like sampling. Default: 50.}
 
-\item{burn_in}{Number of burn-in iterations.}
+\item{burn_in}{Integer. Number of iterations to discard as burn-in. Default: 10.}
 
-\item{abundance_family}{GLMM family for abundance model ("poisson", "nbinom", "zip", "zinb").}
+\item{abundance_family}{Character. Family for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`. Default: `"poisson"`.}
 }
 \value{
-A list with model fits and summaries.
+
 }
 \description{
-This function fits occupancy-detection models using GLMMs.
+Implements a hierarchical Bayesian-style framework using repeated GLMM fitting
+to estimate microbial occupancy (presence/absence) and abundance conditional
+on presence, for OTU-level microbiome data stored in a `phyloseq` object.
 }
+\details{
+This function decomposes species occurrence into two processes:
+1. **Occupancy** (presence/absence): modeled with a binomial GLMM (`glmmTMB`).
+2. **Abundance** (counts given presence): modeled with Poisson, Negative Binomial, or Zero-Inflated Poisson/NegBin.
+
+At each iteration:
+- Simulate detection given occupancy and abundance.
+- Fit occupancy and abundance models.
+- Update simulated presence (`z_sim`) using current parameter estimates.
+
+Posterior summaries are computed using inverse-variance weighting across iterations (after burn-in).
+}
+\section{Model Features}{
+
+- Supports nested or interaction terms with `OTU` (e.g., `Treatment * OTU`, `Group / OTU`).
+- Automatically detects treatment or nested variables used in the formula.
+- Applies reweighting based on prediction uncertainty to generate robust estimates.
+- Automatically relevels `OTU` to the most abundant taxon for model stability.
+}
+
+\section{Example}{
+
+\dontrun{
+library(phyloseq)
+result <- FitModel(
+  phyloseq = ps_obj,
+  site_col = "Site",
+  abundance_rhs = Treatment * OTU,
+  occupancy_rhs = Treatment + OTU,
+  abundance_family = "nbinom",
+  n_iter = 100,
+  burn_in = 20
+)
+
+head(result$summary)
+}
+}
+

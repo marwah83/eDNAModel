@@ -29,6 +29,9 @@ library(tidyr)
 library(ggplot2)
 library(pheatmap)
 library(tibble)
+library(gllvm)
+library(glmmTMB)
+library(reshape2)
 ```
 
 # 1. Introduction

@@ -1,5 +1,5 @@
 ---
-title: "eDNAModel: Updated Workflow with Phyloseq"
+title: "eDNAModel: gllvm"
 author: "Marwah Soliman, Bert van der Veen"
 date: "`r Sys.Date()`"
 output: 
@@ -8,7 +8,7 @@ output:
     toc_depth: 3
     number_sections: true
 vignette: >
-  %\VignetteIndexEntry{eDNAModel: Updated Workflow with Phyloseq}
+  %\VignetteIndexEntry{eDNAModel: gllvm}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

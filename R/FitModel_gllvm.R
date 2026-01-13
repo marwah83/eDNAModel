@@ -56,7 +56,6 @@
 #' @importFrom tidyr replace_na
 #' @importFrom reshape2 acast melt
 #' @export
-
 FitModel_gllvm <- function(phyloseq,
                      site_col,
                      abundance_rhs,

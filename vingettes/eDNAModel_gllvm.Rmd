@@ -92,6 +92,11 @@ psi_otu_summary <- out$summary %>%
          plot.title = element_text(hjust = 0.5)
      )
 
+```
+## 4.2 Detection Probability Caterpillar Plot
+
+```{r plot-occupancy,fig.width=10, fig.height=9}
+
  p_detect_otu_summary <- out$summary %>%
      group_by(OTU) %>%
      summarise(

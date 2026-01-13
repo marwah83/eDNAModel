@@ -1,1 +1,43 @@
+---
+title: "eDNAModel: Updated Workflow with Phyloseq"
+author: "Marwah Soliman, Bert van der Veen"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{eDNAModel: Updated Workflow with Phyloseq}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library(phyloseq)
+library(Matrix)
+library(eDNAModel)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pheatmap)
+library(tibble)
+library(gllvm)
+library(glmmTMB)
+library(reshape2)
+```
+
+# 1. Introduction
+
+This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities, using gllvm for occupancy model.
+
+---
+
 

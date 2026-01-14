@@ -60,16 +60,12 @@ structured as a `phyloseq` object.
 }
 \examples{
 \dontrun{
-data(physeq_example)
-result <- FitModel_gllvm(
-  phyloseq = physeq_example,
-  site_col = "SampleID",
-  abundance_rhs = (1 | Samplingmonth/OTU),
-  occupancy_covars = c("Samplingmonth"),
-  abundance_family = "poisson",
-  n_iter = 50,
-  burn_in = 10
-)
+library(phyloseq)
+data(GlobalPatterns)
+result <- FitModel_gllvm(GlobalPatterns,
+                         site_col = "SampleID",
+                         abundance_rhs = ~ SampleType,
+                         occupancy_covars = c("SampleType", "X.SampleID"))
 }
 
 }

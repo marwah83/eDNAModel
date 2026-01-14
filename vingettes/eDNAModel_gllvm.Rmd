@@ -32,6 +32,8 @@ library(tibble)
 library(gllvm)
 library(glmmTMB)
 library(reshape2)
+library(grid)
+
 ```
 
 # 1. Introduction
@@ -147,8 +149,6 @@ scaled_species <- sweep(species_mat, 2, species_norms, "/") * matrix(rep(scale_f
 scaled_sites_df <- data.frame(Site = out$mean_lv_sites$Site, LV1 = scaled_sites[, 1], LV2 = scaled_sites[, 2])
 scaled_species_df <- data.frame(OTU = out$mean_lv_species$OTU, LV1 = scaled_species[, 1], LV2 = scaled_species[, 2])
 
-library(ggplot2)
-library(grid)
 
 ggplot() +
   geom_point(data = scaled_sites_df, aes(x = LV1, y = LV2), color = "blue", size = 2) +

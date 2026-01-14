@@ -64,7 +64,7 @@ out <- FitModel_gllvm(
 
 ## 4.1 Occupancy Probability Caterpillar Plot
 
-```{r plot-detect, fig.width=10, fig.height=9}
+```{r plot-occupancy, fig.width=10, fig.height=9}
 
 psi_otu_summary <- out$summary %>%
      group_by(OTU) %>%
@@ -95,7 +95,7 @@ psi_otu_summary <- out$summary %>%
 ```
 ## 4.2 Detection Probability Caterpillar Plot
 
-```{r plot-occupancy,fig.width=10, fig.height=9}
+```{r plot-detection,fig.width=10, fig.height=9}
 
  p_detect_otu_summary <- out$summary %>%
      group_by(OTU) %>%
@@ -122,4 +122,41 @@ psi_otu_summary <- out$summary %>%
          axis.text.y = element_text(size = 8),
          plot.title = element_text(hjust = 0.5)
      )
+```
+
+## 4.2  biplot
+
+```{r biplot,fig.width=10, fig.height=9}
+
+# 1. Extract matrix of LV coordinates
+site_mat <- as.matrix(out$mean_lv_sites[, c("LV1", "LV2")])
+species_mat <- as.matrix(out$mean_lv_species[, c("LV1", "LV2")])
+
+# 2. Compute Euclidean norms column-wise
+site_norms <- sqrt(colSums(site_mat^2))
+species_norms <- sqrt(colSums(species_mat^2))
+
+# 3. Multiply both by the square root of the product of the norms
+scale_factor <- sqrt(site_norms * species_norms)
+
+# 4. Standardize and scale each
+scaled_sites <- sweep(site_mat, 2, site_norms, "/") * matrix(rep(scale_factor, each = nrow(site_mat)), ncol = 2)
+scaled_species <- sweep(species_mat, 2, species_norms, "/") * matrix(rep(scale_factor, each = nrow(species_mat)), ncol = 2)
+
+# 5. Combine with original labels
+scaled_sites_df <- data.frame(Site = out$mean_lv_sites$Site, LV1 = scaled_sites[, 1], LV2 = scaled_sites[, 2])
+scaled_species_df <- data.frame(OTU = out$mean_lv_species$OTU, LV1 = scaled_species[, 1], LV2 = scaled_species[, 2])
+
+library(ggplot2)
+library(grid)
+
+ggplot() +
+  geom_point(data = scaled_sites_df, aes(x = LV1, y = LV2), color = "blue", size = 2) +
+  geom_text(data = scaled_sites_df, aes(x = LV1, y = LV2, label = Site), color = "blue", size = 2.5, vjust = -0.5) +
+  geom_segment(data = scaled_species_df, aes(x = 0, y = 0, xend = LV1, yend = LV2),
+               arrow = arrow(length = unit(0.2, "cm")), color = "brown", alpha = 0.8) +
+  geom_text(data = scaled_species_df, aes(x = LV1, y = LV2, label = OTU),
+            color = "brown", size = 3, vjust = -0.5) +
+  labs(x = "Latent Variable 1", y = "Latent Variable 2", title = "Symmetrically Scaled GLLVM Biplot") +
+  theme_minimal()
 ```

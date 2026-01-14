@@ -24,17 +24,10 @@
 #'
 #' The resulting data frame (`long_df`) can be used for modeling occupancy and abundance in ecological or microbiome analyses, including two-part models like those implemented in `FitModel()`.
 #'
-#' @section Example:
+#' @examples
 #' \dontrun{
-#' # Assuming you have a phyloseq object `ps`
-#' result <- prepare_long_data(
-#'   physeq_obj = ps,
-#'   min_species_sum = 100,
-#'   site_col = "Site",
-#'   nested_cols = c("Subject", "Timepoint")
-#' )
-#'
-#' head(result$long_df)
+#' data(GlobalPatterns)
+#' long_data <- prepare_long_data(GlobalPatterns, site_col = "SampleID", min_species_sum = 50)
 #' }
 #'
 #' @seealso \code{\link{FitModel}} for modeling based on this long-format data.

@@ -36,10 +36,15 @@
 #' \dontrun{
 #' library(phyloseq)
 #' data(GlobalPatterns)
-#' result <- FitModel_gllvm(GlobalPatterns,
-#'                          site_col = "SampleID",
-#'                          abundance_rhs = ~ SampleType,
-#'                          occupancy_covars = c("SampleType", "X.SampleID"))
+#' # Replace with real site_col and covariates relevant to your dataset
+#' result <- FitModel_gllvm(
+#'   phyloseq = GlobalPatterns,
+#'   site_col = "SampleID",
+#'   abundance_rhs = ~ SampleType,
+#'   occupancy_covars = c("SampleType"),
+#'   n_iter = 10,
+#'   burn_in = 2
+#' )
 #' }
 #'
 #' @seealso \code{\link[gllvm]{gllvm}}, \code{\link[glmmTMB]{glmmTMB}}

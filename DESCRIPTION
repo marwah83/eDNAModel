@@ -22,7 +22,8 @@ Imports:
     tidyr,
     BiocManager,
     glmmTMB,
-    tibble
+    tibble,
+    reshape2
 LinkingTo: 
     TMB, 
     RcppEigen

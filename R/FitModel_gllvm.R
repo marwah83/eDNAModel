@@ -30,7 +30,27 @@
 #'   \item{mean_lv_sites}{Averaged site positions in latent variable space (used in biplots).}
 #'   \item{mean_lv_species}{Averaged species positions in latent variable space (used in biplots).}
 #' }
+#' @details
+#' This function implements a hierarchical two-part multispecies occupancy model using **gllvm** for modeling species presence (occupancy).
 #'
+#' The function decomposes species occurrence into two ecological processes:
+#'
+#' 1. **Occupancy** (presence/absence):
+#'    - Modeled using a **binomial Generalized Linear Latent Variable Model (GLLVM)** with optional environmental covariates (`occupancy_covars`) and two common latent variables.
+#'    - Latent variables capture residual structure (e.g., species co-occurrence or unmeasured environmental gradients).
+#'
+#' 2. **Abundance** (counts conditional on presence):
+#'    - Modeled using a **Generalized Linear Mixed Model (GLMM)** via `glmmTMB`, allowing for Poisson, Negative Binomial, Zero-Inflated Poisson (ZIP), or Zero-Inflated Negative Binomial (ZINB) families.
+#'
+#' At each iteration:
+#' - Presence data (`z_sim`) is simulated based on detection and occupancy probabilities.
+#' - A GLLVM is fitted to estimate occupancy-related parameters.
+#' - Conditional abundance is modeled with the specified GLMM formula (`abundance_rhs`).
+#' - Detection probabilities and occupancy are updated using posterior predictions.
+#'
+#' After the burn-in period, posterior summaries (occupancy, abundance, detection probabilities) are computed using **inverse-variance weighted averaging**.
+#'
+#' In addition, latent variable scores are averaged across iterations to allow **ordination-style visualizations** (biplots) of species and site structure.
 #'
 #' @examples
 #' \dontrun{

@@ -66,12 +66,6 @@ FitModel_gllvm <- function(phyloseq,
                      burn_in = 10,
                      abundance_family = "poisson") {
   
-  # Load necessary packages
-  library(gllvm)
-  library(glmmTMB)
-  library(reshape2)
-  library(dplyr)
-  library(tidyr)
   
   abundance_rhs <- substitute(abundance_rhs)
   

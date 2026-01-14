@@ -47,7 +47,7 @@
 #' n_iter = 10,
 #' burn_in = 2
 #')
-head(out$summary)
+#' head(out$summary)
 #' }
 #'
 #' @seealso \code{\link[gllvm]{gllvm}}, \code{\link[glmmTMB]{glmmTMB}}

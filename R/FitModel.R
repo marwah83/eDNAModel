@@ -48,16 +48,15 @@
 #' # Example usage of FitModel with a phyloseq object named `physeq_one`
 #'
 #' out <- FitModel(
-#'   phyloseq = physeq_one,
-#'   site_col = "Sampling.area.Name",
-#'   abundance_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
-#'                   (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU,
-#'   occupancy_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
-#'   abundance_family = "poisson",
-#'   n_iter = 50,
-#'   burn_in = 10
-#' )
-#'
+#'  phyloseq = ps_obj,
+#' site_col = "Site",
+#' abundance_rhs = Treatment * OTU,
+#' occupancy_rhs = Treatment + OTU,
+#' occupancy_covars = c("Treatment", "OTU"),
+#' abundance_family = "nbinom",
+#' n_iter = 100,
+#' burn_in = 20
+#')
 #' # Check the output summary
 #' head(out$summary)
 #'

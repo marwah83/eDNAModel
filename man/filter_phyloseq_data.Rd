@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter_phyloseq_data.R
 \name{filter_phyloseq_data}
 \alias{filter_phyloseq_data}
-\title{Filter and Clean a Phyloseq Object Based on Abundance Thresholds}
+\title{Filter and Clean a Phyloseq Object}
 \usage{
 filter_phyloseq_data(
   phyloseq_obj,
@@ -11,50 +11,39 @@ filter_phyloseq_data(
 )
 }
 \arguments{
-\item{phyloseq_obj}{A valid `phyloseq` object containing OTU (or ASV) tables, sample metadata, and (optionally) taxonomy.}
+\item{phyloseq_obj}{A `phyloseq` object to be filtered.}
 
-\item{min_species_sum}{Integer. Minimum total count threshold across all samples for a taxon (species/OTU) to be retained. Default is 30.}
+\item{min_species_sum}{Minimum total abundance required for a species to be retained. Default is 30.}
 
-\item{save_path}{Optional. File path (as character) to save the filtered object as an `.RDS` file. Default: `"phyloseq_filtered.RDS"`. Set to `NULL` to skip saving.}
+\item{save_path}{Optional path to save the filtered `phyloseq` object as an `.RDS` file. Default is `"phyloseq_filtered.RDS"`. Use `NULL` to skip saving.}
 }
 \value{
-A filtered `phyloseq` object with:
-\itemize{
-  \item All-zero species removed
-  \item All-zero samples removed
-  \item Species with total counts below `min_species_sum` removed
-}
+A filtered `phyloseq` object with rare species and empty samples removed.
 }
 \description{
-This function filters a `phyloseq` object by removing all-zero taxa and samples, and excluding rare taxa based on a minimum abundance threshold. It performs validation checks and optionally saves the filtered object.
+This function filters a `phyloseq` object by removing:
+- species (taxa) with all-zero counts,
+- samples with all-zero counts,
+- species whose total counts are below a specified threshold.
+The resulting filtered object is optionally saved as an `.RDS` file.
 }
 \details{
-The function performs several steps:
+The function performs the following steps:
 \enumerate{
-  \item Extracts and reorients the OTU matrix if needed.
-  \item Removes all-zero taxa (columns) and all-zero samples (rows).
-  \item Filters out taxa with total abundance < `min_species_sum`.
-  \item Applies pruning to the original `phyloseq` object to maintain consistency.
-  \item Performs internal checks to ensure all-zero entries are removed and threshold filtering was applied correctly.
-  \item Optionally saves the result as an `.RDS` file for reproducibility.
+  \item Removes OTUs (species) with zero total counts across all samples.
+  \item Removes samples with zero total counts across all OTUs.
+  \item Removes rare species whose total abundance is below `min_species_sum`.
+  \item Prunes the original `phyloseq` object accordingly.
+  \item Optionally saves the cleaned object.
 }
 
-Warning messages will alert the user if any unexpected taxa or samples remain after filtering.
+Messages are printed to summarize what was filtered and whether the output was saved.
 }
-\section{Example}{
-
+\examples{
 \dontrun{
-# Load your phyloseq object
-data("GlobalPatterns")
-
-# Filter rare species and save the result
-filtered_ps <- filter_phyloseq_data(GlobalPatterns, min_species_sum = 50)
-
-# Load later:
-restored_ps <- readRDS("phyloseq_filtered.RDS")
-}
+library(phyloseq)
+data(GlobalPatterns)
+filtered <- filter_phyloseq_data(GlobalPatterns, min_species_sum = 50)
 }
 
-\seealso{
-\code{\link[phyloseq]{prune_taxa}}, \code{\link[phyloseq]{prune_samples}}, \code{\link{prepare_long_data}}
 }

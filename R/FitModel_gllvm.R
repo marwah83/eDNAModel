@@ -35,7 +35,7 @@
 #' @examples
 #' \dontrun{
 #' data(physeq_example)
-#' result <- FitModel_gllvm(
+#' out <- FitModel_gllvm(
 #'   phyloseq = physeq_example,
 #'   site_col = "SampleID",
 #'   abundance_rhs = (1 | Samplingmonth/OTU),

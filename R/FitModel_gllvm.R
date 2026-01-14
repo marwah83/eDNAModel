@@ -56,7 +56,7 @@
 #' @importFrom tidyr replace_na
 #' @importFrom reshape2 acast melt
 #' @export
-FitModel_gllvm <- function(phyloseq,
+FitModel <- function(phyloseq,
                      site_col,
                      abundance_rhs,
                      occupancy_covars = NULL,
@@ -66,9 +66,16 @@ FitModel_gllvm <- function(phyloseq,
                      burn_in = 10,
                      abundance_family = "poisson") {
   
+  # Load necessary packages
+  library(gllvm)
+  library(glmmTMB)
+  library(reshape2)
+  library(dplyr)
+  library(tidyr)
+  
   abundance_rhs <- substitute(abundance_rhs)
   
-  # Helper: Convert columns to character or factor
+  # Helper: Convert columns to factor
   to_factor_cols <- function(df, cols) {
     for (col in cols) {
       if (col %in% colnames(df)) {
@@ -78,12 +85,13 @@ FitModel_gllvm <- function(phyloseq,
     return(df)
   }
   
+  # Check abundance family
   valid_families <- c("poisson", "nbinom", "zip", "zinb")
   if (!abundance_family %in% valid_families) {
     stop(" 'abundance_family' must be one of: ", paste(valid_families, collapse = ", "))
   }
   
-  # Prepare long data
+  # Prepare data
   prep <- prepare_long_data(
     physeq_obj = phyloseq,
     min_species_sum = min_species_sum,
@@ -92,12 +100,12 @@ FitModel_gllvm <- function(phyloseq,
   long_df <- prep$long_df
   long_df <- to_factor_cols(long_df, c(site_col, "OTU", "Name", "Samplingmonth"))
   
-  # Set top OTU as reference
+  # Set reference OTU
   otu_abundances <- taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   long_df$OTU <- relevel(factor(long_df$OTU, levels = unique(long_df$OTU)), ref = top_otu)
   
-  # Build z_obs
+  # z_obs
   reduced_data <- long_df %>%
     group_by(across(all_of(c(site_col, "OTU")))) %>%
     summarise(z_obs = as.integer(sum(y > 0) > abundance_threshold),
@@ -105,11 +113,14 @@ FitModel_gllvm <- function(phyloseq,
     mutate(z_sim = z_obs)
   reduced_data <- to_factor_cols(reduced_data, c(site_col, "OTU", "Name", "Samplingmonth"))
   
+  # Initialize
   psi_list <- list()
   lambda_list <- list()
   p_detect_list <- list()
   occupancy_models <- list()
   abundance_models <- list()
+  lv_sites_list <- list()
+  lv_species_list <- list()
   
   for (i in 1:n_iter) {
     message(" Iteration ", i)
@@ -117,12 +128,11 @@ FitModel_gllvm <- function(phyloseq,
     reduced_data[[site_col]] <- as.character(reduced_data[[site_col]])
     long_df[[site_col]] <- as.character(long_df[[site_col]])
     
-    # Create z matrix
+    # z matrix
     z_matrix <- acast(reduced_data, formula = paste(site_col, "~ OTU"), value.var = "z_sim", fill = 0)
-    site_names <- unique(reduced_data[[site_col]])
     z_sites <- rownames(z_matrix)
     
-    # Align covariate data
+    # Covariates
     cov_df <- reduced_data %>%
       select(all_of(c(site_col, occupancy_covars))) %>%
       distinct()
@@ -141,20 +151,35 @@ FitModel_gllvm <- function(phyloseq,
       num.lv.c = 2
     )
     
+    # Latent variables
+    lv_sites <- as.data.frame(model_occupancy$lvs)
+    colnames(lv_sites) <- paste0("LV", seq_len(ncol(lv_sites)))
+    lv_sites$Iteration <- i
+    lv_sites$Site <- rownames(model_occupancy$lvs)
+    
+    lv_species <- as.data.frame(model_occupancy$params$theta)
+    colnames(lv_species) <- paste0("LV", seq_len(ncol(lv_species)))
+    lv_species$Iteration <- i
+    lv_species$OTU <- rownames(model_occupancy$params$theta)
+    
+    lv_sites_list[[i]] <- lv_sites
+    lv_species_list[[i]] <- lv_species
+    
+    # Predict ψ
     psi_pred <- predict(model_occupancy, type = "response")
     rownames(psi_pred) <- rownames(z_matrix)
     psi_long <- melt(psi_pred, varnames = c(site_col, "OTU"), value.name = "eta")
     psi_list[[i]] <- psi_long
     occupancy_models[[i]] <- model_occupancy
     
-    # === Abundance model ===
+    # Abundance model
     abundance_data <- long_df %>%
       left_join(reduced_data %>% select(all_of(c(site_col, "OTU", "z_sim"))),
                 by = c(site_col, "OTU")) %>%
       filter(z_sim == 1)
     abundance_data <- to_factor_cols(abundance_data, c(site_col, "OTU", "Name", "Samplingmonth"))
     
-    # Abundance model settings
+    # GLMM settings
     if (abundance_family == "poisson") {
       abundance_glmm_family <- poisson
       zi_formula <- ~0
@@ -201,7 +226,7 @@ FitModel_gllvm <- function(phyloseq,
                                                pmin(pmax(adjusted_prob, 0.001), 0.999))
   }
   
-  # Posterior summarization
+  # Posterior summary
   bind_summary_link <- function(lst, link_type = c("logit", "log", "cloglog")) {
     link_type <- match.arg(link_type)
     df <- bind_rows(lst)
@@ -212,10 +237,8 @@ FitModel_gllvm <- function(phyloseq,
         eta_var = var(eta),
         .groups = "drop"
       )
-    
     df <- left_join(df, df_summary, by = psi_cols) %>%
       mutate(weight = 1 / ifelse(is.na(eta_var) | eta_var == 0, 1e-6, eta_var))
-    
     df %>%
       group_by(across(all_of(psi_cols))) %>%
       summarise(
@@ -250,6 +273,18 @@ FitModel_gllvm <- function(phyloseq,
     left_join(rename_with(lambda_summary, ~paste0("lambda_", .), -all_of(psi_cols)), by = psi_cols) %>%
     left_join(rename_with(p_detect_summary, ~paste0("p_detect_", .), -all_of(psi_cols)), by = psi_cols)
   
+  # Biplot latent variables
+  lv_sites_combined <- bind_rows(lv_sites_list[-seq_len(burn_in)])
+  lv_species_combined <- bind_rows(lv_species_list[-seq_len(burn_in)])
+  
+  mean_lv_sites <- lv_sites_combined %>%
+    group_by(Site) %>%
+    summarise(across(starts_with("LV"), mean), .groups = "drop")
+  
+  mean_lv_species <- lv_species_combined %>%
+    group_by(OTU) %>%
+    summarise(across(starts_with("LV"), mean), .groups = "drop")
+  
   return(list(
     summary = final_summary,
     psi_list = psi_list[-seq_len(burn_in)],
@@ -257,8 +292,11 @@ FitModel_gllvm <- function(phyloseq,
     p_detect_list = p_detect_list[-seq_len(burn_in)],
     occupancy_models = occupancy_models,
     abundance_models = abundance_models,
-    reduced_data = reduced_data
+    reduced_data = reduced_data,
+    lv_sites = lv_sites_combined,
+    lv_species = lv_species_combined,
+    mean_lv_sites = mean_lv_sites,
+    mean_lv_species = mean_lv_species
   ))
 }
-
 

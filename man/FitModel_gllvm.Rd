@@ -36,15 +36,19 @@ FitModel_gllvm(
 \item{abundance_family}{Distribution family for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`.}
 }
 \value{
-A list with:
+A list containing:
 \describe{
-  \item{summary}{Data frame summarizing posterior means and uncertainty of occupancy (`psi`), abundance (`lambda`), and detection (`p_detect`).}
-  \item{psi_list}{List of site-by-OTU occupancy predictions from each iteration.}
-  \item{lambda_list}{List of site-by-OTU abundance predictions from each iteration.}
-  \item{p_detect_list}{List of detection probabilities.}
-  \item{occupancy_models}{List of fitted `gllvm` occupancy models.}
-  \item{abundance_models}{List of fitted `glmmTMB` abundance models.}
-  \item{reduced_data}{Data used for final modeling, including simulated occupancy.}
+  \item{summary}{Posterior summaries of occupancy (psi), abundance (lambda), and detection probability (p_detect)}
+  \item{psi_list}{List of occupancy estimates per iteration}
+  \item{lambda_list}{List of abundance estimates per iteration}
+  \item{p_detect_list}{List of detection probabilities per iteration}
+  \item{occupancy_models}{Fitted GLLVM occupancy models}
+  \item{abundance_models}{Fitted GLMM abundance models}
+  \item{reduced_data}{Processed input data}
+  \item{lv_sites}{Latent variable coordinates of sites (per iteration)}
+  \item{lv_species}{Latent variable coordinates of species (per iteration)}
+  \item{mean_lv_sites}{Averaged site positions across iterations}
+  \item{mean_lv_species}{Averaged species positions across iterations}
 }
 }
 \description{

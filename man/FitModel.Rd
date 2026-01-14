@@ -36,7 +36,16 @@ FitModel(
 \item{abundance_family}{Character. Family for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`. Default: `"poisson"`.}
 }
 \value{
-
+A list containing:
+\describe{
+  \item{summary}{Posterior summaries of occupancy (psi), abundance (lambda), and detection probability (p_detect)}
+  \item{psi_list}{List of occupancy estimates per iteration}
+  \item{lambda_list}{List of abundance estimates per iteration}
+  \item{p_detect_list}{List of detection probabilities per iteration}
+  \item{occupancy_models}{Fitted GLLVM occupancy models}
+  \item{abundance_models}{Fitted GLMM abundance models}
+  \item{reduced_data}{Processed input data}
+  }
 }
 \description{
 Implements a hierarchical Bayesian-style framework using repeated GLMM fitting

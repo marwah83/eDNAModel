@@ -23,11 +23,7 @@
 #'   \item{occupancy_models}{Fitted GLLVM occupancy models}
 #'   \item{abundance_models}{Fitted GLMM abundance models}
 #'   \item{reduced_data}{Processed input data}
-#'   \item{lv_sites}{Latent variable coordinates of sites (per iteration)}
-#'   \item{lv_species}{Latent variable coordinates of species (per iteration)}
-#'   \item{mean_lv_sites}{Averaged site positions across iterations}
-#'   \item{mean_lv_species}{Averaged species positions across iterations}
-#' }
+#'   }
 #'
 #' @details
 #' This function decomposes species occurrence into two processes:

@@ -43,14 +43,16 @@
 #' - Applies reweighting based on prediction uncertainty to generate robust estimates.
 #' - Automatically relevels `OTU` to the most abundant taxon for model stability.
 #'
-#' @section Example:
+#' @examples
 #' \dontrun{
 #' library(phyloseq)
+#'
+#' # Example: Fit multispecies site occupancy model
 #' result <- FitModel(
 #'   phyloseq = ps_obj,
 #'   site_col = "Site",
 #'   abundance_rhs = Treatment * OTU,
-#'   occupancy_rhs = Treatment + OTU,
+#'   occupancy_covars = c("Treatment", "OTU"),
 #'   abundance_family = "nbinom",
 #'   n_iter = 100,
 #'   burn_in = 20

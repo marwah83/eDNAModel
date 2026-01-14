@@ -37,14 +37,17 @@
 #' library(phyloseq)
 #' data(GlobalPatterns)
 #' # Replace with real site_col and covariates relevant to your dataset
-#' result <- FitModel_gllvm(
-#'   phyloseq = GlobalPatterns,
-#'   site_col = "SampleID",
-#'   abundance_rhs = ~ SampleType,
-#'   occupancy_covars = c("SampleType"),
-#'   n_iter = 10,
-#'   burn_in = 2
-#' )
+#' physeq <- subset_samples(GlobalPatterns, SampleType %in% c("Feces", "Mock"))
+#' out <- FitModel_gllvm(
+#' phyloseq = physeq,
+#' site_col = "SampleType",
+#' abundance_rhs = (1 | OTU),
+#' occupancy_covars = c("SampleType"),
+#' abundance_family = "poisson",
+#' n_iter = 10,
+#' burn_in = 2
+#')
+head(out$summary)
 #' }
 #'
 #' @seealso \code{\link[gllvm]{gllvm}}, \code{\link[glmmTMB]{glmmTMB}}

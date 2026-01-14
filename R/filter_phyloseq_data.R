@@ -42,7 +42,6 @@
 #'
 #' @importFrom phyloseq prune_taxa prune_samples otu_table taxa_are_rows nsamples ntaxa
 #' @importFrom methods is
-#' @importFrom utils saveRDS
 #' @export
 filter_phyloseq_data <- function(phyloseq_obj, min_species_sum = 30, save_path = "phyloseq_filtered.RDS") {
 

@@ -45,20 +45,20 @@
 #'
 #' @examples
 #' \dontrun{
-#' library(phyloseq)
+#' # Example usage of FitModel with a phyloseq object named `physeq_one`
 #'
-#' # Example: Fit multispecies site occupancy model
-#' result <- FitModel(
-#'   phyloseq = ps_obj,
-#'   site_col = "Site",
-#'   abundance_rhs = Treatment * OTU,
-#'   occupancy_covars = c("Treatment", "OTU"),
-#'   abundance_family = "nbinom",
-#'   n_iter = 100,
-#'   burn_in = 20
-#' )
+#' out <- FitModel(
+#'  phyloseq = ps_obj,
+#' site_col = "Site",
+#' abundance_rhs = Treatment * OTU,
+#' occupancy_rhs = Treatment + OTU,
+#' abundance_family = "nbinom",
+#' n_iter = 100,
+#' burn_in = 20
+#')
+#' # Check the output summary
+#' head(out$summary)
 #'
-#' head(result$summary)
 #' }
 #'
 #' @importFrom glmmTMB glmmTMB

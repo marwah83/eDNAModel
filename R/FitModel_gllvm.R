@@ -30,7 +30,7 @@
 #'   \item{mean_lv_sites}{Averaged site positions in latent variable space (used in biplots).}
 #'   \item{mean_lv_species}{Averaged species positions in latent variable space (used in biplots).}
 #' }
-#' @details
+#' @description
 #' This function implements a hierarchical two-part multispecies occupancy model using **gllvm** for modeling species presence (occupancy).
 #'
 #' The function decomposes species occurrence into two ecological processes:

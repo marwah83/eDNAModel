@@ -16,13 +16,17 @@
 #'
 #' @return A list containing:
 #' \describe{
-#'   \item{summary}{A data frame with posterior summaries (mean, SE, 95% CI) for occupancy (`psi_`), abundance (`lambda_`), and detection probability (`p_detect_`).}
-#'   \item{psi_list}{List of occupancy predictions per iteration (after burn-in).}
-#'   \item{lambda_list}{List of abundance predictions per iteration (after burn-in).}
-#'   \item{p_detect_list}{List of detection probability estimates per iteration (after burn-in).}
-#'   \item{occupancy_models}{List of fitted `glmmTMB` occupancy models for each iteration.}
-#'   \item{abundance_models}{List of fitted `glmmTMB` abundance models for each iteration.}
-#'   \item{reduced_data}{Final occupancy dataset (`site × OTU` format) with observed and simulated presence.}
+#'   \item{summary}{Posterior summaries of occupancy (psi), abundance (lambda), and detection probability (p_detect)}
+#'   \item{psi_list}{List of occupancy estimates per iteration}
+#'   \item{lambda_list}{List of abundance estimates per iteration}
+#'   \item{p_detect_list}{List of detection probabilities per iteration}
+#'   \item{occupancy_models}{Fitted GLLVM occupancy models}
+#'   \item{abundance_models}{Fitted GLMM abundance models}
+#'   \item{reduced_data}{Processed input data}
+#'   \item{lv_sites}{Latent variable coordinates of sites (per iteration)}
+#'   \item{lv_species}{Latent variable coordinates of species (per iteration)}
+#'   \item{mean_lv_sites}{Averaged site positions across iterations}
+#'   \item{mean_lv_species}{Averaged species positions across iterations}
 #' }
 #'
 #' @details

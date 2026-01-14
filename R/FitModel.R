@@ -52,7 +52,6 @@
 #' site_col = "Site",
 #' abundance_rhs = Treatment * OTU,
 #' occupancy_rhs = Treatment + OTU,
-#' occupancy_covars = c("Treatment", "OTU"),
 #' abundance_family = "nbinom",
 #' n_iter = 100,
 #' burn_in = 20

@@ -13,7 +13,8 @@ FitModel_gllvm(
   abundance_threshold = 1,
   n_iter = 50,
   burn_in = 10,
-  abundance_family = "poisson"
+  abundance_family = "poisson",
+  num_lv_c = 2
 )
 }
 \arguments{
@@ -34,6 +35,8 @@ FitModel_gllvm(
 \item{burn_in}{Integer; number of burn-in iterations to discard (default = 10).}
 
 \item{abundance_family}{Distribution to use for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`.}
+
+\item{num_lv_c}{Number of constrained latent variables for the occupancy model. Defaults to 2. Must be <= number of species.}
 }
 \value{
 A list with the following components:
@@ -93,7 +96,8 @@ abundance_rhs = (1 | OTU),
 occupancy_covars = c("SampleType"),
 abundance_family = "poisson",
 n_iter = 10,
-burn_in = 2
+burn_in = 2, 
+num_lv_c = 2
 )
 head(out$summary)
 }

@@ -87,7 +87,8 @@ FitModel_gllvm <- function(phyloseq,
                      abundance_threshold = 1,
                      n_iter = 50,
                      burn_in = 10,
-                     abundance_family = "poisson") {
+                     abundance_family = "poisson",
+                     num_lv_c=2   ) {
   
   
   abundance_rhs <- substitute(abundance_rhs)
@@ -165,7 +166,7 @@ FitModel_gllvm <- function(phyloseq,
       y = z_matrix,
       X = X_cov,
       family = "binomial",
-      num.lv.c = 2
+      num.lv.c = num_lv_c
     )
     
     # Latent variables

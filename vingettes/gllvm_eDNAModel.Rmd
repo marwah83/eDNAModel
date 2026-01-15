@@ -58,7 +58,8 @@ out <- FitModel_gllvm(
        occupancy_covars = "Samplingmonth",
        abundance_family = "poisson",
        n_iter = 30,
-       burn_in = 2
+       burn_in = 2,
+       num_lv_c = 2
    )
 
 ```

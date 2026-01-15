@@ -15,7 +15,8 @@
 #' @param n_iter Integer; number of Monte Carlo iterations to run (default = 50).
 #' @param burn_in Integer; number of burn-in iterations to discard (default = 10).
 #' @param abundance_family Distribution to use for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`.
-#'
+#' @param num_lv_c Number of constrained latent variables for the occupancy model. Defaults to 2. Must be <= number of species.
+#' 
 #' @return A list with the following components:
 #' \describe{
 #'   \item{summary}{A data frame with posterior summaries of occupancy (`psi_`), abundance (`lambda_`), and detection probability (`p_detect_`).}
@@ -65,7 +66,8 @@
 #' occupancy_covars = c("SampleType"),
 #' abundance_family = "poisson",
 #' n_iter = 10,
-#' burn_in = 2
+#' burn_in = 2, 
+#' num_lv_c = 2
 #')
 #' head(out$summary)
 #' }

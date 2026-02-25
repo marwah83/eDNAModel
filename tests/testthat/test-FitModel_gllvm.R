@@ -2,7 +2,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
      skip_if_not_installed("gllvm")
      skip_if_not_installed("glmmTMB")
      skip_if_not_installed("phyloseq")
-     
+
      # Create synthetic OTU table: 3 OTUs × 6 Samples
      otu_mat <- matrix(
          c(5, 2, 3, 4, 6, 1,
@@ -13,7 +13,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
      rownames(otu_mat) <- paste0("OTU", 1:3)
      colnames(otu_mat) <- paste0("S", 1:6)
      otu_tab <- phyloseq::otu_table(otu_mat, taxa_are_rows = TRUE)
-     
+
      # Sample metadata: 3 Sites, 6 Samples
      sample_df <- data.frame(
          Site           = rep(c("Loc1", "Loc2", "Loc3"), each = 2),
@@ -23,10 +23,10 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
          row.names      = paste0("S", 1:6)
      )
      sample_tab <- phyloseq::sample_data(sample_df)
-     
+
      # Create phyloseq object
      physeq <- phyloseq::phyloseq(otu_tab, sample_tab)
-     
+
      # Run FitModel_gllvm with low min_species_sum for testability
      out <- suppressWarnings(
          FitModel_gllvm(
@@ -41,10 +41,10 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
              num_lv_c=1
          )
      )
-     
+
      # Test structure
      expect_type(out, "list")
-     
+
      expected_components <- c(
          "summary", "psi_list", "lambda_list", "p_detect_list",
          "occupancy_models", "abundance_models", "reduced_data",

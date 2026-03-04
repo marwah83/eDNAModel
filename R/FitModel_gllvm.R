@@ -80,6 +80,7 @@
 #' @importFrom glmmTMB glmmTMB
 #' @importFrom reshape2 melt acast
 #' @importFrom utils head
+#' @importFrom phyloseq sample_data sample_data<-
 #' @export
 FitModel_gllvm <- function(phyloseq,
                      site_col,

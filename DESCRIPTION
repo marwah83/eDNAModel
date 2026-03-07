@@ -1,6 +1,6 @@
 Package: eDNAModel
 Type: Package
-Title: eDNA Statistical Modeling for Species Occupancy and Abundance
+Title: eDNA Occupancy Detection Models
 Version: 0.1.0
 Authors@R: c(
     person(
@@ -16,7 +16,7 @@ Authors@R: c(
         email = "Bert.van-der-Veen@uni-bayreuth.de"
     )
 )
-Description: Tools for analyzing environmental DNA datasets using species occupancy and abundance models fitted via TMB.
+Description: Tools for fitting occupancy detection models for environmental DNA data.
 License: GPL-3
 Encoding: UTF-8
 LazyData: true

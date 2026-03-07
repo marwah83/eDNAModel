@@ -3,7 +3,7 @@ Type: Package
 Title: eDNA Statistical Modeling for Species Occupancy and Abundance
 Version: 0.1.0
 Authors@R: 
-    person(given = "YourFirstName", family = "YourLastName", 
+    person(given = c("Marwah","Bert"), family = c("Soliman", "van der Veen")
     role = c("aut", "cre"), 
      email = "your@email.com")
 Description: Tools for analyzing environmental DNA datasets using species occupancy and abundance models fitted via TMB.

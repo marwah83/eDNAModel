@@ -123,7 +123,7 @@ FitModel_gllvm <- function(phyloseq,
   long_df <- to_factor_cols(long_df, c(site_col, "OTU", "Name", "Samplingmonth"))
   
   # Set reference OTU
-  otu_abundances <- taxa_sums(prep$physeq_filtered)
+  otu_abundances <- phyloseq::taxa_sums(prep$physeq_filtered)
   top_otu <- names(sort(otu_abundances, decreasing = TRUE))[1]
   long_df$OTU <- relevel(factor(long_df$OTU, levels = unique(long_df$OTU)), ref = top_otu)
   

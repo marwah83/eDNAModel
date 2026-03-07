@@ -78,6 +78,7 @@
 #' @importFrom stats reformulate predict rbinom
 #' @importFrom gllvm gllvm
 #' @importFrom glmmTMB glmmTMB
+#' @importFrom phyloseq taxa_sums
 #' @importFrom reshape2 melt acast
 #' @importFrom utils head
 #' @importFrom phyloseq sample_data sample_data<-

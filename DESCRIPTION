@@ -3,10 +3,12 @@ Type: Package
 Title: eDNA Occupancy Detection Models
 Version: 0.1.0
 Authors@R: c(
-        given = "Marwah",
-        family = "Soliman",
-        role = c("aut", "cre"),
-        email = "marwah.soliman@ntnu.no"
+    person("Marwah", "Soliman",
+           role = c("aut", "cre"),
+           email = "marwah.soliman@ntnu.no"),
+    person("Bert", "van der Veen",
+           role = "aut",
+           email = "Bert.van-der-Veen@uni-bayreuth.de")
 )
 Description: Tools for fitting occupancy detection models for environmental DNA data.
 License: GPL-3
@@ -22,12 +24,11 @@ Imports:
     dplyr,
     ggplot2,
     tidyr,
-    BiocManager,
     glmmTMB,
     tibble,
     reshape2
-LinkingTo: 
-    TMB, 
+LinkingTo:
+    TMB,
     RcppEigen
 Suggests:
     knitr,
@@ -38,5 +39,5 @@ Suggests:
     pheatmap
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3
-Depends: 
+Depends:
     R (>= 3.5)

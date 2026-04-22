@@ -45,6 +45,9 @@ This vignette demonstrates the updated occupancy–detection model workflow usin
 # 2. Load and Subset Data
 ```{r load-data}
 physeq_new=readRDS("~/Downloads/BGE_Port_sampling.rds")
+
+data("physeq_new",package = "eDNAModel")
+
 physeq_one=physeq_new$`Marine Invasive species Trondheim`
 ```
 

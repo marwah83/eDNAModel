@@ -38,7 +38,7 @@ test_that("prepare_long_data returns correctly formatted output", {
   physeq <- phyloseq::phyloseq(otu, sample_tab)
 
   # -----------------------------
-  # Run function (UPDATED)
+  # Run function
   # -----------------------------
   result <- prepare_long_data(
     physeq_obj = physeq,
@@ -51,14 +51,13 @@ test_that("prepare_long_data returns correctly formatted output", {
   # -----------------------------
   expect_type(result, "list")
   expect_named(result, c("physeq", "long_df"))
-
   expect_s4_class(result$physeq, "phyloseq")
 
   long_df <- result$long_df
   expect_s3_class(long_df, "data.frame")
 
   # -----------------------------
-  # Column checks (UPDATED)
+  # Column checks
   # -----------------------------
   expect_true(all(c("SampleRep", "OTU", "y", "Site") %in% names(long_df)))
 
@@ -69,9 +68,20 @@ test_that("prepare_long_data returns correctly formatted output", {
   expect_true(is.numeric(long_df$y))
 
   # -----------------------------
+  # SampleRep correctness (FIXED)
+  # -----------------------------
+  expected_SampleRep <- interaction(
+    meta_data$site_field,
+    meta_data$treat_field,
+    meta_data$rep_field
+  )
+
+  expect_true(all(sort(unique(long_df$SampleRep)) ==
+                  sort(as.character(expected_SampleRep))))
+
+  # -----------------------------
   # Site column check
   # -----------------------------
-  expect_true("Site" %in% names(long_df))
   expect_true(all(long_df$Site == long_df$site_field))
 
   # -----------------------------
@@ -83,7 +93,7 @@ test_that("prepare_long_data returns correctly formatted output", {
   )
 
   # -----------------------------
-  # No filtering check (CRITICAL)
+  # No filtering check
   # -----------------------------
   expect_equal(
     length(unique(long_df$OTU)),

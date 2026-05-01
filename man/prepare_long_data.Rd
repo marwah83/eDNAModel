@@ -4,13 +4,7 @@
 \alias{prepare_long_data}
 \title{Prepare Long Format Data from a Phyloseq Object}
 \usage{
-prepare_long_data(
-  physeq_obj,
-  site_col,
-  nested_cols = NULL,
-  otu_col = "OTU",
-  count_col = "y"
-)
+prepare_long_data(physeq_obj, site_col, nested_cols = NULL)
 }
 \arguments{
 \item{physeq_obj}{A `phyloseq` object containing OTU (or ASV) abundance table and sample metadata.}

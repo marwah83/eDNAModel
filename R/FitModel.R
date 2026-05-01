@@ -67,7 +67,7 @@
 #' @import tidyr
 #'
 #' @export
-FitModel <- function(phyloseq,
+FitModel_0 <- function(phyloseq,
                      site_col,
                      abundance_rhs,
                      occupancy_rhs,

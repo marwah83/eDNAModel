@@ -177,7 +177,6 @@ FitModel <- function(
   
   prep <- prepare_long_data(
     physeq_obj = phyloseq,
-    min_species_sum = 0,
     site_col = site_col,
     nested_cols = unique(c(sample_col, replicate_col))
   )

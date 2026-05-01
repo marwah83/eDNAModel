@@ -1,118 +1,115 @@
 #' Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data
 #'
 #' Implements an EM-like iterative framework using repeated GLMM fitting
-#' to jointly estimate microbial occupancy, detection probability, and abundance
+#' to jointly estimate microbial occupancy, detection (capture), and abundance
 #' for OTU-level microbiome data stored in a `phyloseq` object.
 #'
-#' Formula covariates are automatically preserved in the internally constructed
-#' site-level and sample-level data sets. This allows covariates such as
-#' `in_out`, `Samplingmonth`, treatment variables, interactions, and nested
-#' random-effect terms to be used directly in the model formulas.
+#' The model explicitly follows a **three-level eDNA hierarchy**:
+#' \itemize{
+#'   \item Site level: true presence/absence (\eqn{z})
+#'   \item Biological sample level: capture/detection (\eqn{a})
+#'   \item PCR replicate level: observed counts (\eqn{y})
+#' }
 #'
-#' @param phyloseq A `phyloseq` object containing an OTU table, sample data, and optionally taxonomy.
-#' @param site_col Character. Name of the column representing sampling sites.
-#' @param sample_col Character. Name of the column representing samples.
-#' @param replicate_col Character or `NULL`. Name of the column representing replicates.
-#' @param occupancy_formula Formula for the occupancy model. The response must be `z_sim`.
-#' @param capture_formula Formula for the detection/capture model. The response must be `a_sim`.
-#' @param abundance_formula Formula for the abundance model. The response must match `count_col`.
-#' @param otu_col Character. Name of the OTU column.
-#' @param count_col Character. Name of the count column.
-#' @param min_species_sum Integer. Minimum total count for an OTU to be retained.
-#' @param min_detection_replicates Integer. Minimum number of detections required for an OTU to be retained.
-#' @param abundance_threshold Numeric. Count threshold above which an OTU is treated as detected.
-#' @param n_iter Integer. Number of EM-like iterations.
-#' @param burn_in Integer. Number of initial iterations discarded before summarising results.
-#' @param abundance_family Character. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`.
-#' @param verbose Logical. If `TRUE`, print progress messages.
+#' Formula covariates are automatically preserved and propagated into the
+#' internally constructed site-level and sample-level datasets. This allows
+#' covariates such as `in_out`, `Samplingmonth`, treatments, interactions,
+#' and nested random effects to be used directly in model formulas.
 #'
-#' @return A list containing:
+#' @param phyloseq A `phyloseq` object containing OTU table and sample data.
+#' @param site_col Character. Column representing sites (occupancy level).
+#' @param sample_col Character. Column representing biological samples (capture level).
+#' @param replicate_col Character or `NULL`. Column representing PCR replicates.
+#' @param occupancy_formula Formula for occupancy model (response must be `z_sim`).
+#' @param capture_formula Formula for capture model (response must be `a_sim`).
+#' @param abundance_formula Formula for abundance model (response must match `count_col`).
+#' @param otu_col Character. OTU identifier column.
+#' @param count_col Character. Count column (e.g., read counts).
+#' @param min_species_sum Minimum total counts required to retain an OTU.
+#' @param min_detection_replicates Minimum detections required per OTU.
+#' @param abundance_threshold Threshold defining detection (default = 0).
+#' @param n_iter Number of EM-like iterations.
+#' @param burn_in Number of initial iterations discarded.
+#' @param abundance_family One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`.
+#' @param verbose Logical; print progress.
+#'
+#' @return A list with:
 #' \describe{
-#'   \item{psi}{Data frame of occupancy probability summaries (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
-#'   \item{capture}{Data frame of detection/capture probability summaries (`capture_mean`, `capture_median`, `capture_lwr`, `capture_upr`).}
-#'   \item{lambda}{Data frame of abundance summaries (`lambda_mean`, `lambda_median`, `lambda_lwr`, `lambda_upr`).}
-#'   \item{p_detect}{Data frame of detection probabilities implied by abundance (`p_detect_mean`, etc.).}
-#'   \item{psi_list}{List of occupancy linear predictors retained after burn-in.}
-#'   \item{capture_list}{List of detection linear predictors retained after burn-in.}
-#'   \item{lambda_list}{List of abundance linear predictors retained after burn-in.}
-#'   \item{p_detect_list}{List of detection linear predictors derived from abundance.}
-#'   \item{occupancy_models}{List of fitted occupancy `glmmTMB` models.}
-#'   \item{capture_models}{List of fitted detection `glmmTMB` models.}
-#'   \item{abundance_models}{List of fitted abundance `glmmTMB` models.}
-#'   \item{site_data}{Final site-level latent-state data.}
-#'   \item{sample_data}{Final sample-level latent-state data.}
-#'   \item{long_df}{Processed long-format data used for model fitting.}
-#'   \item{filter_summary}{Summary of OTU filtering and retained taxa.}
-#'   \item{diagnostic_AIC}{Component-model AIC values across iterations.}
-#'   \item{note}{Description of the approximate EM-like fitting procedure.}
+#'   \item{psi}{Occupancy probabilities (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
+#'   \item{capture}{Capture probabilities (`capture_mean`, etc.).}
+#'   \item{lambda}{Abundance (`lambda_mean`, etc.).}
+#'   \item{p_detect}{Detection probability derived from abundance.}
+#'   \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration draws.}
+#'   \item{occupancy_models, capture_models, abundance_models}{Fitted GLMMs.}
+#'   \item{site_data, sample_data, long_df}{Processed data.}
+#'   \item{filter_summary}{OTU filtering summary.}
+#'   \item{diagnostic_AIC}{AIC values per iteration.}
+#'   \item{note}{Model description.}
 #' }
 #'
 #' @details
-#' The model decomposes microbial occurrence into three linked processes:
+#' The model decomposes microbial occurrence into:
 #'
 #' \enumerate{
-#'   \item \strong{Occupancy (\eqn{\psi})}: probability that an OTU is present at a site,
-#'   modeled using a binomial GLMM.
+#'   \item \strong{Occupancy (\eqn{\psi})}:
+#'   Probability an OTU is present at a site.
 #'
-#'   \item \strong{Detection / capture (\eqn{p})}: probability of detecting an OTU in a sample
-#'   conditional on presence, modeled using a binomial GLMM.
+#'   \item \strong{Capture (\eqn{p})}:
+#'   Probability a biological sample captures DNA given presence.
 #'
-#'   \item \strong{Abundance (\eqn{\lambda})}: expected count conditional on detection,
-#'   modeled using Poisson, negative binomial, or zero-inflated count models.
+#'   \item \strong{Abundance (\eqn{\lambda})}:
+#'   Expected read counts at PCR replicate level given capture.
 #' }
 #'
-#' Detection probability implied by the abundance model is computed as:
+#' The hierarchical structure is:
+#'
+#' \deqn{
+#' z_{i} \sim \text{Bernoulli}(\psi_i), \quad
+#' a_{ij} \sim \text{Bernoulli}(p_{ij} \cdot z_i), \quad
+#' y_{ijk} \sim \text{Count}(\lambda_{ijk} \cdot a_{ij})
+#' }
+#'
+#' Detection probability implied by abundance is:
 #'
 #' \deqn{p_{\text{detect}} = 1 - \exp(-\lambda)}
 #'
-#' which corresponds to the probability of observing at least one count under
-#' a Poisson process.
 #'
-#' \strong{Important:} For small \eqn{\lambda}, \eqn{p_{\text{detect}} \approx \lambda},
-#' while for large \eqn{\lambda}, \eqn{p_{\text{detect}} \rightarrow 1}.
-#' Therefore, `p_detect` may closely resemble `lambda` for rare taxa and
-#' saturate at 1 for abundant taxa.
-#'
-#' At each iteration:
-#' \enumerate{
-#'   \item Fit occupancy model using current latent state \eqn{z_sim}.
-#'   \item Fit detection model conditional on \eqn{z_sim = 1}.
-#'   \item Fit abundance model conditional on \eqn{a_sim = 1}.
-#'   \item Update detection state \eqn{a_sim} using capture and abundance.
-#'   \item Update occupancy state \eqn{z_sim} using capture and abundance.
+#' \strong{Important interpretation:}
+#' \itemize{
+#'   \item For small \eqn{\lambda}: \eqn{p_{\text{detect}} \approx \lambda}
+#'   \item For large \eqn{\lambda}: \eqn{p_{\text{detect}} \to 1}
 #' }
 #'
-#' Posterior summaries are computed from iterations retained after burn-in.
+#' Thus, `p_detect` is not independent of `lambda` and should not be interpreted
+#' as a separate parameter.
 #'
-#' If `offset(log(total_reads))` is included in `abundance_formula`,
-#' sequencing depth is computed automatically. Samples with zero total reads
-#' are removed prior to model fitting.
+#' @section EM-like algorithm:
+#' \enumerate{
+#'   \item Fit occupancy model using current \eqn{z_sim}
+#'   \item Fit capture model conditional on \eqn{z_sim = 1}
+#'   \item Fit abundance model conditional on \eqn{a_sim = 1}
+#'   \item Update \eqn{a_sim} using capture + abundance
+#'   \item Update \eqn{z_sim} using capture + abundance
+#' }
+#'
+#' Posterior summaries are computed from empirical distributions across
+#' iterations (after burn-in), i.e., **true empirical quantiles**, not Wald intervals.
 #'
 #' @section Model features:
 #' \itemize{
-#'   \item Supports fixed effects, interactions, and hierarchical random effects.
-#'   \item Automatically propagates covariates from `sample_data`.
-#'   \item Supports offsets for sequencing depth normalization.
-#'   \item Supports Poisson, negative binomial, and zero-inflated models.
-#'   \item Stores fitted models and diagnostics for each iteration.
-#' }
-#'
-#' @section Interpretation notes:
-#' \itemize{
-#'   \item `psi` reflects true occupancy probability.
-#'   \item `capture` reflects the observation process (sampling/detection).
-#'   \item `lambda` reflects expected abundance intensity.
-#'   \item `p_detect` is derived from `lambda` and may be close to `lambda` for rare taxa.
-#'   \item For large abundance values, `p_detect` approaches 1 and becomes less informative.
+#'   \item Explicit 3-level eDNA hierarchy (site → sample → PCR replicate)
+#'   \item Supports complex random-effects structures
+#'   \item Automatically handles covariates from `sample_data`
+#'   \item Supports offsets via `offset(log(total_reads))`
+#'   \item Works with Poisson, NB, ZIP, ZINB
 #' }
 #'
 #' @section Caveats:
 #' \itemize{
-#'   \item The procedure is an approximate EM-like algorithm, not a full joint likelihood.
-#'   \item AIC values are component-level diagnostics only.
-#'   \item Detection probability derived from abundance assumes a Poisson process and
-#'         may not be exact for negative binomial or zero-inflated models.
-#'   \item Highly complex random effects may lead to convergence issues.
+#'   \item This is an approximate EM-like method, not a full joint likelihood.
+#'   \item AIC values are component-wise diagnostics only.
+#'   \item Detection from abundance assumes Poisson-type logic (approximate for NB/ZIP).
+#'   \item Large \eqn{\lambda} leads to saturated detection probabilities (~1).
 #' }
 #'
 #' @examples
@@ -124,9 +121,11 @@
 #'   replicate_col = "Replicate",
 #'   otu_col = "OTU",
 #'   count_col = "y",
+#'
 #'   occupancy_formula = z_sim ~ 1 + (1 | OTU),
 #'   capture_formula   = a_sim ~ 1 + (1 | OTU),
 #'   abundance_formula = y ~ offset(log(total_reads)) + (1 | OTU),
+#'
 #'   abundance_family = "nbinom",
 #'   n_iter = 20,
 #'   burn_in = 5
@@ -139,7 +138,6 @@
 #'
 #' @importFrom glmmTMB glmmTMB nbinom2
 #' @importFrom stats plogis predict rbinom quantile median poisson exp
-#' @importFrom utils head
 #' @import dplyr
 #' @import rlang
 #'
@@ -194,7 +192,7 @@ FitModel <- function(
   }
   
   # ------------------------------------------------------------
-  # Add sample metadata covariates if missing
+  # Add sample metadata
   # ------------------------------------------------------------
   
   sample_meta <- data.frame(
@@ -238,7 +236,7 @@ FitModel <- function(
   long_df <- long_df[!is.na(long_df[[count_col]]), ]
   
   # ------------------------------------------------------------
-  # Compute total_reads from cleaned long data
+  # Compute total_reads from processed data
   # ------------------------------------------------------------
   
   total_reads_df <- long_df |>
@@ -338,11 +336,21 @@ FitModel <- function(
     message("OTUs after filtering: ", dplyr::n_distinct(long_df[[otu_col]]))
   }
   
+  # ------------------------------------------------------------
+  # Define hierarchy keys
+  # ------------------------------------------------------------
+  
   site_keys <- c(site_col, otu_col)
   sample_keys <- c(site_col, sample_col, otu_col)
   
+  pcr_keys <- c(site_col, sample_col, otu_col)
+  
+  if (!is.null(replicate_col) && replicate_col %in% names(long_df)) {
+    pcr_keys <- c(site_col, sample_col, replicate_col, otu_col)
+  }
+  
   # ------------------------------------------------------------
-  # Build site-level and sample-level data
+  # Build site-level Z and biological-sample-level A
   # ------------------------------------------------------------
   
   site_keep_vars <- setdiff(occ_vars, c(site_keys, "z_sim"))
@@ -426,6 +434,59 @@ FitModel <- function(
   zi_formula <- if (abundance_family %in% c("zip", "zinb")) ~1 else ~0
   
   # ------------------------------------------------------------
+  # Helper: PCR-level zero probability
+  # ------------------------------------------------------------
+  
+  get_p0_pcr <- function(fit, newdata, family_name) {
+    
+    mu <- as.numeric(predict(
+      fit,
+      type = "response",
+      newdata = newdata,
+      allow.new.levels = TRUE
+    ))
+    
+    zi <- rep(0, length(mu))
+    
+    if (family_name %in% c("zip", "zinb")) {
+      zi <- tryCatch(
+        as.numeric(predict(
+          fit,
+          type = "zprob",
+          newdata = newdata,
+          allow.new.levels = TRUE
+        )),
+        error = function(e) rep(0, length(mu))
+      )
+    }
+    
+    p0_cond <- switch(
+      family_name,
+      poisson = stats::dpois(0, lambda = mu),
+      zip     = stats::dpois(0, lambda = mu),
+      nbinom  = {
+        theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+        if (!is.finite(theta) || theta <= 0) {
+          stats::dpois(0, lambda = mu)
+        } else {
+          stats::dnbinom(0, mu = mu, size = theta)
+        }
+      },
+      zinb = {
+        theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+        if (!is.finite(theta) || theta <= 0) {
+          stats::dpois(0, lambda = mu)
+        } else {
+          stats::dnbinom(0, mu = mu, size = theta)
+        }
+      }
+    )
+    
+    p0 <- zi + (1 - zi) * p0_cond
+    pmin(pmax(p0, 1e-12), 1)
+  }
+  
+  # ------------------------------------------------------------
   # Storage
   # ------------------------------------------------------------
   
@@ -453,9 +514,9 @@ FitModel <- function(
     
     if (verbose) message("Iteration ", i)
     
-    # -----------------------------
-    # Occupancy model
-    # -----------------------------
+    # ----------------------------------------------------------
+    # 1. Occupancy model: Z_site,OTU
+    # ----------------------------------------------------------
     
     occ_fit <- glmmTMB::glmmTMB(
       formula = occupancy_formula,
@@ -479,12 +540,12 @@ FitModel <- function(
     
     occupancy_models[[i]] <- occ_fit
     
-    # -----------------------------
-    # Capture model conditional on z_sim = 1
-    # -----------------------------
+    # ----------------------------------------------------------
+    # 2. Capture model: A_sample,OTU | Z = 1
+    # ----------------------------------------------------------
     
     sample_data <- sample_data |>
-      dplyr::select(-dplyr::any_of(c("z_sim", "p0_count", "capture_prob"))) |>
+      dplyr::select(-dplyr::any_of(c("z_sim", "p0_sample", "capture_prob"))) |>
       dplyr::left_join(
         site_data |>
           dplyr::select(dplyr::all_of(c(site_keys, "z_sim"))),
@@ -520,11 +581,11 @@ FitModel <- function(
     
     capture_models[[i]] <- cap_fit
     
-    # -----------------------------
-    # Abundance model conditional on a_sim = 1
-    # -----------------------------
+    # ----------------------------------------------------------
+    # 3. Abundance model: PCR reads Y | A = 1
+    # ----------------------------------------------------------
     
-    abund_data <- long_df |>
+    abund_fit_data <- long_df |>
       dplyr::left_join(
         sample_data |>
           dplyr::select(dplyr::all_of(c(sample_keys, "a_sim"))),
@@ -532,68 +593,85 @@ FitModel <- function(
       ) |>
       dplyr::filter(.data$a_sim == 1)
     
-    if (nrow(abund_data) == 0) {
+    if (nrow(abund_fit_data) == 0) {
       stop("No rows available for abundance model at iteration ", i)
     }
     
     abund_fit <- glmmTMB::glmmTMB(
       formula = abundance_formula,
-      data = abund_data,
+      data = abund_fit_data,
       family = fam,
       ziformula = zi_formula
     )
     
-    eta_lambda_abund <- as.numeric(predict(
+    # Predict conditional abundance for all PCR rows
+    eta_lambda_all <- as.numeric(predict(
       abund_fit,
       type = "link",
-      newdata = abund_data,
+      newdata = long_df,
       allow.new.levels = TRUE
     ))
     
-    lambda_abund <- exp(eta_lambda_abund)
+    lambda_all <- exp(eta_lambda_all)
     
     lambda_list[[i]] <- data.frame(
-      abund_data[sample_keys],
-      eta = eta_lambda_abund
+      long_df[pcr_keys],
+      eta = eta_lambda_all
     )
     
-    p_detect_eta <- log(pmax(lambda_abund, 1e-12))
+    # PCR-level P(Y = 0 | A = 1)
+    p0_pcr <- get_p0_pcr(
+      fit = abund_fit,
+      newdata = long_df,
+      family_name = abundance_family
+    )
+    
+    p_detect_pcr <- 1 - p0_pcr
+    p_detect_eta <- log(-log(pmax(p0_pcr, 1e-12)))
     
     p_detect_list[[i]] <- data.frame(
-      abund_data[sample_keys],
+      long_df[pcr_keys],
       eta = p_detect_eta
     )
     
     abundance_models[[i]] <- abund_fit
     
-    # -----------------------------
-    # Update a_sim
-    # -----------------------------
+    # ----------------------------------------------------------
+    # 4. Collapse PCR probabilities to biological sample level
+    #    P(all PCR replicates zero | A = 1)
+    # ----------------------------------------------------------
     
-    sample_prob <- abund_data |>
-      dplyr::mutate(lambda_tmp = lambda_abund) |>
+    sample_p0 <- long_df |>
+      dplyr::mutate(p0_pcr = p0_pcr) |>
       dplyr::group_by(dplyr::across(dplyr::all_of(sample_keys))) |>
       dplyr::summarise(
-        p0_count = prod(exp(-.data$lambda_tmp)),
+        p0_sample = prod(.data$p0_pcr, na.rm = TRUE),
         .groups = "drop"
       )
     
     sample_data <- sample_data |>
-      dplyr::select(-dplyr::any_of(c("p0_count", "capture_prob"))) |>
+      dplyr::select(-dplyr::any_of(c("p0_sample", "capture_prob"))) |>
       dplyr::mutate(capture_prob = capture_prob) |>
-      dplyr::left_join(sample_prob, by = sample_keys)
+      dplyr::left_join(sample_p0, by = sample_keys)
     
-    sample_data$p0_count[is.na(sample_data$p0_count)] <- 1
+    sample_data$p0_sample[is.na(sample_data$p0_sample)] <- 1
+    
+    # ----------------------------------------------------------
+    # 5. Update A_sample,OTU
+    #    If any PCR is positive, A = 1.
+    #    If all PCRs are zero, sample A using posterior probability.
+    # ----------------------------------------------------------
     
     zero_sample <- which(sample_data$a_obs == 0 & sample_data$z_sim == 1)
     
     if (length(zero_sample) > 0) {
+      
       numerator_a <- sample_data$capture_prob[zero_sample] *
-        sample_data$p0_count[zero_sample]
+        sample_data$p0_sample[zero_sample]
       
       denominator_a <- (1 - sample_data$capture_prob[zero_sample]) +
         sample_data$capture_prob[zero_sample] *
-        sample_data$p0_count[zero_sample]
+        sample_data$p0_sample[zero_sample]
       
       posterior_a <- numerator_a / pmax(denominator_a, 1e-12)
       posterior_a <- pmin(pmax(posterior_a, 0.001), 0.999)
@@ -608,15 +686,16 @@ FitModel <- function(
     sample_data$a_sim[sample_data$a_obs == 1] <- 1
     sample_data$a_sim[sample_data$z_sim == 0] <- 0
     
-    # -----------------------------
-    # Update z_sim
-    # -----------------------------
+    # ----------------------------------------------------------
+    # 6. Update Z_site,OTU
+    # ----------------------------------------------------------
     
-    site_prob <- sample_data |>
+    site_p0 <- sample_data |>
       dplyr::group_by(dplyr::across(dplyr::all_of(site_keys))) |>
       dplyr::summarise(
         p0_site = prod(
-          (1 - .data$capture_prob) + .data$capture_prob * .data$p0_count,
+          (1 - .data$capture_prob) +
+            .data$capture_prob * .data$p0_sample,
           na.rm = TRUE
         ),
         .groups = "drop"
@@ -624,14 +703,16 @@ FitModel <- function(
     
     site_data <- site_data |>
       dplyr::select(-dplyr::any_of("p0_site")) |>
-      dplyr::left_join(site_prob, by = site_keys)
+      dplyr::left_join(site_p0, by = site_keys)
     
     site_data$p0_site[is.na(site_data$p0_site)] <- 1
     
     zero_site <- which(site_data$z_obs == 0)
     
     if (length(zero_site) > 0) {
-      numerator_z <- psi[zero_site] * site_data$p0_site[zero_site]
+      
+      numerator_z <- psi[zero_site] *
+        site_data$p0_site[zero_site]
       
       denominator_z <- (1 - psi[zero_site]) +
         psi[zero_site] * site_data$p0_site[zero_site]
@@ -660,7 +741,7 @@ FitModel <- function(
   }
   
   # ------------------------------------------------------------
-  # Summaries: no eta columns in main summaries
+  # Summaries on natural scale
   # ------------------------------------------------------------
   
   summarise_link <- function(lst, link_name, prefix) {
@@ -727,9 +808,12 @@ FitModel <- function(
     diagnostic_AIC = diagnostic_AIC,
     
     note = paste(
-      "Approximate iterative GLMM with EM-like latent-state updates.",
+      "Approximate three-level EM-like GLMM.",
+      "Hierarchy: site occupancy Z -> biological-sample capture A -> PCR replicate counts Y.",
       "Formula covariates are automatically preserved in site/sample data.",
-      "AIC values are exploratory for component models, not a formal joint-likelihood criterion."
+      "AIC values are exploratory component-model diagnostics, not a formal joint-likelihood criterion."
     )
   )
 }
+                          
+  

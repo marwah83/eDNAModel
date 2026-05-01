@@ -177,7 +177,7 @@ FitModel <- function(
   uses_offset <- any(grepl("offset", deparse(abundance_formula)))
   
   if (uses_offset) {
-    if (verbose) message("Offset detected → cleaning zero-read samples...")
+    if (verbose) message("Offset detected to cleaning zero-read samples...")
     
     zero_samples <- unique(long_df[[sample_col]][long_df$total_reads <= 0])
     

@@ -137,7 +137,6 @@
 #' }
 #'
 #' @importFrom glmmTMB glmmTMB nbinom2
-#' @importFrom stats plogis predict rbinom quantile median poisson exp
 #' @import dplyr
 #' @import rlang
 #'

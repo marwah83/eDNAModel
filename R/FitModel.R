@@ -1,4 +1,4 @@
-#' Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data
+#' Fit a Hierarchical Occupancy-Detection-Abundance Model for Microbiome Data
 #'
 #' Implements an EM-like iterative framework using repeated GLMM fitting
 #' to jointly estimate microbial occupancy (presence/absence), detection

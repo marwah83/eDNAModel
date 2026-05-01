@@ -2,7 +2,7 @@
 % Please edit documentation in R/FitModel.R
 \name{FitModel}
 \alias{FitModel}
-\title{Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data}
+\title{Fit a Hierarchical Occupancy-Detection-Abundance Model for Microbiome Data}
 \usage{
 FitModel(
   phyloseq,

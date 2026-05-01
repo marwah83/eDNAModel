@@ -20,11 +20,12 @@ Imports:
     gllvm,
     phyloseq,
     methods,
-    stats,
     dplyr,
+    glmmTMB,
+    stats,
+    rlang,
     ggplot2,
     tidyr,
-    glmmTMB,
     tibble,
     reshape2
 LinkingTo:

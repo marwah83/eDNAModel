@@ -171,12 +171,13 @@ FitModel <- function(
     setdiff(all.vars(formula), response)
   }
   
-  # ------------------------------------------------------------
-  # Prepare long data
-  # ------------------------------------------------------------
-    
+ # ------------------------------------------------------------
+# Prepare long data
+# ------------------------------------------------------------
+
 nested_cols <- c(sample_col, replicate_col)
-nested_cols <- nested_cols[!is.null(nested_cols)]
+nested_cols <- nested_cols[!is.na(nested_cols)]
+nested_cols <- Filter(Negate(is.null), nested_cols)
 
 prep <- prepare_long_data(
   physeq_obj = phyloseq,
@@ -190,6 +191,7 @@ long_df <- prep$long_df
 
 # ensure sample_col exists
 if (!(sample_col %in% names(long_df))) {
+  warning("sample_col not found in long_df — using SampleRep as fallback.")
   long_df[[sample_col]] <- long_df$SampleRep
 }
 

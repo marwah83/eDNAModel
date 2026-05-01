@@ -2,7 +2,7 @@
 % Please edit documentation in R/FitModel.R
 \name{FitModel}
 \alias{FitModel}
-\title{Fit a Hierarchical Occupancy-Detection-Abundance Model for Microbiome Data}
+\title{Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data}
 \usage{
 FitModel(
   phyloseq,
@@ -59,23 +59,23 @@ FitModel(
 \value{
 A list containing:
 \describe{
-  \item{psi}{Data frame of occupancy probability summaries with columns such as `psi_mean`, `psi_median`, `psi_lwr`, and `psi_upr`.}
-  \item{capture}{Data frame of detection/capture probability summaries with columns such as `capture_mean`, `capture_median`, `capture_lwr`, and `capture_upr`.}
-  \item{lambda}{Data frame of abundance summaries with columns such as `lambda_mean`, `lambda_median`, `lambda_lwr`, and `lambda_upr`.}
-  \item{p_detect}{Data frame of abundance-implied detection probability summaries with columns such as `p_detect_mean`, `p_detect_median`, `p_detect_lwr`, and `p_detect_upr`.}
+  \item{psi}{Data frame of occupancy probability summaries (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
+  \item{capture}{Data frame of detection/capture probability summaries (`capture_mean`, `capture_median`, `capture_lwr`, `capture_upr`).}
+  \item{lambda}{Data frame of abundance summaries (`lambda_mean`, `lambda_median`, `lambda_lwr`, `lambda_upr`).}
+  \item{p_detect}{Data frame of detection probabilities implied by abundance (`p_detect_mean`, etc.).}
   \item{psi_list}{List of occupancy linear predictors retained after burn-in.}
   \item{capture_list}{List of detection linear predictors retained after burn-in.}
   \item{lambda_list}{List of abundance linear predictors retained after burn-in.}
-  \item{p_detect_list}{List of abundance-implied detection linear predictors retained after burn-in.}
-  \item{occupancy_models}{List of fitted occupancy `glmmTMB` models for all iterations.}
-  \item{capture_models}{List of fitted detection/capture `glmmTMB` models for all iterations.}
-  \item{abundance_models}{List of fitted abundance `glmmTMB` models for all iterations.}
+  \item{p_detect_list}{List of detection linear predictors derived from abundance.}
+  \item{occupancy_models}{List of fitted occupancy `glmmTMB` models.}
+  \item{capture_models}{List of fitted detection `glmmTMB` models.}
+  \item{abundance_models}{List of fitted abundance `glmmTMB` models.}
   \item{site_data}{Final site-level latent-state data.}
   \item{sample_data}{Final sample-level latent-state data.}
   \item{long_df}{Processed long-format data used for model fitting.}
-  \item{filter_summary}{List containing OTU filtering summaries and retained OTUs.}
-  \item{diagnostic_AIC}{Data frame of component-model AIC values across iterations.}
-  \item{note}{Character note describing the approximate EM-like fitting procedure.}
+  \item{filter_summary}{Summary of OTU filtering and retained taxa.}
+  \item{diagnostic_AIC}{Component-model AIC values across iterations.}
+  \item{note}{Description of the approximate EM-like fitting procedure.}
 }
 }
 \description{
@@ -93,38 +93,73 @@ random-effect terms to be used directly in the model formulas.
 The model decomposes microbial occurrence into three linked processes:
 
 \enumerate{
-  \item Occupancy: whether an OTU is present at a site, modeled using a binomial GLMM.
-  \item Detection/capture: whether an OTU is detected in a sample conditional on occupancy, modeled using a binomial GLMM.
-  \item Abundance: observed counts conditional on detection, modeled using Poisson, negative binomial, or zero-inflated count models.
+  \item \strong{Occupancy (\eqn{\psi})}: probability that an OTU is present at a site,
+  modeled using a binomial GLMM.
+
+  \item \strong{Detection / capture (\eqn{p})}: probability of detecting an OTU in a sample
+  conditional on presence, modeled using a binomial GLMM.
+
+  \item \strong{Abundance (\eqn{\lambda})}: expected count conditional on detection,
+  modeled using Poisson, negative binomial, or zero-inflated count models.
 }
 
-At each iteration, the function fits the occupancy, detection, and abundance
-components, then updates the latent detection state `a_sim` and occupancy
-state `z_sim` using the current fitted values. Summaries are computed from
-iterations retained after burn-in.
+Detection probability implied by the abundance model is computed as:
 
-If `offset(log(total_reads))` is included in `abundance_formula`, total read
-depth is computed automatically from the processed long-format data. Samples
-with non-positive total read depth are removed before fitting the abundance
-model because `log(0)` is undefined.
+\deqn{p_{\text{detect}} = 1 - \exp(-\lambda)}
+
+which corresponds to the probability of observing at least one count under
+a Poisson process.
+
+\strong{Important:} For small \eqn{\lambda}, \eqn{p_{\text{detect}} \approx \lambda},
+while for large \eqn{\lambda}, \eqn{p_{\text{detect}} \rightarrow 1}.
+Therefore, `p_detect` may closely resemble `lambda` for rare taxa and
+saturate at 1 for abundant taxa.
+
+At each iteration:
+\enumerate{
+  \item Fit occupancy model using current latent state \eqn{z_sim}.
+  \item Fit detection model conditional on \eqn{z_sim = 1}.
+  \item Fit abundance model conditional on \eqn{a_sim = 1}.
+  \item Update detection state \eqn{a_sim} using capture and abundance.
+  \item Update occupancy state \eqn{z_sim} using capture and abundance.
+}
+
+Posterior summaries are computed from iterations retained after burn-in.
+
+If `offset(log(total_reads))` is included in `abundance_formula`,
+sequencing depth is computed automatically. Samples with zero total reads
+are removed prior to model fitting.
 }
 \section{Model features}{
 
 \itemize{
-  \item Supports fixed effects, interactions, and random effects in all model components.
-  \item Automatically preserves formula covariates in site-level and sample-level data.
-  \item Supports offsets through `offset(log(total_reads))` in the abundance model.
-  \item Supports Poisson, negative binomial, zero-inflated Poisson, and zero-inflated negative binomial abundance models.
-  \item Stores fitted component models and AIC diagnostics for each iteration.
+  \item Supports fixed effects, interactions, and hierarchical random effects.
+  \item Automatically propagates covariates from `sample_data`.
+  \item Supports offsets for sequencing depth normalization.
+  \item Supports Poisson, negative binomial, and zero-inflated models.
+  \item Stores fitted models and diagnostics for each iteration.
 }
 }
 
-\section{Notes}{
+\section{Interpretation notes}{
 
 \itemize{
-  \item The fitting procedure is an approximate EM-like algorithm, not a full joint maximum-likelihood or fully Bayesian sampler.
-  \item AIC values are component-model diagnostics and should not be interpreted as formal joint-likelihood criteria for the full hierarchical model.
-  \item Highly complex random-effect structures may be unstable for sparse microbiome or eDNA count data.
+  \item `psi` reflects true occupancy probability.
+  \item `capture` reflects the observation process (sampling/detection).
+  \item `lambda` reflects expected abundance intensity.
+  \item `p_detect` is derived from `lambda` and may be close to `lambda` for rare taxa.
+  \item For large abundance values, `p_detect` approaches 1 and becomes less informative.
+}
+}
+
+\section{Caveats}{
+
+\itemize{
+  \item The procedure is an approximate EM-like algorithm, not a full joint likelihood.
+  \item AIC values are component-level diagnostics only.
+  \item Detection probability derived from abundance assumes a Poisson process and
+        may not be exact for negative binomial or zero-inflated models.
+  \item Highly complex random effects may lead to convergence issues.
 }
 }
 

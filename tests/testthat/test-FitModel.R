@@ -67,10 +67,10 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
     "occupancy_models", "capture_models", "abundance_models",
     "site_data", "sample_data", "long_df",
     "filter_summary", "diagnostic_AIC", "note"
-  ))
+  ), ignore.order = TRUE)
 
   # -------------------------------
-  # Check main outputs
+  # Check main outputs exist
   # -------------------------------
   expect_s3_class(result$psi, "data.frame")
   expect_s3_class(result$capture, "data.frame")
@@ -81,12 +81,12 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_gt(nrow(result$lambda), 0)
 
   # -------------------------------
-  # Column names (IMPORTANT UPDATE)
+  # Column names (CRITICAL)
   # -------------------------------
-  expect_true("psi_mean" %in% names(result$psi))
-  expect_true("capture_mean" %in% names(result$capture))
-  expect_true("lambda_mean" %in% names(result$lambda))
-  expect_true("p_detect_mean" %in% names(result$p_detect))
+  expect_true("psi_mean" %in% colnames(result$psi))
+  expect_true("capture_mean" %in% colnames(result$capture))
+  expect_true("lambda_mean" %in% colnames(result$lambda))
+  expect_true("p_detect_mean" %in% colnames(result$p_detect))
 
   # -------------------------------
   # Models stored correctly
@@ -95,9 +95,9 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_length(result$capture_models, n_iter_test)
   expect_length(result$abundance_models, n_iter_test)
 
-  expect_true(all(sapply(result$occupancy_models, inherits, "glmmTMB")))
-  expect_true(all(sapply(result$capture_models, inherits, "glmmTMB")))
-  expect_true(all(sapply(result$abundance_models, inherits, "glmmTMB")))
+  expect_true(all(vapply(result$occupancy_models, inherits, logical(1), "glmmTMB")))
+  expect_true(all(vapply(result$capture_models, inherits, logical(1), "glmmTMB")))
+  expect_true(all(vapply(result$abundance_models, inherits, logical(1), "glmmTMB")))
 
   # -------------------------------
   # Posterior draws after burn-in
@@ -112,11 +112,24 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # -------------------------------
   # Sanity checks (ROBUST)
   # -------------------------------
-  expect_true(all(is.numeric(result$psi$psi_mean)))
-  expect_true(all(is.numeric(result$capture$capture_mean)))
-  expect_true(all(is.numeric(result$lambda$lambda_mean)))
+  expect_true(is.numeric(result$psi$psi_mean))
+  expect_true(is.numeric(result$capture$capture_mean))
+  expect_true(is.numeric(result$lambda$lambda_mean))
+  expect_true(is.numeric(result$p_detect$p_detect_mean))
 
-  # Allow some NA due to tiny data
-  expect_true(any(!is.na(result$psi$psi_mean)))
-  expect_true(any(!is.na(result$lambda$lambda_mean)))
+  # Allow NA (tiny data), but require at least some valid values
+  expect_true(any(is.finite(result$psi$psi_mean)))
+  expect_true(any(is.finite(result$lambda$lambda_mean)))
+
+  # -------------------------------
+  # Logical constraints (NEW — VERY IMPORTANT)
+  # -------------------------------
+  # Probabilities must be in [0,1]
+  expect_true(all(result$psi$psi_mean >= 0 & result$psi$psi_mean <= 1, na.rm = TRUE))
+  expect_true(all(result$capture$capture_mean >= 0 & result$capture$capture_mean <= 1, na.rm = TRUE))
+  expect_true(all(result$p_detect$p_detect_mean >= 0 & result$p_detect$p_detect_mean <= 1, na.rm = TRUE))
+
+  # Lambda must be non-negative
+  expect_true(all(result$lambda$lambda_mean >= 0, na.rm = TRUE))
+
 })

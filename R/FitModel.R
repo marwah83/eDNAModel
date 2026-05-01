@@ -175,36 +175,21 @@ FitModel <- function(
 # Prepare long data
 # ------------------------------------------------------------
 
-nested_cols <- c(sample_col, replicate_col)
-nested_cols <- nested_cols[!is.na(nested_cols)]
-nested_cols <- Filter(Negate(is.null), nested_cols)
-
 prep <- prepare_long_data(
-  physeq_obj = phyloseq,
-  site_col   = site_col,
-  nested_cols = nested_cols,
-  otu_col    = otu_col,
-  count_col  = count_col
-)
-
-long_df <- prep$long_df
-
-# ensure sample_col exists
-if (!(sample_col %in% names(long_df))) {
-  warning("sample_col not found in long_df — using SampleRep as fallback.")
-  long_df[[sample_col]] <- long_df$SampleRep
-}
-
-# validate
-needed_cols <- c(site_col, sample_col, otu_col, count_col)
-
-missing_cols <- setdiff(needed_cols, names(long_df))
-
-if (length(missing_cols) > 0) {
-  stop("Missing columns in long_df: ",
-       paste(missing_cols, collapse = ", "))
-}
+    physeq_obj = phyloseq,
+    site_col = site_col,
+    nested_cols = unique(c(sample_col, replicate_col))
+  )
   
+  long_df <- prep$long_df
+  
+  needed_cols <- c(site_col, sample_col, otu_col, count_col)
+  missing_cols <- setdiff(needed_cols, names(long_df))
+  
+  if (length(missing_cols) > 0) {
+    stop("Missing columns in long_df: ", paste(missing_cols, collapse = ", "))
+  }
+    
   # ------------------------------------------------------------
   # Add sample metadata
   # ------------------------------------------------------------

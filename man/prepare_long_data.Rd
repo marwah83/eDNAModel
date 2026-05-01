@@ -7,32 +7,30 @@
 prepare_long_data(physeq_obj, site_col, nested_cols = NULL)
 }
 \arguments{
-\item{physeq_obj}{A `phyloseq` object containing OTU (or ASV) abundance table and sample metadata.}
+\item{physeq_obj}{A `phyloseq` object containing OTU (or ASV) abundance table
+and sample metadata.}
 
-\item{site_col}{Character. Column name in `sample_data` representing the sampling site variable.
-This variable is preserved in the output for site-level modeling.}
+\item{site_col}{Character. Column name in \code{sample_data} representing the
+sampling site variable. This variable is copied into the output as \code{Site}.}
 
-\item{nested_cols}{Optional character vector. Column names in `sample_data` to be combined into a
-nested grouping factor (`SampleRep`). Used for hierarchical or repeated-measures designs.
-Default is `NULL`, in which case original sample names are used.}
-
-\item{otu_col}{Character. Name of the OTU (taxon) column in the output long data.
-Default is `"OTU"`.}
-
-\item{count_col}{Character. Name of the abundance/count column in the output long data.
-Default is `"y"`.}
+\item{nested_cols}{Optional character vector. Column names in
+\code{sample_data} to be combined into a nested grouping factor
+(\code{SampleRep}). Used for hierarchical or repeated-measures designs.
+Default is \code{NULL}, in which case original sample names are used.}
 }
 \value{
 A list with two elements:
 \describe{
-  \item{physeq}{The original `phyloseq` object (unchanged).}
-  \item{long_df}{A long-format `data.frame` with one row per `SampleRep × OTU`.
-  Columns include:
+  \item{physeq}{The original `phyloseq` object (with an added \code{SampleRep}
+  column in \code{sample_data}).}
+  \item{long_df}{A long-format \code{data.frame} with one row per
+  \code{SampleRep × OTU}. Columns include:
   \itemize{
-    \item `SampleRep`: sample or nested replicate identifier
-    \item `otu_col`: taxon identifier (user-defined name)
-    \item `count_col`: observed counts/abundance (user-defined name)
-    \item all original sample metadata variables (including `site_col`)
+    \item \code{SampleRep}: sample or nested replicate identifier
+    \item \code{OTU}: taxon identifier
+    \item \code{y}: observed counts/abundance
+    \item \code{Site}: site-level grouping variable derived from \code{site_col}
+    \item all original sample metadata variables
   }}
 }
 }
@@ -49,14 +47,15 @@ zero-inflated models.
 
 Key steps:
 \itemize{
-  \item Constructs a `SampleRep` variable:
+  \item Constructs a \code{SampleRep} variable:
     \itemize{
-      \item If `nested_cols` are provided, they are combined using `interaction()`
-      to define nested or repeated-measures structure.
+      \item If \code{nested_cols} are provided, they are combined using
+      \code{interaction()} to define nested or repeated-measures structure.
       \item Otherwise, original sample names are used.
     }
   \item Converts the OTU table into long format using \code{pivot_longer()}.
-  \item Merges OTU counts with sample metadata via `SampleRep`.
+  \item Merges OTU counts with sample metadata via \code{SampleRep}.
+  \item Creates a \code{Site} column from \code{site_col}.
   \item Ensures consistent data types for modeling (factor OTUs, numeric counts).
 }
 
@@ -72,9 +71,7 @@ data(GlobalPatterns)
 long_data <- prepare_long_data(
   physeq_obj = GlobalPatterns,
   site_col = "SampleType",
-  nested_cols = c("SampleType"),
-  otu_col = "OTU",
-  count_col = "y"
+  nested_cols = c("SampleType")
 )
 }
 

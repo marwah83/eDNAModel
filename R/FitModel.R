@@ -47,7 +47,7 @@
 #' \dontrun{
 #' # Example usage of FitModel with a phyloseq object named `physeq_one`
 #'
-#' out <- FitModel(
+#' out <- FitModel_0(
 #'  phyloseq = ps_obj,
 #' site_col = "Site",
 #' abundance_rhs = Treatment * OTU,

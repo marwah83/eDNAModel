@@ -93,7 +93,7 @@ prepare_long_data <- function(
   }
 
   # -------------------------------
-  # Create SampleRep (FIXED)
+  # Create SampleRep (SAFE)
   # -------------------------------
   if (!is.null(nested_cols)) {
 
@@ -101,11 +101,9 @@ prepare_long_data <- function(
       stop("Some nested_cols not found in sample_data.")
     }
 
-    SampleRep <- as.character(
-      do.call(
-        interaction,
-        c(sample_meta[, nested_cols, drop = FALSE], sep = "_")
-      )
+    SampleRep <- do.call(
+      paste,
+      c(sample_meta[, nested_cols, drop = FALSE], sep = "_")
     )
 
   } else {
@@ -113,7 +111,7 @@ prepare_long_data <- function(
   }
 
   # -------------------------------
-  # Metadata (consistent SampleRep)
+  # Metadata
   # -------------------------------
   meta_df <- sample_meta
   meta_df$SampleRep <- SampleRep
@@ -136,7 +134,7 @@ prepare_long_data <- function(
     )
 
   # -------------------------------
-  # Merge OTU + metadata
+  # Merge
   # -------------------------------
   long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
     dplyr::mutate(
@@ -145,7 +143,7 @@ prepare_long_data <- function(
     )
 
   # -------------------------------
-  # Validation (important for FitModel)
+  # Validation
   # -------------------------------
   required_cols <- c("SampleRep", site_col, otu_col, count_col)
 

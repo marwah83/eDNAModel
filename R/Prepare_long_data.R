@@ -37,53 +37,63 @@
 #' @importFrom tibble rownames_to_column
 #' @export
 prepare_long_data <- function(physeq_obj,
-                              min_species_sum = 50,
                               site_col,
                               nested_cols = NULL) {
-  
-  # Filter taxa by total abundance
-  physeq_filtered <- filter_phyloseq_data(physeq_obj, min_species_sum = min_species_sum)
-  
-  # Extract sample metadata
-  sample_meta <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
 
-  # Create SampleRep based on nested_cols (if any), else use sample_names
+  # -------------------------------
+  # Extract sample metadata
+  # -------------------------------
+  sample_meta <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+
+  if (!(site_col %in% names(sample_meta))) {
+    stop("site_col not found in sample_data.")
+  }
+
+  # -------------------------------
+  # Create SampleRep
+  # -------------------------------
   if (!is.null(nested_cols)) {
     if (!all(nested_cols %in% names(sample_meta))) {
       stop("Some nested_cols not found in sample_data.")
     }
-    sample_data(physeq_filtered)$SampleRep <- do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
+
+    sample_data(physeq_obj)$SampleRep <-
+      do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
   } else {
-    sample_data(physeq_filtered)$SampleRep <- sample_names(physeq_filtered)
+    sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
   }
 
-  # Update metadata with SampleRep
-  meta_df <- as.data.frame(sample_data(physeq_filtered), stringsAsFactors = FALSE)
+  # -------------------------------
+  # Metadata
+  # -------------------------------
+  meta_df <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
   meta_df$SampleRep <- rownames(meta_df)
 
-  # Filter low-prevalence taxa
-  physeq_filtered <- filter_taxa(physeq_filtered, function(x) sum(x > 0) > 5, prune = TRUE)
+  # -------------------------------
+  # OTU matrix → long
+  # -------------------------------
+  otu_mat <- as(otu_table(physeq_obj), "matrix")
 
-  # OTU matrix to long format
-  otu_mat <- as(otu_table(physeq_filtered), "matrix")
-  if (taxa_are_rows(physeq_filtered)) {
+  if (taxa_are_rows(physeq_obj)) {
     otu_mat <- t(otu_mat)
   }
 
-  otu_long <- as.data.frame(otu_mat) %>%
-    tibble::rownames_to_column("SampleRep") %>%
+  otu_long <- as.data.frame(otu_mat) |>
+    tibble::rownames_to_column("SampleRep") |>
     tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
 
-  # Merge OTU and metadata
-  long_df <- left_join(otu_long, meta_df, by = "SampleRep") %>%
-    mutate(
+  # -------------------------------
+  # Merge
+  # -------------------------------
+  long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
+    dplyr::mutate(
       OTU = factor(OTU),
-      y = as.integer(y),
+      y   = as.numeric(y),
       Site = .data[[site_col]]
     )
 
   return(list(
-    physeq_filtered = physeq_filtered,
+    physeq = physeq_obj,
     long_df = long_df
   ))
 }

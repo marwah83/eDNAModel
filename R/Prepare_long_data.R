@@ -139,7 +139,8 @@ prepare_long_data <- function(
   long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
     dplyr::mutate(
       !!otu_col := factor(.data[[otu_col]]),
-      !!count_col := as.numeric(.data[[count_col]])
+      !!count_col := as.numeric(.data[[count_col]]),
+      !!site_col := .data[[site_col]]   # <-- ensure site_col is preserved explicitly
     )
 
   # -------------------------------

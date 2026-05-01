@@ -1,4 +1,4 @@
-#' Fit a Hierarchical Occupancy-Detection-Abundance Model for Microbiome Data
+#' Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data
 #'
 #' Implements an EM-like iterative framework using repeated GLMM fitting
 #' to jointly estimate microbial occupancy, detection probability, and abundance
@@ -28,58 +28,91 @@
 #'
 #' @return A list containing:
 #' \describe{
-#'   \item{psi}{Data frame of occupancy probability summaries with columns such as `psi_mean`, `psi_median`, `psi_lwr`, and `psi_upr`.}
-#'   \item{capture}{Data frame of detection/capture probability summaries with columns such as `capture_mean`, `capture_median`, `capture_lwr`, and `capture_upr`.}
-#'   \item{lambda}{Data frame of abundance summaries with columns such as `lambda_mean`, `lambda_median`, `lambda_lwr`, and `lambda_upr`.}
-#'   \item{p_detect}{Data frame of abundance-implied detection probability summaries with columns such as `p_detect_mean`, `p_detect_median`, `p_detect_lwr`, and `p_detect_upr`.}
+#'   \item{psi}{Data frame of occupancy probability summaries (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
+#'   \item{capture}{Data frame of detection/capture probability summaries (`capture_mean`, `capture_median`, `capture_lwr`, `capture_upr`).}
+#'   \item{lambda}{Data frame of abundance summaries (`lambda_mean`, `lambda_median`, `lambda_lwr`, `lambda_upr`).}
+#'   \item{p_detect}{Data frame of detection probabilities implied by abundance (`p_detect_mean`, etc.).}
 #'   \item{psi_list}{List of occupancy linear predictors retained after burn-in.}
 #'   \item{capture_list}{List of detection linear predictors retained after burn-in.}
 #'   \item{lambda_list}{List of abundance linear predictors retained after burn-in.}
-#'   \item{p_detect_list}{List of abundance-implied detection linear predictors retained after burn-in.}
-#'   \item{occupancy_models}{List of fitted occupancy `glmmTMB` models for all iterations.}
-#'   \item{capture_models}{List of fitted detection/capture `glmmTMB` models for all iterations.}
-#'   \item{abundance_models}{List of fitted abundance `glmmTMB` models for all iterations.}
+#'   \item{p_detect_list}{List of detection linear predictors derived from abundance.}
+#'   \item{occupancy_models}{List of fitted occupancy `glmmTMB` models.}
+#'   \item{capture_models}{List of fitted detection `glmmTMB` models.}
+#'   \item{abundance_models}{List of fitted abundance `glmmTMB` models.}
 #'   \item{site_data}{Final site-level latent-state data.}
 #'   \item{sample_data}{Final sample-level latent-state data.}
 #'   \item{long_df}{Processed long-format data used for model fitting.}
-#'   \item{filter_summary}{List containing OTU filtering summaries and retained OTUs.}
-#'   \item{diagnostic_AIC}{Data frame of component-model AIC values across iterations.}
-#'   \item{note}{Character note describing the approximate EM-like fitting procedure.}
+#'   \item{filter_summary}{Summary of OTU filtering and retained taxa.}
+#'   \item{diagnostic_AIC}{Component-model AIC values across iterations.}
+#'   \item{note}{Description of the approximate EM-like fitting procedure.}
 #' }
 #'
 #' @details
 #' The model decomposes microbial occurrence into three linked processes:
 #'
 #' \enumerate{
-#'   \item Occupancy: whether an OTU is present at a site, modeled using a binomial GLMM.
-#'   \item Detection/capture: whether an OTU is detected in a sample conditional on occupancy, modeled using a binomial GLMM.
-#'   \item Abundance: observed counts conditional on detection, modeled using Poisson, negative binomial, or zero-inflated count models.
+#'   \item \strong{Occupancy (\eqn{\psi})}: probability that an OTU is present at a site,
+#'   modeled using a binomial GLMM.
+#'
+#'   \item \strong{Detection / capture (\eqn{p})}: probability of detecting an OTU in a sample
+#'   conditional on presence, modeled using a binomial GLMM.
+#'
+#'   \item \strong{Abundance (\eqn{\lambda})}: expected count conditional on detection,
+#'   modeled using Poisson, negative binomial, or zero-inflated count models.
 #' }
 #'
-#' At each iteration, the function fits the occupancy, detection, and abundance
-#' components, then updates the latent detection state `a_sim` and occupancy
-#' state `z_sim` using the current fitted values. Summaries are computed from
-#' iterations retained after burn-in.
+#' Detection probability implied by the abundance model is computed as:
 #'
-#' If `offset(log(total_reads))` is included in `abundance_formula`, total read
-#' depth is computed automatically from the processed long-format data. Samples
-#' with non-positive total read depth are removed before fitting the abundance
-#' model because `log(0)` is undefined.
+#' \deqn{p_{\text{detect}} = 1 - \exp(-\lambda)}
+#'
+#' which corresponds to the probability of observing at least one count under
+#' a Poisson process.
+#'
+#' \strong{Important:} For small \eqn{\lambda}, \eqn{p_{\text{detect}} \approx \lambda},
+#' while for large \eqn{\lambda}, \eqn{p_{\text{detect}} \rightarrow 1}.
+#' Therefore, `p_detect` may closely resemble `lambda` for rare taxa and
+#' saturate at 1 for abundant taxa.
+#'
+#' At each iteration:
+#' \enumerate{
+#'   \item Fit occupancy model using current latent state \eqn{z_sim}.
+#'   \item Fit detection model conditional on \eqn{z_sim = 1}.
+#'   \item Fit abundance model conditional on \eqn{a_sim = 1}.
+#'   \item Update detection state \eqn{a_sim} using capture and abundance.
+#'   \item Update occupancy state \eqn{z_sim} using capture and abundance.
+#' }
+#'
+#' Posterior summaries are computed from iterations retained after burn-in.
+#'
+#' If `offset(log(total_reads))` is included in `abundance_formula`,
+#' sequencing depth is computed automatically. Samples with zero total reads
+#' are removed prior to model fitting.
 #'
 #' @section Model features:
 #' \itemize{
-#'   \item Supports fixed effects, interactions, and random effects in all model components.
-#'   \item Automatically preserves formula covariates in site-level and sample-level data.
-#'   \item Supports offsets through `offset(log(total_reads))` in the abundance model.
-#'   \item Supports Poisson, negative binomial, zero-inflated Poisson, and zero-inflated negative binomial abundance models.
-#'   \item Stores fitted component models and AIC diagnostics for each iteration.
+#'   \item Supports fixed effects, interactions, and hierarchical random effects.
+#'   \item Automatically propagates covariates from `sample_data`.
+#'   \item Supports offsets for sequencing depth normalization.
+#'   \item Supports Poisson, negative binomial, and zero-inflated models.
+#'   \item Stores fitted models and diagnostics for each iteration.
 #' }
 #'
-#' @section Notes:
+#' @section Interpretation notes:
 #' \itemize{
-#'   \item The fitting procedure is an approximate EM-like algorithm, not a full joint maximum-likelihood or fully Bayesian sampler.
-#'   \item AIC values are component-model diagnostics and should not be interpreted as formal joint-likelihood criteria for the full hierarchical model.
-#'   \item Highly complex random-effect structures may be unstable for sparse microbiome or eDNA count data.
+#'   \item `psi` reflects true occupancy probability.
+#'   \item `capture` reflects the observation process (sampling/detection).
+#'   \item `lambda` reflects expected abundance intensity.
+#'   \item `p_detect` is derived from `lambda` and may be close to `lambda` for rare taxa.
+#'   \item For large abundance values, `p_detect` approaches 1 and becomes less informative.
+#' }
+#'
+#' @section Caveats:
+#' \itemize{
+#'   \item The procedure is an approximate EM-like algorithm, not a full joint likelihood.
+#'   \item AIC values are component-level diagnostics only.
+#'   \item Detection probability derived from abundance assumes a Poisson process and
+#'         may not be exact for negative binomial or zero-inflated models.
+#'   \item Highly complex random effects may lead to convergence issues.
 #' }
 #'
 #' @examples
@@ -105,7 +138,7 @@
 #' }
 #'
 #' @importFrom glmmTMB glmmTMB nbinom2
-#' @importFrom stats plogis predict rbinom quantile median poisson
+#' @importFrom stats plogis predict rbinom quantile median poisson exp
 #' @importFrom utils head
 #' @import dplyr
 #' @import rlang
@@ -136,13 +169,8 @@ FitModel <- function(
   if (is.null(count_col)) stop("Please specify count_col.")
   if (burn_in >= n_iter) stop("burn_in must be < n_iter.")
   
-  # ------------------------------------------------------------
-  # Helper: extract RHS variables from formula
-  # ------------------------------------------------------------
-  
   get_formula_vars <- function(formula, response) {
-    vars <- all.vars(formula)
-    setdiff(vars, response)
+    setdiff(all.vars(formula), response)
   }
   
   # ------------------------------------------------------------
@@ -164,6 +192,39 @@ FitModel <- function(
   if (length(missing_cols) > 0) {
     stop("Missing columns in long_df: ", paste(missing_cols, collapse = ", "))
   }
+  
+  # ------------------------------------------------------------
+  # Add sample metadata covariates if missing
+  # ------------------------------------------------------------
+  
+  sample_meta <- data.frame(
+    phyloseq::sample_data(phyloseq),
+    check.names = FALSE
+  )
+  
+  sample_meta$.__sample_id__ <- rownames(sample_meta)
+  
+  if (!(sample_col %in% names(sample_meta))) {
+    sample_meta[[sample_col]] <- sample_meta$.__sample_id__
+  }
+  
+  sample_meta[[sample_col]] <- as.character(sample_meta[[sample_col]])
+  long_df[[sample_col]] <- as.character(long_df[[sample_col]])
+  
+  meta_cols_to_add <- setdiff(names(sample_meta), names(long_df))
+  meta_cols_to_add <- setdiff(meta_cols_to_add, ".__sample_id__")
+  
+  if (length(meta_cols_to_add) > 0) {
+    long_df <- dplyr::left_join(
+      long_df,
+      sample_meta[, c(sample_col, meta_cols_to_add), drop = FALSE],
+      by = sample_col
+    )
+  }
+  
+  # ------------------------------------------------------------
+  # Type handling
+  # ------------------------------------------------------------
   
   long_df[[site_col]]   <- as.character(long_df[[site_col]])
   long_df[[otu_col]]    <- as.character(long_df[[otu_col]])
@@ -213,15 +274,15 @@ FitModel <- function(
   }
   
   # ------------------------------------------------------------
-  # Extract all variables needed by formulas
+  # Check formula variables
   # ------------------------------------------------------------
   
-  occ_vars   <- get_formula_vars(occupancy_formula, "z_sim")
-  cap_vars   <- get_formula_vars(capture_formula, "a_sim")
+  occ_vars <- get_formula_vars(occupancy_formula, "z_sim")
+  cap_vars <- get_formula_vars(capture_formula, "a_sim")
   abund_vars <- get_formula_vars(abundance_formula, count_col)
   
   all_formula_vars <- unique(c(occ_vars, cap_vars, abund_vars))
-  all_formula_vars <- setdiff(all_formula_vars, c(otu_col, count_col, "total_reads"))
+  all_formula_vars <- setdiff(all_formula_vars, c(count_col, "total_reads"))
   
   missing_formula_vars <- setdiff(all_formula_vars, names(long_df))
   
@@ -232,7 +293,6 @@ FitModel <- function(
     )
   }
   
-  # Convert character formula variables to factors
   for (v in all_formula_vars) {
     if (v %in% names(long_df) && is.character(long_df[[v]])) {
       long_df[[v]] <- factor(long_df[[v]])
@@ -282,24 +342,14 @@ FitModel <- function(
   sample_keys <- c(site_col, sample_col, otu_col)
   
   # ------------------------------------------------------------
-  # Variables to keep in site_data and sample_data
+  # Build site-level and sample-level data
   # ------------------------------------------------------------
   
-  site_keep_vars <- unique(setdiff(
-    get_formula_vars(occupancy_formula, "z_sim"),
-    c(site_keys, "z_sim")
-  ))
+  site_keep_vars <- setdiff(occ_vars, c(site_keys, "z_sim"))
   site_keep_vars <- intersect(site_keep_vars, names(long_df))
   
-  sample_keep_vars <- unique(setdiff(
-    get_formula_vars(capture_formula, "a_sim"),
-    c(sample_keys, "a_sim")
-  ))
+  sample_keep_vars <- setdiff(cap_vars, c(sample_keys, "a_sim"))
   sample_keep_vars <- intersect(sample_keep_vars, names(long_df))
-  
-  # ------------------------------------------------------------
-  # Build site-level data
-  # ------------------------------------------------------------
   
   site_data <- long_df |>
     dplyr::group_by(dplyr::across(dplyr::all_of(site_keys))) |>
@@ -312,10 +362,6 @@ FitModel <- function(
       .groups = "drop"
     ) |>
     dplyr::mutate(z_sim = .data$z_obs)
-  
-  # ------------------------------------------------------------
-  # Build sample-level data
-  # ------------------------------------------------------------
   
   sample_data <- long_df |>
     dplyr::group_by(dplyr::across(dplyr::all_of(sample_keys))) |>
@@ -371,9 +417,9 @@ FitModel <- function(
   
   fam <- switch(
     abundance_family,
-    poisson = poisson(),
+    poisson = stats::poisson(),
     nbinom  = glmmTMB::nbinom2(),
-    zip     = poisson(),
+    zip     = stats::poisson(),
     zinb    = glmmTMB::nbinom2()
   )
   
@@ -414,7 +460,7 @@ FitModel <- function(
     occ_fit <- glmmTMB::glmmTMB(
       formula = occupancy_formula,
       data = site_data,
-      family = binomial()
+      family = stats::binomial()
     )
     
     eta_psi <- as.numeric(predict(
@@ -438,7 +484,7 @@ FitModel <- function(
     # -----------------------------
     
     sample_data <- sample_data |>
-      dplyr::select(-dplyr::any_of("z_sim")) |>
+      dplyr::select(-dplyr::any_of(c("z_sim", "p0_count", "capture_prob"))) |>
       dplyr::left_join(
         site_data |>
           dplyr::select(dplyr::all_of(c(site_keys, "z_sim"))),
@@ -455,7 +501,7 @@ FitModel <- function(
     cap_fit <- glmmTMB::glmmTMB(
       formula = capture_formula,
       data = capture_fit_data,
-      family = binomial()
+      family = stats::binomial()
     )
     
     eta_capture <- as.numeric(predict(
@@ -511,7 +557,7 @@ FitModel <- function(
       eta = eta_lambda_abund
     )
     
-    p_detect_eta <- log(-log(pmax(exp(-lambda_abund), 1e-12)))
+    p_detect_eta <- log(pmax(lambda_abund, 1e-12))
     
     p_detect_list[[i]] <- data.frame(
       abund_data[sample_keys],
@@ -542,7 +588,6 @@ FitModel <- function(
     zero_sample <- which(sample_data$a_obs == 0 & sample_data$z_sim == 1)
     
     if (length(zero_sample) > 0) {
-      
       numerator_a <- sample_data$capture_prob[zero_sample] *
         sample_data$p0_count[zero_sample]
       
@@ -586,7 +631,6 @@ FitModel <- function(
     zero_site <- which(site_data$z_obs == 0)
     
     if (length(zero_site) > 0) {
-      
       numerator_z <- psi[zero_site] * site_data$p0_site[zero_site]
       
       denominator_z <- (1 - psi[zero_site]) +
@@ -608,15 +652,15 @@ FitModel <- function(
       diagnostic_AIC,
       data.frame(
         iteration = i,
-        occupancy_AIC = AIC(occ_fit),
-        capture_AIC = AIC(cap_fit),
-        abundance_AIC = AIC(abund_fit)
+        occupancy_AIC = stats::AIC(occ_fit),
+        capture_AIC = stats::AIC(cap_fit),
+        abundance_AIC = stats::AIC(abund_fit)
       )
     )
   }
   
   # ------------------------------------------------------------
-  # Summaries
+  # Summaries: no eta columns in main summaries
   # ------------------------------------------------------------
   
   summarise_link <- function(lst, link_name, prefix) {
@@ -639,10 +683,10 @@ FitModel <- function(
       dplyr::mutate(value = inv_link(.data$eta)) |>
       dplyr::group_by(dplyr::across(dplyr::all_of(keys))) |>
       dplyr::summarise(
-        mean   = mean(.data$value, na.rm = TRUE),
+        mean = mean(.data$value, na.rm = TRUE),
         median = stats::median(.data$value, na.rm = TRUE),
-        lwr    = stats::quantile(.data$value, 0.025, na.rm = TRUE),
-        upr    = stats::quantile(.data$value, 0.975, na.rm = TRUE),
+        lwr = stats::quantile(.data$value, 0.025, na.rm = TRUE),
+        upr = stats::quantile(.data$value, 0.975, na.rm = TRUE),
         .groups = "drop"
       )
     

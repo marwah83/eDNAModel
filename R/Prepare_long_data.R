@@ -72,94 +72,63 @@
 #' @importFrom tidyr pivot_longer
 #' @importFrom tibble rownames_to_column
 #' @export
-prepare_long_data <- function(
-  physeq_obj,
-  site_col,
-  nested_cols = NULL,
-  otu_col = "OTU",
-  count_col = "y"
-) {
+prepare_long_data <- function(physeq_obj,
+                              site_col,
+                              nested_cols = NULL) {
+  
 
-  # -------------------------------
-  # Extract sample metadata
-  # -------------------------------
-  sample_meta <- as.data.frame(
-    phyloseq::sample_data(physeq_obj),
-    stringsAsFactors = FALSE
-  )
+  sample_meta <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
 
   if (!(site_col %in% names(sample_meta))) {
     stop("site_col not found in sample_data.")
   }
 
   # -------------------------------
-  # Create SampleRep (SAFE)
+  # Create SampleRep
   # -------------------------------
   if (!is.null(nested_cols)) {
-
     if (!all(nested_cols %in% names(sample_meta))) {
       stop("Some nested_cols not found in sample_data.")
     }
 
-    SampleRep <- do.call(
-      paste,
-      c(sample_meta[, nested_cols, drop = FALSE], sep = "_")
-    )
-
+    sample_data(physeq_obj)$SampleRep <-
+      do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
   } else {
-    SampleRep <- phyloseq::sample_names(physeq_obj)
+    sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
   }
 
   # -------------------------------
   # Metadata
   # -------------------------------
-  meta_df <- sample_meta
-  meta_df$SampleRep <- SampleRep
+  meta_df <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+  meta_df$SampleRep <- rownames(meta_df)
 
   # -------------------------------
   # OTU matrix → long
   # -------------------------------
-  otu_mat <- as(phyloseq::otu_table(physeq_obj), "matrix")
+  otu_mat <- as(otu_table(physeq_obj), "matrix")
 
-  if (phyloseq::taxa_are_rows(physeq_obj)) {
+  # OTU matrix to long format
+  
+  if (taxa_are_rows(physeq_obj)) {
     otu_mat <- t(otu_mat)
   }
 
+  
   otu_long <- as.data.frame(otu_mat) |>
     tibble::rownames_to_column("SampleRep") |>
-    tidyr::pivot_longer(
-      -SampleRep,
-      names_to = otu_col,
-      values_to = count_col
-    )
+    tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
 
   # -------------------------------
   # Merge
   # -------------------------------
   long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
     dplyr::mutate(
-      !!otu_col := factor(.data[[otu_col]]),
-      !!count_col := as.numeric(.data[[count_col]]),
-      !!site_col := .data[[site_col]]   # <-- ensure site_col is preserved explicitly
+      OTU = factor(OTU),
+      y   = as.numeric(y),
+      Site = .data[[site_col]]
     )
 
-  # -------------------------------
-  # Validation
-  # -------------------------------
-  required_cols <- c("SampleRep", site_col, otu_col, count_col)
-
-  missing_cols <- setdiff(required_cols, names(long_df))
-
-  if (length(missing_cols) > 0) {
-    stop(
-      "prepare_long_data is missing columns: ",
-      paste(missing_cols, collapse = ", ")
-    )
-  }
-
-  # -------------------------------
-  # Return
-  # -------------------------------
   return(list(
     physeq = physeq_obj,
     long_df = long_df

@@ -70,7 +70,7 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   ), ignore.order = TRUE)
 
   # -------------------------------
-  # Check main outputs exist
+  # Core outputs exist
   # -------------------------------
   expect_s3_class(result$psi, "data.frame")
   expect_s3_class(result$capture, "data.frame")
@@ -81,12 +81,12 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_gt(nrow(result$lambda), 0)
 
   # -------------------------------
-  # Column names (CRITICAL)
+  # Column names (STRICT)
   # -------------------------------
-  expect_true("psi_mean" %in% colnames(result$psi))
-  expect_true("capture_mean" %in% colnames(result$capture))
-  expect_true("lambda_mean" %in% colnames(result$lambda))
-  expect_true("p_detect_mean" %in% colnames(result$p_detect))
+  expect_true(all(c("psi_mean","psi_median","psi_lwr","psi_upr") %in% names(result$psi)))
+  expect_true(all(c("capture_mean","capture_median","capture_lwr","capture_upr") %in% names(result$capture)))
+  expect_true(all(c("lambda_mean","lambda_median","lambda_lwr","lambda_upr") %in% names(result$lambda)))
+  expect_true(all(c("p_detect_mean","p_detect_median","p_detect_lwr","p_detect_upr") %in% names(result$p_detect)))
 
   # -------------------------------
   # Models stored correctly
@@ -110,26 +110,35 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_length(result$p_detect_list, expected_length)
 
   # -------------------------------
-  # Sanity checks (ROBUST)
+  # Numeric sanity (ROBUST)
   # -------------------------------
   expect_true(is.numeric(result$psi$psi_mean))
   expect_true(is.numeric(result$capture$capture_mean))
   expect_true(is.numeric(result$lambda$lambda_mean))
   expect_true(is.numeric(result$p_detect$p_detect_mean))
 
-  # Allow NA (tiny data), but require at least some valid values
+  # Require at least some valid values
   expect_true(any(is.finite(result$psi$psi_mean)))
   expect_true(any(is.finite(result$lambda$lambda_mean)))
 
   # -------------------------------
-  # Logical constraints (NEW — VERY IMPORTANT)
+  # Probability constraints
   # -------------------------------
-  # Probabilities must be in [0,1]
   expect_true(all(result$psi$psi_mean >= 0 & result$psi$psi_mean <= 1, na.rm = TRUE))
   expect_true(all(result$capture$capture_mean >= 0 & result$capture$capture_mean <= 1, na.rm = TRUE))
   expect_true(all(result$p_detect$p_detect_mean >= 0 & result$p_detect$p_detect_mean <= 1, na.rm = TRUE))
 
-  # Lambda must be non-negative
+  # Lambda constraint
   expect_true(all(result$lambda$lambda_mean >= 0, na.rm = TRUE))
+
+  # -------------------------------
+  # CRITICAL: relationship check
+  # -------------------------------
+  # p_detect should be approx 1 - exp(-lambda)
+  approx_pd <- 1 - exp(-result$lambda$lambda_mean)
+
+  expect_true(
+    mean(abs(result$p_detect$p_detect_mean - approx_pd), na.rm = TRUE) < 1e-2
+  )
 
 })

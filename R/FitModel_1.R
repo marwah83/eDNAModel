@@ -1,36 +1,113 @@
-#' Fit hierarchical occupancy–detection–abundance model
+#' Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data
 #'
-#' Fits an EM-like iterative model combining occupancy, capture, and abundance
-#' components using GLMMs via glmmTMB.
+#' Implements an EM-like iterative framework using repeated GLMM fitting
+#' to jointly estimate microbial occupancy (presence/absence), detection
+#' probability, and abundance for OTU-level microbiome data stored in a
+#' `phyloseq` object.
 #'
-#' @param phyloseq A phyloseq object.
-#' @param site_col Name of site column.
-#' @param sample_col Name of sample column.
-#' @param replicate_col Name of replicate column (optional).
-#' @param occupancy_formula Formula for occupancy (z_sim).
-#' @param capture_formula Formula for detection (a_sim).
-#' @param abundance_formula Formula for abundance (y).
-#' @param otu_col Name of OTU column.
-#' @param count_col Name of count column.
-#' @param min_species_sum Minimum total counts per OTU.
-#' @param min_detection_replicates Minimum detection replicates.
-#' @param abundance_threshold Threshold for detection.
-#' @param n_iter Number of EM iterations.
-#' @param burn_in Number of burn-in iterations.
-#' @param abundance_family Distribution ("poisson", "nbinom", "zip", "zinb").
-#' @param verbose Logical; print progress.
+#' @param phyloseq A `phyloseq` object containing OTU table, sample data, and taxonomy.
+#' @param site_col Character. Name of the column representing sampling sites.
+#' @param sample_col Character. Name of the column representing samples.
+#' @param replicate_col Character (optional). Name of the column representing replicates.
+#' @param occupancy_formula Formula for occupancy model (must use response `z_sim`).
+#' @param capture_formula Formula for detection model (must use response `a_sim`).
+#' @param abundance_formula Formula for abundance model (must use response matching `count_col`).
+#' @param otu_col Character. Name of the OTU column.
+#' @param count_col Character. Name of the count column.
+#' @param min_species_sum Integer. Minimum total count for an OTU to be retained. Default: 10.
+#' @param min_detection_replicates Integer. Minimum number of detections per OTU. Default: 1.
+#' @param abundance_threshold Integer. Threshold to define presence. Default: 0.
+#' @param n_iter Integer. Number of EM-like iterations. Default: 50.
+#' @param burn_in Integer. Number of burn-in iterations to discard. Default: 10.
+#' @param abundance_family Character. One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`. Default: `"poisson"`.
+#' @param verbose Logical. Print progress messages. Default: TRUE.
 #'
 #' @return A list containing:
 #' \describe{
-#'   \item{psi}{Occupancy probabilities}
-#'   \item{capture}{Detection probabilities}
-#'   \item{lambda}{Abundance estimates}
+#'   \item{psi}{Posterior summaries of occupancy probabilities}
+#'   \item{capture}{Posterior summaries of detection probabilities}
+#'   \item{lambda}{Posterior summaries of abundance}
+#'   \item{p_detect}{Posterior summaries of detection probability implied by abundance}
+#'   \item{psi_list}{List of occupancy linear predictors per iteration}
+#'   \item{capture_list}{List of detection linear predictors per iteration}
+#'   \item{lambda_list}{List of abundance linear predictors per iteration}
+#'   \item{p_detect_list}{List of detection probabilities from abundance model}
+#'   \item{occupancy_models}{Fitted occupancy GLMMs}
+#'   \item{capture_models}{Fitted detection GLMMs}
+#'   \item{abundance_models}{Fitted abundance GLMMs}
+#'   \item{site_data}{Final site-level latent data}
+#'   \item{sample_data}{Final sample-level latent data}
+#'   \item{long_df}{Processed long-format data}
+#'   \item{filter_summary}{Summary of OTU filtering}
 #'   \item{diagnostic_AIC}{AIC values across iterations}
 #' }
 #'
-#' @importFrom stats plogis rbinom quantile median
-#' @importFrom dplyr group_by summarise mutate filter left_join select bind_rows across
+#' @details
+#' This function decomposes microbial occurrence into three hierarchical processes:
+#'
+#' 1. **Occupancy** (\eqn{\psi}): probability that an OTU is present at a site,
+#'    modeled via a binomial GLMM.
+#'
+#' 2. **Detection (capture)** (\eqn{p}): probability of detecting an OTU given presence,
+#'    modeled via a binomial GLMM conditional on occupancy.
+#'
+#' 3. **Abundance** (\eqn{\lambda}): counts conditional on detection,
+#'    modeled using Poisson, Negative Binomial, or zero-inflated variants.
+#'
+#' The model is fitted using an EM-like iterative algorithm:
+#' \enumerate{
+#'   \item Fit occupancy model to latent variable \eqn{z_sim}.
+#'   \item Fit detection model conditional on \eqn{z_sim = 1}.
+#'   \item Fit abundance model conditional on \eqn{a_sim = 1}.
+#'   \item Update latent detection \eqn{a_sim} using abundance predictions.
+#'   \item Update latent occupancy \eqn{z_sim} using detection and abundance.
+#' }
+#'
+#' Posterior summaries are computed from iterations after burn-in.
+#'
+#' @section Model Features:
+#' \itemize{
+#'   \item Supports complex random-effects structures (e.g., `(1 | OTU)`, `(1 | Sample / OTU)`).
+#'   \item Automatically handles sequencing depth via `offset(log(total_reads))`.
+#'   \item Robust filtering of low-abundance OTUs.
+#'   \item EM-like latent state updates for occupancy and detection.
+#'   \item Compatible with zero-inflated count models.
+#' }
+#'
+#' @section Notes:
+#' \itemize{
+#'   \item AIC values are provided for diagnostic purposes only and do not correspond
+#'         to a joint likelihood across all model components.
+#'   \item Overly complex random-effects structures may lead to convergence issues.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' fit <- FitModel(
+#'   phyloseq = ps,
+#'   site_col = "Site",
+#'   sample_col = "Sample",
+#'   replicate_col = "Replicate",
+#'   otu_col = "OTU",
+#'   count_col = "y",
+#'
+#'   occupancy_formula = z_sim ~ 1 + (1 | OTU),
+#'   capture_formula   = a_sim ~ 1 + (1 | OTU),
+#'   abundance_formula = y ~ offset(log(total_reads)) + (1 | OTU),
+#'
+#'   abundance_family = "nbinom",
+#'   n_iter = 20,
+#'   burn_in = 5
+#' )
+#'
+#' head(fit$psi)
+#' head(fit$lambda)
+#' }
+#'
 #' @importFrom glmmTMB glmmTMB nbinom2
+#' @importFrom stats plogis predict rbinom quantile median
+#' @import dplyr
+#' @import rlang
 #'
 #' @export
 FitModel <- function(

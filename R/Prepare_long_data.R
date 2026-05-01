@@ -80,38 +80,50 @@ prepare_long_data <- function(
   count_col = "y"
 ) {
 
-  sample_meta <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+  # -------------------------------
+  # Extract sample metadata
+  # -------------------------------
+  sample_meta <- as.data.frame(
+    phyloseq::sample_data(physeq_obj),
+    stringsAsFactors = FALSE
+  )
 
   if (!(site_col %in% names(sample_meta))) {
     stop("site_col not found in sample_data.")
   }
 
   # -------------------------------
-  # SampleRep (FIXED)
+  # Create SampleRep (FIXED)
   # -------------------------------
   if (!is.null(nested_cols)) {
+
     if (!all(nested_cols %in% names(sample_meta))) {
       stop("Some nested_cols not found in sample_data.")
     }
 
-    sample_data(physeq_obj)$SampleRep <-
-      do.call(interaction, sample_meta[, nested_cols, drop = FALSE], sep = "_")
+    SampleRep <- as.character(
+      do.call(
+        interaction,
+        c(sample_meta[, nested_cols, drop = FALSE], sep = "_")
+      )
+    )
+
   } else {
-    sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
+    SampleRep <- phyloseq::sample_names(physeq_obj)
   }
 
   # -------------------------------
-  # Metadata (FIXED)
+  # Metadata (consistent SampleRep)
   # -------------------------------
-  meta_df <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
-  meta_df$SampleRep <- sample_data(physeq_obj)$SampleRep
+  meta_df <- sample_meta
+  meta_df$SampleRep <- SampleRep
 
   # -------------------------------
   # OTU matrix → long
   # -------------------------------
-  otu_mat <- as(otu_table(physeq_obj), "matrix")
+  otu_mat <- as(phyloseq::otu_table(physeq_obj), "matrix")
 
-  if (taxa_are_rows(physeq_obj)) {
+  if (phyloseq::taxa_are_rows(physeq_obj)) {
     otu_mat <- t(otu_mat)
   }
 
@@ -124,7 +136,7 @@ prepare_long_data <- function(
     )
 
   # -------------------------------
-  # Merge
+  # Merge OTU + metadata
   # -------------------------------
   long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
     dplyr::mutate(
@@ -133,17 +145,22 @@ prepare_long_data <- function(
     )
 
   # -------------------------------
-  # Validation (NEW)
+  # Validation (important for FitModel)
   # -------------------------------
   required_cols <- c("SampleRep", site_col, otu_col, count_col)
 
   missing_cols <- setdiff(required_cols, names(long_df))
 
   if (length(missing_cols) > 0) {
-    stop("prepare_long_data is missing columns: ",
-         paste(missing_cols, collapse = ", "))
+    stop(
+      "prepare_long_data is missing columns: ",
+      paste(missing_cols, collapse = ", ")
+    )
   }
 
+  # -------------------------------
+  # Return
+  # -------------------------------
   return(list(
     physeq = physeq_obj,
     long_df = long_df

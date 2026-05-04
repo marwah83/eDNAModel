@@ -2,67 +2,93 @@
 % Please edit documentation in R/Prepare_long_data.R
 \name{prepare_long_data}
 \alias{prepare_long_data}
-\title{Prepare Long Format Data from a Phyloseq Object}
+\title{Prepare Long-Format Data from a Phyloseq Object}
 \usage{
 prepare_long_data(physeq_obj, site_col, nested_cols = NULL)
 }
 \arguments{
-\item{physeq_obj}{A `phyloseq` object containing OTU (or ASV) abundance table
-and sample metadata.}
+\item{physeq_obj}{A `phyloseq` object containing an OTU (or ASV) table and
+sample metadata.}
 
-\item{site_col}{Character. Column name in \code{sample_data} representing the
-sampling site variable. This variable is copied into the output as \code{Site}.}
+\item{site_col}{Character. Name of the column in \code{sample_data} representing
+the site-level grouping variable. This is copied into the output as \code{Site}.}
 
 \item{nested_cols}{Optional character vector. Column names in
-\code{sample_data} to be combined into a nested grouping factor
-(\code{SampleRep}). Used for hierarchical or repeated-measures designs.
-Default is \code{NULL}, in which case original sample names are used.}
+\code{sample_data} used to construct a grouping factor (\code{SampleRep}).
+If provided, \code{SampleRep} is created using \code{interaction()} on these
+columns. If \code{NULL}, original sample names are used.}
 }
 \value{
 A list with two elements:
 \describe{
-  \item{physeq}{The original `phyloseq` object (with an added \code{SampleRep}
-  column in \code{sample_data}).}
-  \item{long_df}{A long-format \code{data.frame} with one row per
-  \code{SampleRep × OTU}. Columns include:
-  \itemize{
-    \item \code{SampleRep}: sample or nested replicate identifier
-    \item \code{OTU}: taxon identifier
-    \item \code{y}: observed counts/abundance
-    \item \code{Site}: site-level grouping variable derived from \code{site_col}
-    \item all original sample metadata variables
-  }}
+  \item{physeq}{
+    The original `phyloseq` object with an added \code{SampleRep} column
+    in \code{sample_data}.
+  }
+  \item{long_df}{
+    A long-format \code{data.frame} with one row per
+    \code{SampleRep × OTU}. Columns include:
+    \itemize{
+      \item \code{SampleRep}: grouping identifier
+      \item \code{OTU}: taxon identifier (factor)
+      \item \code{y}: observed counts/abundance (numeric)
+      \item \code{Site}: site-level variable derived from \code{site_col}
+      \item all original sample metadata variables
+    }
+  }
 }
 }
 \description{
-Converts a `phyloseq` object into a tidy long-format data frame for modeling.
-This function performs **data restructuring only** and does not apply any
-filtering of taxa. All filtering should be handled explicitly in downstream
-modeling functions such as \code{\link{FitModel}}.
+Converts a `phyloseq` object into a tidy long-format data frame for
+downstream modeling. This function performs **data restructuring only**
+and does not apply any filtering of taxa.
 }
 \details{
+All filtering (e.g., by abundance or detection frequency) should be handled
+explicitly in modeling functions such as \code{\link{FitModel}}.
+
+
 This function reshapes a `phyloseq` object into a long (tidy) format suitable
-for hierarchical modeling frameworks such as occupancy–detection or
-zero-inflated models.
+for hierarchical models such as occupancy–detection–abundance models.
 
 Key steps:
 \itemize{
   \item Constructs a \code{SampleRep} variable:
     \itemize{
       \item If \code{nested_cols} are provided, they are combined using
-      \code{interaction()} to define nested or repeated-measures structure.
+      \code{interaction()} (default behavior of R).
       \item Otherwise, original sample names are used.
     }
   \item Converts the OTU table into long format using \code{pivot_longer()}.
   \item Merges OTU counts with sample metadata via \code{SampleRep}.
   \item Creates a \code{Site} column from \code{site_col}.
-  \item Ensures consistent data types for modeling (factor OTUs, numeric counts).
+  \item Ensures consistent data types (factor OTUs, numeric counts).
+}
+
+\strong{Important implementation detail:}
+\itemize{
+  \item The merge between OTU counts and metadata is performed using the
+  \code{SampleRep} column.
+  \item Internally, \code{SampleRep} in the metadata is reset to row names
+  before merging.
+  \item Therefore, correct alignment requires that row names of
+  \code{sample_data} correspond to sample identifiers in the OTU table.
+}
+
+\strong{Hierarchy:}
+The resulting structure supports multi-level modeling:
+\itemize{
+  \item Site level: \code{Site}
+  \item Sample level: \code{SampleRep}
+  \item Observation level: \code{y}
 }
 
 \strong{Important:}
-This function does \emph{not} perform any filtering of taxa (e.g., by abundance
-or prevalence). This design ensures transparency and allows users to control
-filtering explicitly in modeling functions such as \code{\link{FitModel}}.
+\itemize{
+  \item No filtering of taxa is performed.
+  \item Rare or low-prevalence taxa are retained.
+  \item Filtering should be applied explicitly in \code{\link{FitModel}}.
+}
 }
 \examples{
 \dontrun{
@@ -73,9 +99,11 @@ long_data <- prepare_long_data(
   site_col = "SampleType",
   nested_cols = c("SampleType")
 )
+
+head(long_data$long_df)
 }
 
 }
 \seealso{
-\code{\link{FitModel}} for applying filtering and hierarchical modeling.
+\code{\link{FitModel}} for filtering and hierarchical modeling.
 }

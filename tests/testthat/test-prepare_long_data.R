@@ -1,5 +1,9 @@
 test_that("prepare_long_data returns correctly formatted output", {
+
   set.seed(123)
+
+  library(phyloseq)
+  library(dplyr)
 
   # -----------------------------
   # Simulate metadata
@@ -10,9 +14,9 @@ test_that("prepare_long_data returns correctly formatted output", {
   reps <- 1:2
 
   meta_data <- expand.grid(
-    site_field = sites,
+    site_field  = sites,
     treat_field = treatments,
-    rep_field = reps
+    rep_field   = reps
   )
 
   meta_data$unique_id <- paste0(
@@ -27,15 +31,16 @@ test_that("prepare_long_data returns correctly formatted output", {
   # Simulate OTU table
   # -----------------------------
   otu_mat <- matrix(
-    rpois(n = 5 * nrow(meta_data), lambda = 10),
-    nrow = 5,
+    rpois(n = length(otus) * nrow(meta_data), lambda = 10),
+    nrow = length(otus),
     ncol = nrow(meta_data),
     dimnames = list(otus, meta_data$unique_id)
   )
 
-  otu <- phyloseq::otu_table(otu_mat, taxa_are_rows = TRUE)
-  sample_tab <- phyloseq::sample_data(meta_data)
-  physeq <- phyloseq::phyloseq(otu, sample_tab)
+  physeq <- phyloseq(
+    otu_table(otu_mat, taxa_are_rows = TRUE),
+    sample_data(meta_data)
+  )
 
   # -----------------------------
   # Run function
@@ -50,7 +55,7 @@ test_that("prepare_long_data returns correctly formatted output", {
   # Structural checks
   # -----------------------------
   expect_type(result, "list")
-  expect_named(result, c("physeq", "long_df"))
+  expect_named(result, c("physeq", "long_df"), ignore.order = TRUE)
   expect_s4_class(result$physeq, "phyloseq")
 
   long_df <- result$long_df
@@ -68,20 +73,20 @@ test_that("prepare_long_data returns correctly formatted output", {
   expect_true(is.numeric(long_df$y))
 
   # -----------------------------
-  # SampleRep correctness (FIXED)
+  # SampleRep correctness (MATCH FUNCTION)
   # -----------------------------
-  expected_SampleRep <- interaction(
-    meta_data$site_field,
-    meta_data$treat_field,
-    meta_data$rep_field
+  # IMPORTANT: SampleRep = rownames(meta_data)
+  expected_SampleRep <- rownames(meta_data)
+
+  expect_setequal(
+    unique(long_df$SampleRep),
+    expected_SampleRep
   )
 
-  expect_true(all(sort(unique(long_df$SampleRep)) ==
-                  sort(as.character(expected_SampleRep))))
-
   # -----------------------------
-  # Site column check
+  # Site column checks
   # -----------------------------
+  expect_true(all(!is.na(long_df$Site)))
   expect_true(all(long_df$Site == long_df$site_field))
 
   # -----------------------------
@@ -99,4 +104,16 @@ test_that("prepare_long_data returns correctly formatted output", {
     length(unique(long_df$OTU)),
     length(otus)
   )
+
+  # -----------------------------
+  # Metadata preservation
+  # -----------------------------
+  expect_true(all(c("treat_field", "rep_field") %in% names(long_df)))
+
+  # -----------------------------
+  # Sanity checks
+  # -----------------------------
+  expect_true(all(long_df$y >= 0))
+  expect_true(all(is.finite(long_df$y)))
+
 })

@@ -12,22 +12,21 @@
 #' @param site_col Character. Name of the column in \code{sample_data} representing
 #' the site-level grouping variable. This is copied into the output as \code{Site}.
 #' @param nested_cols Optional character vector. Column names in
-#' \code{sample_data} used to construct a nested grouping factor
-#' (\code{SampleRep}). This is typically used to represent biological samples
-#' or repeated measures (e.g., sample ID, replicate).
-#' If \code{NULL}, original sample names are used.
+#' \code{sample_data} used to construct a grouping factor (\code{SampleRep}).
+#' If provided, \code{SampleRep} is created using \code{interaction()} on these
+#' columns. If \code{NULL}, original sample names are used.
 #'
 #' @return A list with two elements:
 #' \describe{
 #'   \item{physeq}{
-#'     The original `phyloseq` object (unchanged).
+#'     The original `phyloseq` object with an added \code{SampleRep} column
+#'     in \code{sample_data}.
 #'   }
 #'   \item{long_df}{
 #'     A long-format \code{data.frame} with one row per
 #'     \code{SampleRep × OTU}. Columns include:
 #'     \itemize{
-#'       \item \code{SampleRep}: grouping identifier constructed from
-#'       \code{nested_cols} or sample names
+#'       \item \code{SampleRep}: grouping identifier
 #'       \item \code{OTU}: taxon identifier (factor)
 #'       \item \code{y}: observed counts/abundance (numeric)
 #'       \item \code{Site}: site-level variable derived from \code{site_col}
@@ -45,8 +44,7 @@
 #'   \item Constructs a \code{SampleRep} variable:
 #'     \itemize{
 #'       \item If \code{nested_cols} are provided, they are combined using
-#'       \code{interaction()} with \code{drop = TRUE} and \code{lex.order = TRUE}
-#'       to ensure deterministic and reproducible grouping.
+#'       \code{interaction()} (default behavior of R).
 #'       \item Otherwise, original sample names are used.
 #'     }
 #'   \item Converts the OTU table into long format using \code{pivot_longer()}.
@@ -55,12 +53,22 @@
 #'   \item Ensures consistent data types (factor OTUs, numeric counts).
 #' }
 #'
+#' \strong{Important implementation detail:}
+#' \itemize{
+#'   \item The merge between OTU counts and metadata is performed using the
+#'   \code{SampleRep} column.
+#'   \item Internally, \code{SampleRep} in the metadata is reset to row names
+#'   before merging.
+#'   \item Therefore, correct alignment requires that row names of
+#'   \code{sample_data} correspond to sample identifiers in the OTU table.
+#' }
+#'
 #' \strong{Hierarchy:}
 #' The resulting structure supports multi-level modeling:
 #' \itemize{
 #'   \item Site level: \code{Site}
-#'   \item Biological sample level: \code{SampleRep}
-#'   \item Observation level (counts): \code{y}
+#'   \item Sample level: \code{SampleRep}
+#'   \item Observation level: \code{y}
 #' }
 #'
 #' \strong{Important:}

@@ -90,83 +90,77 @@
 #' @importFrom tidyr pivot_longer
 #' @importFrom tibble rownames_to_column
 #' @export
-prepare_long_data <- function(
-    physeq_obj,
-    site_col,
-    nested_cols = NULL
-) {
-
-  # -------------------------------
-  # Extract metadata
-  # -------------------------------
-  sample_meta <- as.data.frame(
-    phyloseq::sample_data(physeq_obj),
-    stringsAsFactors = FALSE
-  )
-
-  if (!(site_col %in% names(sample_meta))) {
-    stop("site_col not found in sample_data.")
-  }
-
-  # -------------------------------
-  # Create SampleRep (FIXED)
-  # -------------------------------
-  if (!is.null(nested_cols)) {
-
-    if (!all(nested_cols %in% names(sample_meta))) {
-      stop("Some nested_cols not found in sample_data.")
+prepare_long_data <- function(physeq_obj,
+                              site_col,
+                              nested_cols = NULL) {
+  
+    
+    sample_meta <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+    # -------------------------------
+    # Extract metadata
+    # -------------------------------
+   
+    if (!(site_col %in% names(sample_meta))) {
+      stop("site_col not found in sample_data.")
     }
-
-    sample_meta$SampleRep <- do.call(
-      interaction,
-      c(
-        lapply(sample_meta[, nested_cols, drop = FALSE], as.factor),
-        list(drop = TRUE, lex.order = TRUE)
-      )
-    )
-
-  } else {
-    sample_meta$SampleRep <- rownames(sample_meta)
-  }
-
-  sample_meta$SampleRep <- as.character(sample_meta$SampleRep)
-
-  # -------------------------------
-  # OTU matrix → long
-  # -------------------------------
-  otu_mat <- as(phyloseq::otu_table(physeq_obj), "matrix")
-
-  if (phyloseq::taxa_are_rows(physeq_obj)) {
-    otu_mat <- t(otu_mat)
-  }
-
-  otu_long <- as.data.frame(otu_mat) |>
-    tibble::rownames_to_column("SampleRep") |>
-    tidyr::pivot_longer(
-      -SampleRep,
-      names_to = "OTU",
-      values_to = "y"
-    )
-
-  # -------------------------------
-  # Merge metadata (FIXED)
-  # -------------------------------
-  long_df <- dplyr::left_join(
-    otu_long,
-    sample_meta,
-    by = "SampleRep"
-  ) |>
-    dplyr::mutate(
-      OTU = factor(OTU),
-      y   = as.numeric(y),
-      Site = .data[[site_col]]
-    )
-
-  # -------------------------------
-  # Return
-  # -------------------------------
-  return(list(
-    physeq = physeq_obj,
-    long_df = long_df
-  ))
-}
+    
+    # -------------------------------
+    # Create SampleRep
+    # 
+    # -------------------------------
+    if (!is.null(nested_cols)) {
+      
+      if (!all(nested_cols %in% names(sample_meta))) {
+        stop("Some nested_cols not found in sample_data.")
+      }
+      
+      sample_data(physeq_obj)$SampleRep <-
+        do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
+      
+    } else {
+      sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
+      
+    }
+    
+    # -------------------------------
+    # Metadata
+    # -------------------------------
+    meta_df <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+    meta_df$SampleRep <- rownames(meta_df)
+    
+    
+    # -------------------------------
+    # OTU matrix → long
+    # -------------------------------
+    otu_mat <- as(otu_table(physeq_obj), "matrix")
+    
+    # OTU matrix to long format
+    
+    if (taxa_are_rows(physeq_obj)) {
+       {
+        otu_mat <- t(otu_mat)
+      }
+      
+      
+      otu_long <- as.data.frame(otu_mat) |>
+        tibble::rownames_to_column("SampleRep") |>
+        tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
+      
+      # -------------------------------
+      # Merge
+      # 
+      # -------------------------------
+      long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
+       
+        dplyr::mutate(
+          OTU = factor(OTU),
+          y   = as.numeric(y),
+          Site = .data[[site_col]]
+        )
+      
+      # -------------------------------
+      # Return
+      # -------------------------------
+      return(list(
+        physeq = physeq_obj,
+        long_df = long_df

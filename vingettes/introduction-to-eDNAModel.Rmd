@@ -62,14 +62,19 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 # 3. Fit the Occupancy–Detection Model
 
 ```{r fit-model, echo=FALSE}
-out=FitModel(
-    phyloseq = physeq_one,
-    site_col = "Sampling.area.Name",
-    abundance_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
-                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU,
-    occupancy_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
-  n_iter = 50,
-  burn_in = 10
+out <- FitModel(
+  phyloseq      = ps,
+  site_col      = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  otu_col = "OTU",
+  count_col = "y",
+  abundance_formula =  y ~  (1 | OTU) + (1 | Name / OTU),
+  occupancy_formula  = z_sim ~(1 | OTU),
+  capture_formula =    a_sim ~ 1 + (1 | OTU),
+  min_species_sum = 10,
+  n_iter = 20, burn_in = 5,
+  abundance_family = "nbinom"
 )
 
 

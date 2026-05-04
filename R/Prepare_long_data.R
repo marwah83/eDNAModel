@@ -137,7 +137,7 @@ prepare_long_data <- function(physeq_obj,
     # OTU matrix to long format
     
     if (taxa_are_rows(physeq_obj)) {
-       {
+       
         otu_mat <- t(otu_mat)
       }
       

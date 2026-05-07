@@ -4,14 +4,14 @@
 \alias{compute_metrics}
 \title{Compute predictive performance metrics}
 \usage{
-compute_metrics(obs_df, pred_df, metric = "log_score", count_col = "y")
+compute_metrics(test_df, pred_df, metric = "log_score")
 }
 \arguments{
-\item{obs_df}{Observed data (must contain count column)}
-
 \item{pred_df}{Predictions (must contain lambda_mean)}
 
 \item{metric}{Metric name: "log_score" or "rmse"}
+
+\item{obs_df}{Observed data (must contain count column)}
 
 \item{count_col}{Name of count column}
 }

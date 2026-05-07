@@ -4,12 +4,12 @@
 \alias{predict_FitModel}
 \title{Predict from FitModel object}
 \usage{
-predict_FitModel(fit, newdata)
+predict_FitModel(object, newdata)
 }
 \arguments{
-\item{fit}{Output from FitModel}
-
 \item{newdata}{Data frame for prediction}
+
+\item{fit}{Output from FitModel}
 }
 \value{
 Data frame with predictions

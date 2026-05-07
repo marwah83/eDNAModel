@@ -246,23 +246,36 @@ library(pheatmap)
 
 site_col <- "Sampling.area.Name"
 
-# Combine draws
+# ------------------------------------------------------------
+# Step 1: Combine ψ draws
+# ------------------------------------------------------------
 psi_draws <- bind_rows(out$psi_list)
 
-# Merge site info
-psi_draws <- psi_draws %>%
+# ------------------------------------------------------------
+# Step 2: Create site–OTU structure
+# ------------------------------------------------------------
+site_otu <- out$long_df %>%
+  select(OTU, !!sym(site_col)) %>%
+  distinct()
+
+# ------------------------------------------------------------
+# Step 3: Safe join (explicit many-to-many)
+# ------------------------------------------------------------
+psi_long <- site_otu %>%
   left_join(
-    out$long_df %>%
-      select(OTU, !!sym(site_col)) %>%
-      distinct(),
-    by = "OTU"
+    psi_draws,
+    by = "OTU",
+    relationship = "many-to-many"   
   )
 
-# Build matrix
-psi_matrix <- psi_draws %>%
+# ------------------------------------------------------------
+# Step 4: Compute ψ and aggregate
+# ------------------------------------------------------------
+psi_matrix <- psi_long %>%
+  mutate(psi = plogis(eta)) %>%
   group_by(.data[[site_col]], OTU) %>%
   summarise(
-    psi = mean(plogis(eta), na.rm = TRUE),
+    psi = mean(psi, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   pivot_wider(
@@ -272,14 +285,19 @@ psi_matrix <- psi_draws %>%
   column_to_rownames(site_col) %>%
   as.matrix()
 
-# Replace NA
+# ------------------------------------------------------------
+# Step 5: Handle missing values
+# ------------------------------------------------------------
 psi_matrix[is.na(psi_matrix)] <- 0
 
-# Plot
+# ------------------------------------------------------------
+# Step 6: Plot heatmap
+# ------------------------------------------------------------
 pheatmap(
   psi_matrix,
   cluster_rows = TRUE,
   cluster_cols = TRUE,
+  scale = "none",
   color = colorRampPalette(c("white", "darkblue"))(100),
   main = "Heatmap of Occupancy Probability (ψ): Sites × OTUs",
   fontsize_row = 8,

@@ -86,24 +86,34 @@ out <- FitModel(
 
 ## 4.1 Occupancy Probability Caterpillar Plot
 
-```{r plot-detect, fig.width=10, fig.height=9}
+```{r plot-occupancy, fig.width=10, fig.height=9}
 
-# Summarize occupancy across treatments
-psi_otu_summary <- out$summary %>%
+library(dplyr)
+library(ggplot2)
+
+# Combine posterior samples (after burn-in)
+psi_draws <- bind_rows(out$psi_list)
+
+# Summarize properly (quantile-based)
+psi_otu_summary <- psi_draws %>%
     group_by(OTU) %>%
     summarise(
-        psi_mean = mean(psi_mean, na.rm = TRUE),
-        psi_lwr = mean(psi_lwr, na.rm = TRUE),
-        psi_upr = mean(psi_upr, na.rm = TRUE),
+        psi_mean = mean(plogis(eta), na.rm = TRUE),
+        psi_lwr  = quantile(plogis(eta), 0.025, na.rm = TRUE),
+        psi_upr  = quantile(plogis(eta), 0.975, na.rm = TRUE),
         .groups = "drop"
     ) %>%
     arrange(psi_mean) %>%
-    mutate(OTU = factor(OTU, levels = unique(OTU)))
+    mutate(OTU = factor(OTU, levels = OTU))
 
 # Plot
 ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
-    geom_point(color = "darkgreen") +
-    geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2) +
+    geom_point(color = "darkgreen", size = 2) +
+    geom_errorbarh(
+        aes(xmin = psi_lwr, xmax = psi_upr),
+        height = 0.2,
+        color = "darkgreen"
+    ) +
     labs(
         title = "Caterpillar Plot: Occupancy Probability by OTU",
         x = "Occupancy Probability (ψ)",
@@ -115,29 +125,41 @@ ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
         plot.title = element_text(hjust = 0.5)
     )
 
+
 ```
 
 ---
 
 ## 4.2 Detection Probability Caterpillar Plot
 
-```{r plot-occupancy,fig.width=10, fig.height=9}
-# Summarize detection probability across treatments
-p_detect_otu_summary <- out$summary %>%
+```{r plot-detection, fig.width=10, fig.height=9}
+
+library(dplyr)
+library(ggplot2)
+
+# Combine iteration draws
+p_detect_draws <- bind_rows(out$p_detect_list)
+
+# Proper summary (quantile-based)
+p_detect_otu_summary <- p_detect_draws %>%
     group_by(OTU) %>%
     summarise(
-        p_detect_mean = mean(p_detect_mean, na.rm = TRUE),
-        p_detect_lwr = mean(p_detect_lwr, na.rm = TRUE),
-        p_detect_upr = mean(p_detect_upr, na.rm = TRUE),
+        p_detect_mean = mean(1 - exp(-exp(eta)), na.rm = TRUE),
+        p_detect_lwr  = quantile(1 - exp(-exp(eta)), 0.025, na.rm = TRUE),
+        p_detect_upr  = quantile(1 - exp(-exp(eta)), 0.975, na.rm = TRUE),
         .groups = "drop"
     ) %>%
     arrange(p_detect_mean) %>%
-    mutate(OTU = factor(OTU, levels = unique(OTU)))
+    mutate(OTU = factor(OTU, levels = OTU))
 
 # Plot
 ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
-    geom_point(color = "steelblue") +
-    geom_errorbarh(aes(xmin = p_detect_lwr, xmax = p_detect_upr), height = 0.2) +
+    geom_point(color = "steelblue", size = 2) +
+    geom_errorbarh(
+        aes(xmin = p_detect_lwr, xmax = p_detect_upr),
+        height = 0.2,
+        color = "steelblue"
+    ) +
     labs(
         title = "Caterpillar Plot: Detection Probability by OTU",
         x = "Detection Probability (p)",
@@ -155,20 +177,41 @@ ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
 
 ## 4.3 Occupancy by treatment
 
-```{r plot-psi-Samplingmonth,fig.width=10, fig.height=9}
-# Set treatment variable (replace if needed)
+```{r plot-psi-treatment, fig.width=10, fig.height=9}
+
+library(dplyr)
+library(ggplot2)
+
 treatment_col <- "Samplingmonth"
 
-# Prepare data
-psi_data <- out$summary %>%
-    select(OTU, all_of(treatment_col), psi_mean, psi_lwr, psi_upr) %>%
+# Combine draws
+psi_draws <- bind_rows(out$psi_list)
+
+# Merge treatment info from long_df
+psi_draws <- psi_draws %>%
+    left_join(
+        out$long_df %>%
+            select(OTU, !!sym(treatment_col)) %>%
+            distinct(),
+        by = "OTU"
+    )
+
+# Proper summary
+psi_data <- psi_draws %>%
+    group_by(OTU, .data[[treatment_col]]) %>%
+    summarise(
+        psi_mean = mean(plogis(eta), na.rm = TRUE),
+        psi_lwr  = quantile(plogis(eta), 0.025, na.rm = TRUE),
+        psi_upr  = quantile(plogis(eta), 0.975, na.rm = TRUE),
+        .groups = "drop"
+    ) %>%
     group_by(OTU) %>%
     mutate(otu_mean = mean(psi_mean, na.rm = TRUE)) %>%
     ungroup() %>%
     arrange(otu_mean) %>%
     mutate(OTU = factor(OTU, levels = unique(OTU)))
 
-# Plot with treatment as color
+# Plot
 ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
     geom_point(position = position_dodge(width = 0.5)) +
     geom_errorbarh(
@@ -177,7 +220,7 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
         height = 0.2
     ) +
     labs(
-        title = "Caterpillar Plot: Occupancy Probability by OTU and Treatment",
+        title = "Caterpillar Plot: Occupancy by OTU and Treatment",
         x = "Occupancy Probability (ψ)",
         y = "OTU",
         color = treatment_col
@@ -194,31 +237,45 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
 
 ## 4.4 Clustered Heatmap of Occupancy Probabilities
 
-```{r heatmap-psi,fig.width=10, fig.height=9}
-# Load required libraries
+```{r heatmap-psi, fig.width=10, fig.height=9}
+
 library(dplyr)
 library(tidyr)
 library(tibble)
 library(pheatmap)
 
-# Set site column name
-site_col <- "Sampling.area.Name"  # change if needed
+site_col <- "Sampling.area.Name"
 
-# Step 1: Create Site × OTU matrix of psi_mean
-psi_matrix <- out$summary %>%
-  select(OTU, !!sym(site_col), psi_mean) %>%
+# Combine draws
+psi_draws <- bind_rows(out$psi_list)
+
+# Merge site info
+psi_draws <- psi_draws %>%
+  left_join(
+    out$long_df %>%
+      select(OTU, !!sym(site_col)) %>%
+      distinct(),
+    by = "OTU"
+  )
+
+# Build matrix
+psi_matrix <- psi_draws %>%
+  group_by(.data[[site_col]], OTU) %>%
+  summarise(
+    psi = mean(plogis(eta), na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   pivot_wider(
     names_from = OTU,
-    values_from = psi_mean,
-    values_fn = mean  # average if duplicates exist
+    values_from = psi
   ) %>%
   column_to_rownames(site_col) %>%
   as.matrix()
 
-# Step 2: Replace NAs (optional)
-psi_matrix[is.na(psi_matrix)] <- 0  # Replace with 0 or other value
+# Replace NA
+psi_matrix[is.na(psi_matrix)] <- 0
 
-# Step 3: Plot the heatmap
+# Plot
 pheatmap(
   psi_matrix,
   cluster_rows = TRUE,
@@ -237,112 +294,70 @@ pheatmap(
 
 ##For example 
 
-out1=FitModel(
-    phyloseq = physeq_one,
-    site_col = "Sampling.area.Name",
-    abundance_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) +
-                                 (1 | Name / OTU) + (1 | Replicate / OTU) + Samplingmonth * OTU,
-    occupancy_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
-  n_iter = 50,
-  burn_in = 10
-)
+results <- compare_models_cv(
+  phyloseq = ps,
+  site_col = "site_month",
+  K = 5,
 
-out2 =FitModel(
-    phyloseq = physeq_one,
-    site_col = "Sampling.area.Name",
-    abundance_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU) ,
-    occupancy_rhs = (1 | OTU) + (1 | `Sampling.area.Name` / OTU),
-  n_iter = 50,
-  burn_in = 10
-)
+  models = list(
 
-# Extract model metrics (AIC, BIC, NegLogLik) across multiple iterations
-extract_model_metrics <- function(model_list) {
-  metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
-    if (inherits(mod, "glmmTMB")) {
-      data.frame(
-        AIC = AIC(mod),
-        BIC = BIC(mod),
-        NegLogLik = -as.numeric(logLik(mod))
-      )
-    } else {
-      warning("Non-glmmTMB object in list, skipping.")
-      NULL
-    }
-  }))
-  return(metrics_df)
-}
+    A = function(ps) FitModel(
+      phyloseq = ps,
+      site_col = "site_month",
+      sample_col = "Name",
+      replicate_col = "Replicate",
+      otu_col = "OTU",
+      count_col = "y",
+      occupancy_formula = z_sim ~ 1 + (1 | OTU),
+      capture_formula   = a_sim ~ 1 + (1 | OTU),
+      abundance_formula =
+        y ~ offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU),
+      n_iter = 12,
+      burn_in = 4,
+      abundance_family = "nbinom"
+    ),
 
-# Extract metrics for each result object (after burn-in)
-abun_metrics_out1 <- extract_model_metrics(out1$abundance_models)
-abun_metrics_out2 <- extract_model_metrics(out2$abundance_models)
+    B = function(ps) FitModel(
+      phyloseq = ps,
+      site_col = "site_month",
+      sample_col = "Name",
+      replicate_col = "Replicate",
+      otu_col = "OTU",
+      count_col = "y",
+      occupancy_formula = z_sim ~ 1 + (1 | OTU),
+      capture_formula   = a_sim ~ 1 + (1 | OTU),
+      abundance_formula =
+        y ~ offset(log(total_reads)) +
+        (1 | OTU) +
+        (1 | `Sampling.area.Name` / OTU) +
+        (1 | Name / OTU),
+      n_iter = 12,
+      burn_in = 4,
+      abundance_family = "nbinom"
+    ),
 
-occ_metrics_out1 <- extract_model_metrics(out1$occupancy_models)
-occ_metrics_out2 <- extract_model_metrics(out2$occupancy_models)
-
-# Combine summary
-summary_metrics <- data.frame(
-  Model = c("abun_Out1", "abun_Out2", "occ_Out1", "occ_Out2"),
-  AIC   = c(mean(abun_metrics_out1$AIC, na.rm = TRUE),
-            mean(abun_metrics_out2$AIC, na.rm = TRUE),
-            mean(occ_metrics_out1$AIC, na.rm = TRUE),
-            mean(occ_metrics_out2$AIC, na.rm = TRUE)),
-  BIC   = c(mean(abun_metrics_out1$BIC, na.rm = TRUE),
-            mean(abun_metrics_out2$BIC, na.rm = TRUE),
-            mean(occ_metrics_out1$BIC, na.rm = TRUE),
-            mean(occ_metrics_out2$BIC, na.rm = TRUE)),
-  NegLogLik = c(mean(abun_metrics_out1$NegLogLik, na.rm = TRUE),
-                mean(abun_metrics_out2$NegLogLik, na.rm = TRUE),
-                mean(occ_metrics_out1$NegLogLik, na.rm = TRUE),
-                mean(occ_metrics_out2$NegLogLik, na.rm = TRUE))
-)
-
-# Display the result
-print(summary_metrics)
-
-############################ model comparison model as whole ############################
-
-# Helper function to extract model metrics safely
-extract_model_metrics <- function(model_list) {
-  metrics_df <- do.call(rbind, lapply(model_list, function(mod) {
-    if (inherits(mod, "glmmTMB")) {
-      data.frame(
-        AIC = AIC(mod),
-        BIC = BIC(mod),
-        NegLogLik = -as.numeric(logLik(mod))
-      )
-    } else {
-      warning("Skipping non-glmmTMB model object.")
-      NULL
-    }
-  }))
-  return(metrics_df)
-}
-
-# Extract metrics for out1
-abun_metrics_out1 <- extract_model_metrics(out1$abundance_models)
-occ_metrics_out1 <- extract_model_metrics(out1$occupancy_models)
-
-# Extract metrics for out2
-abun_metrics_out2 <- extract_model_metrics(out2$abundance_models)
-occ_metrics_out2 <- extract_model_metrics(out2$occupancy_models)
-
-# Compute total (sum) of metrics across both models for each run
-overall_metrics <- data.frame(
-  Model = c("out1", "out2"),
-  Total_AIC = c(
-    sum(abun_metrics_out1$AIC, na.rm = TRUE) + sum(occ_metrics_out1$AIC, na.rm = TRUE),
-    sum(abun_metrics_out2$AIC, na.rm = TRUE) + sum(occ_metrics_out2$AIC, na.rm = TRUE)
-  ),
-  Total_BIC = c(
-    sum(abun_metrics_out1$BIC, na.rm = TRUE) + sum(occ_metrics_out1$BIC, na.rm = TRUE),
-    sum(abun_metrics_out2$BIC, na.rm = TRUE) + sum(occ_metrics_out2$BIC, na.rm = TRUE)
-  ),
-  Total_NegLogLik = c(
-    sum(abun_metrics_out1$NegLogLik, na.rm = TRUE) + sum(occ_metrics_out1$NegLogLik, na.rm = TRUE),
-    sum(abun_metrics_out2$NegLogLik, na.rm = TRUE) + sum(occ_metrics_out2$NegLogLik, na.rm = TRUE)
+    C = function(ps) FitModel(
+      phyloseq = ps,
+      site_col = "site_month",
+      sample_col = "Name",
+      replicate_col = "Replicate",
+      otu_col = "OTU",
+      count_col = "y",
+      occupancy_formula = z_sim ~ 1 + (1 | OTU),
+      capture_formula   = a_sim ~ 1 + (1 | OTU),
+      abundance_formula =
+        y ~ (1 | OTU) +
+        (1 | siteCode / OTU) +
+        (1 | Samplingmonth / OTU) +
+        (1 | Name / OTU),
+      n_iter = 12,
+      burn_in = 4,
+      abundance_family = "nbinom"
+    )
   )
 )
 
-# Print the comparison summary
-print(overall_metrics)
+print(results)
+
+
+

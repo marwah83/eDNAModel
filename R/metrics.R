@@ -1,25 +1,24 @@
-compute_metrics <- function(test_df, pred_df, metric = "log_score") {
+compute_metrics <- function(obs_df, pred_df, metric = "log_score") {
 
-  y <- test_df$y
-  lambda <- pred_df$lambda_mean
+  if (!all(c("y") %in% names(obs_df))) {
+    stop("Observed data must contain column 'y'")
+  }
+
+  if (!("lambda_mean" %in% names(pred_df))) {
+    stop("Prediction must contain 'lambda_mean'")
+  }
+
+  y <- obs_df$y
+  mu <- pred_df$lambda_mean
 
   if (metric == "log_score") {
-    return(mean(dpois(y, lambda = lambda, log = TRUE), na.rm = TRUE))
+    # Poisson log predictive density
+    return(mean(stats::dpois(y, lambda = mu, log = TRUE), na.rm = TRUE))
   }
 
   if (metric == "rmse") {
-    return(sqrt(mean((y - lambda)^2, na.rm = TRUE)))
+    return(sqrt(mean((y - mu)^2, na.rm = TRUE)))
   }
 
-  if (metric == "mae") {
-    return(mean(abs(y - lambda), na.rm = TRUE))
-  }
-
-  if (metric == "brier") {
-    y_bin <- as.integer(y > 0)
-    p <- 1 - exp(-lambda)
-    return(mean((y_bin - p)^2, na.rm = TRUE))
-  }
-
-  stop("Unknown metric.")
+  stop("Unknown metric")
 }

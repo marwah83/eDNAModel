@@ -780,39 +780,63 @@ prep <- prepare_long_data(
   
   keep <- seq.int(burn_in + 1, n_iter)
   
-  list(
-    psi = summarise_link(psi_list[keep], "logit", "psi"),
-    capture = summarise_link(capture_list[keep], "logit", "capture"),
-    lambda = summarise_link(lambda_list[keep], "log", "lambda"),
-    p_detect = summarise_link(p_detect_list[keep], "cloglog", "p_detect"),
-    
-    psi_list = psi_list[keep],
-    capture_list = capture_list[keep],
-    lambda_list = lambda_list[keep],
-    p_detect_list = p_detect_list[keep],
-    
-    occupancy_models = occupancy_models,
-    capture_models = capture_models,
-    abundance_models = abundance_models,
-    
-    site_data = site_data,
-    sample_data = sample_data,
-    long_df = long_df,
-    
-    filter_summary = list(
-      otu_stats = otu_stats,
-      kept_otus = keep_otus
-    ),
-    
-    diagnostic_AIC = diagnostic_AIC,
-    
-    note = paste(
-      "Approximate three-level EM-like GLMM.",
-      "Hierarchy: site occupancy Z -> biological-sample capture A -> PCR replicate counts Y.",
-      "Formula covariates are automatically preserved in site/sample data.",
-      "AIC values are exploratory component-model diagnostics, not a formal joint-likelihood criterion."
-    )
+  # ------------------------------------------------------------
+# Choose final fitted models for prediction
+# ------------------------------------------------------------
+
+final_iter <- n_iter
+
+occ_fit_final   <- occupancy_models[[final_iter]]
+cap_fit_final   <- capture_models[[final_iter]]
+abund_fit_final <- abundance_models[[final_iter]]
+
+# ------------------------------------------------------------
+# Return object
+# ------------------------------------------------------------
+
+list(
+  psi = summarise_link(psi_list[keep], "logit", "psi"),
+  capture = summarise_link(capture_list[keep], "logit", "capture"),
+  lambda = summarise_link(lambda_list[keep], "log", "lambda"),
+  p_detect = summarise_link(p_detect_list[keep], "cloglog", "p_detect"),
+  
+  psi_list = psi_list[keep],
+  capture_list = capture_list[keep],
+  lambda_list = lambda_list[keep],
+  p_detect_list = p_detect_list[keep],
+  
+  # ----------------------------------------------------------
+  # IMPORTANT: final models used by predict_FitModel()
+  # ----------------------------------------------------------
+  occ_fit = occ_fit_final,
+  cap_fit = cap_fit_final,
+  abund_fit = abund_fit_final,
+  
+  abundance_family = abundance_family,
+  
+  # Also keep all fitted models if needed
+  occupancy_models = occupancy_models[keep],
+  capture_models = capture_models[keep],
+  abundance_models = abundance_models[keep],
+  
+  site_data = site_data,
+  sample_data = sample_data,
+  long_df = long_df,
+  
+  filter_summary = list(
+    otu_stats = otu_stats,
+    kept_otus = keep_otus
+  ),
+  
+  diagnostic_AIC = diagnostic_AIC,
+  
+  note = paste(
+    "Approximate three-level EM-like GLMM.",
+    "Hierarchy: site occupancy Z -> biological-sample capture A -> PCR replicate counts Y.",
+    "Formula covariates are automatically preserved in site/sample data.",
+    "AIC values are exploratory component-model diagnostics, not a formal joint-likelihood criterion."
   )
+)
 }
                           
   

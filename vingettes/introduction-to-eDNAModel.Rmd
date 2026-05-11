@@ -312,11 +312,6 @@ pheatmap(
 
 ##For example 
 
-results <- compare_models_cv(
-  phyloseq = ps,
-  site_col = "site_month",
-  K = 5,
-
   models = list(
 
     A = function(ps) FitModel(
@@ -373,9 +368,47 @@ results <- compare_models_cv(
       abundance_family = "nbinom"
     )
   )
+
+cv_rep <- compare_models_cv_multilevel(
+  phyloseq = ps,
+  models = models,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  otu_col = "OTU",
+  count_col = "y",
+  cv_level = "replicate",
+  K = 5
 )
 
-print(results)
+cv_sample <- compare_models_cv_multilevel(phyloseq = ps,
+                                          models = models,
+                                          site_col = "site_month",
+                                          sample_col = "Name",
+                                          replicate_col = "Replicate",
+                                          otu_col = "OTU",
+                                          count_col = "y", cv_level = "sample",K = 5)
+cv_site   <- compare_models_cv_multilevel(phyloseq = ps,
+                                          models = models,
+                                          site_col = "site_month",
+                                          sample_col = "Name",
+                                          replicate_col = "Replicate",
+                                          otu_col = "OTU",
+                                          count_col = "y", cv_level = "site",K = 5)
+
+cv_otu   <- compare_models_cv_multilevel(phyloseq = ps,
+                                          models = models,
+                                          site_col = "site_month",
+                                          sample_col = "Name",
+                                          replicate_col = "Replicate",
+                                          otu_col = "OTU",
+                                          count_col = "y", cv_level = "OTU",K = 5)
 
 
+
+
+evaluate_cv(cv_rep)
+evaluate_cv(cv_sample)
+evaluate_cv(cv_site)
+evaluate_cv(cv_otu)
 

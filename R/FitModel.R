@@ -1,115 +1,132 @@
 #' Fit a Hierarchical Occupancy–Detection–Abundance Model for Microbiome Data
 #'
-#' Implements an EM-like iterative framework using repeated GLMM fitting
-#' to jointly estimate microbial occupancy, detection (capture), and abundance
-#' for OTU-level microbiome data stored in a `phyloseq` object.
+#' Fits a three-level hierarchical model for eDNA / microbiome count data using an
+#' EM-like iterative procedure based on repeated GLMM estimation via \code{glmmTMB}.
 #'
-#' The model explicitly follows a **three-level eDNA hierarchy**:
+#' The model explicitly represents the ecological observation process:
+#'
 #' \itemize{
-#'   \item Site level: true presence/absence (\eqn{z})
-#'   \item Biological sample level: capture/detection (\eqn{a})
-#'   \item PCR replicate level: observed counts (\eqn{y})
+#'   \item \strong{Site level}: true presence/absence (\eqn{Z})
+#'   \item \strong{Biological sample level}: capture/detection (\eqn{A})
+#'   \item \strong{PCR replicate level}: observed read counts (\eqn{Y})
 #' }
 #'
-#' Formula covariates are automatically preserved and propagated into the
-#' internally constructed site-level and sample-level datasets. This allows
-#' covariates such as `in_out`, `Samplingmonth`, treatments, interactions,
-#' and nested random effects to be used directly in model formulas.
+#' Covariates specified in the model formulas are automatically preserved and
+#' propagated into the internally constructed datasets (site-level and sample-level),
+#' allowing flexible inclusion of environmental variables, treatments, interactions,
+#' and random effects.
 #'
-#' @param phyloseq A `phyloseq` object containing OTU table and sample data.
-#' @param site_col Character. Column representing sites (occupancy level).
-#' @param sample_col Character. Column representing biological samples (capture level).
-#' @param replicate_col Character or `NULL`. Column representing PCR replicates.
-#' @param occupancy_formula Formula for occupancy model (response must be `z_sim`).
-#' @param capture_formula Formula for capture model (response must be `a_sim`).
-#' @param abundance_formula Formula for abundance model (response must match `count_col`).
+#' @param phyloseq A \code{phyloseq} object containing OTU counts and sample metadata.
+#' @param site_col Character. Column identifying sites (occupancy level).
+#' @param sample_col Character. Column identifying biological samples (capture level).
+#' @param replicate_col Character or \code{NULL}. Column identifying PCR replicates.
+#' @param occupancy_formula Formula for occupancy model (response must be \code{z_sim}).
+#' @param capture_formula Formula for capture model (response must be \code{a_sim}).
+#' @param abundance_formula Formula for abundance model (response must match \code{count_col}).
 #' @param otu_col Character. OTU identifier column.
-#' @param count_col Character. Count column (e.g., read counts).
+#' @param count_col Character. Count column (e.g. read counts).
 #' @param min_species_sum Minimum total counts required to retain an OTU.
-#' @param min_detection_replicates Minimum detections required per OTU.
+#' @param min_detection_replicates Minimum number of detections required per OTU.
 #' @param abundance_threshold Threshold defining detection (default = 0).
 #' @param n_iter Number of EM-like iterations.
 #' @param burn_in Number of initial iterations discarded.
-#' @param abundance_family One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`.
-#' @param verbose Logical; print progress.
+#' @param abundance_family One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.
+#' @param verbose Logical; print progress during fitting.
+#' @param n_sim Number of simulations used for uncertainty propagation.
 #'
-#' @return A list with:
+#' @return A list containing:
 #' \describe{
-#'   \item{psi}{Occupancy probabilities (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
-#'   \item{capture}{Capture probabilities (`capture_mean`, etc.).}
-#'   \item{lambda}{Abundance (`lambda_mean`, etc.).}
+#'   \item{psi}{Occupancy probability summaries (\code{psi_mean}, \code{psi_lwr}, etc.).}
+#'   \item{capture}{Capture probability summaries.}
+#'   \item{lambda}{Abundance (expected counts) summaries.}
 #'   \item{p_detect}{Detection probability derived from abundance.}
-#'   \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration draws.}
-#'   \item{occupancy_models, capture_models, abundance_models}{Fitted GLMMs.}
-#'   \item{site_data, sample_data, long_df}{Processed data.}
-#'   \item{filter_summary}{OTU filtering summary.}
-#'   \item{diagnostic_AIC}{AIC values per iteration.}
-#'   \item{note}{Model description.}
+#'   \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration values (eta and SE).}
+#'   \item{occupancy_models, capture_models, abundance_models}{Fitted GLMM objects.}
+#'   \item{site_data, sample_data, long_df}{Processed datasets.}
+#'   \item{filter_summary}{OTU filtering information.}
+#'   \item{diagnostic_AIC}{Component-wise AIC per iteration.}
 #' }
 #'
 #' @details
-#' The model decomposes microbial occurrence into:
-#'
-#' \enumerate{
-#'   \item \strong{Occupancy (\eqn{\psi})}:
-#'   Probability an OTU is present at a site.
-#'
-#'   \item \strong{Capture (\eqn{p})}:
-#'   Probability a biological sample captures DNA given presence.
-#'
-#'   \item \strong{Abundance (\eqn{\lambda})}:
-#'   Expected read counts at PCR replicate level given capture.
-#' }
-#'
-#' The hierarchical structure is:
+#' The hierarchical model is defined as:
 #'
 #' \deqn{
-#' z_{i} \sim \text{Bernoulli}(\psi_i), \quad
-#' a_{ij} \sim \text{Bernoulli}(p_{ij} \cdot z_i), \quad
-#' y_{ijk} \sim \text{Count}(\lambda_{ijk} \cdot a_{ij})
+#' Z_{i} \sim \text{Bernoulli}(\psi_i)
+#' }
+#' \deqn{
+#' A_{ij} \mid Z_i \sim \text{Bernoulli}(p_{ij} \cdot Z_i)
+#' }
+#' \deqn{
+#' Y_{ijk} \mid A_{ij} \sim \text{Count}(\lambda_{ijk} \cdot A_{ij})
 #' }
 #'
-#' Detection probability implied by abundance is:
-#'
-#' \deqn{p_{\text{detect}} = 1 - \exp(-\lambda)}
-#'
-#'
-#' \strong{Important interpretation:}
+#' where:
 #' \itemize{
-#'   \item For small \eqn{\lambda}: \eqn{p_{\text{detect}} \approx \lambda}
-#'   \item For large \eqn{\lambda}: \eqn{p_{\text{detect}} \to 1}
+#'   \item \eqn{i} indexes sites
+#'   \item \eqn{j} indexes biological samples
+#'   \item \eqn{k} indexes PCR replicates
 #' }
 #'
-#' Thus, `p_detect` is not independent of `lambda` and should not be interpreted
-#' as a separate parameter.
+#' The abundance model defines \eqn{\lambda}, which induces a detection probability:
+#'
+#' \deqn{
+#' p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
+#' }
+#'
+#' For a Poisson model, this simplifies to:
+#'
+#' \deqn{
+#' p_{\text{detect}} = 1 - \exp(-\lambda)
+#' }
+#'
+#' For NB / ZIP / ZINB models, the probability of zero is computed using the
+#' corresponding distribution (including zero-inflation when applicable).
+#'
+#' \strong{Important:}
+#' \itemize{
+#'   \item \code{p_detect} is a deterministic function of the abundance model.
+#'   \item It is not an independently estimated parameter.
+#' }
 #'
 #' @section EM-like algorithm:
+#' Each iteration performs:
 #' \enumerate{
-#'   \item Fit occupancy model using current \eqn{z_sim}
-#'   \item Fit capture model conditional on \eqn{z_sim = 1}
-#'   \item Fit abundance model conditional on \eqn{a_sim = 1}
-#'   \item Update \eqn{a_sim} using capture + abundance
-#'   \item Update \eqn{z_sim} using capture + abundance
+#'   \item Fit occupancy model using current \eqn{Z}
+#'   \item Fit capture model conditional on \eqn{Z = 1}
+#'   \item Fit abundance model conditional on \eqn{A = 1}
+#'   \item Update \eqn{A} using capture + abundance probabilities
+#'   \item Update \eqn{Z} using capture + abundance probabilities
 #' }
 #'
-#' Posterior summaries are computed from empirical distributions across
-#' iterations (after burn-in), i.e., **true empirical quantiles**, not Wald intervals.
+#' @section Uncertainty estimation:
+#' Uncertainty is propagated by simulation:
+#'
+#' \itemize{
+#'   \item Linear predictors (\eqn{\eta}) are treated as:
+#'   \deqn{\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)}
+#'
+#'   \item Simulated values are transformed to the natural scale
+#'   \item Empirical summaries (mean, median, 95\% intervals) are computed
+#' }
+#'
+#' This approach avoids reliance on asymptotic (Wald) intervals and correctly
+#' accounts for link-function nonlinearity.
 #'
 #' @section Model features:
 #' \itemize{
-#'   \item Explicit 3-level eDNA hierarchy (site → sample → PCR replicate)
-#'   \item Supports complex random-effects structures
-#'   \item Automatically handles covariates from `sample_data`
-#'   \item Supports offsets via `offset(log(total_reads))`
-#'   \item Works with Poisson, NB, ZIP, ZINB
+#'   \item Explicit 3-level eDNA hierarchy
+#'   \item Supports random effects via \code{glmmTMB}
+#'   \item Handles Poisson, NB, ZIP, ZINB families
+#'   \item Supports offsets (e.g. \code{offset(log(total_reads))})
+#'   \item Automatically propagates covariates across hierarchy levels
 #' }
 #'
 #' @section Caveats:
 #' \itemize{
-#'   \item This is an approximate EM-like method, not a full joint likelihood.
-#'   \item AIC values are component-wise diagnostics only.
-#'   \item Detection from abundance assumes Poisson-type logic (approximate for NB/ZIP).
-#'   \item Large \eqn{\lambda} leads to saturated detection probabilities (~1).
+#'   \item This is an approximate EM-like method, not a full joint likelihood model
+#'   \item AIC values are component-wise diagnostics only
+#'   \item Detection from abundance depends on distributional assumptions
+#'   \item Large \eqn{\lambda} values imply detection saturation (\eqn{p_{\text{detect}} \approx 1})
 #' }
 #'
 #' @examples
@@ -134,6 +151,7 @@
 #' head(fit$psi)
 #' head(fit$capture)
 #' head(fit$lambda)
+#' head(fit$p_detect)
 #' }
 #'
 #' @importFrom glmmTMB glmmTMB nbinom2
@@ -158,7 +176,8 @@ FitModel <- function(
     n_iter = 50,
     burn_in = 10,
     abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-    verbose = TRUE
+    verbose = TRUE,
+    n_sim = 200
 ) {
   
   abundance_family <- match.arg(abundance_family)
@@ -167,15 +186,11 @@ FitModel <- function(
   if (is.null(count_col)) stop("Please specify count_col.")
   if (burn_in >= n_iter) stop("burn_in must be < n_iter.")
   
-  get_formula_vars <- function(formula, response) {
-    setdiff(all.vars(formula), response)
-  }
+  # ------------------------------------------------------------
+  # Prepare long data
+  # ------------------------------------------------------------
   
- # ------------------------------------------------------------
-# Prepare long data
-# ------------------------------------------------------------
-
-prep <- prepare_long_data(
+  prep <- prepare_long_data(
     physeq_obj = phyloseq,
     site_col = site_col,
     nested_cols = unique(c(sample_col, replicate_col))
@@ -189,112 +204,21 @@ prep <- prepare_long_data(
   if (length(missing_cols) > 0) {
     stop("Missing columns in long_df: ", paste(missing_cols, collapse = ", "))
   }
-    
-  # ------------------------------------------------------------
-  # Add sample metadata
-  # ------------------------------------------------------------
-  
-  sample_meta <- data.frame(
-    phyloseq::sample_data(phyloseq),
-    check.names = FALSE
-  )
-  
-  sample_meta$.__sample_id__ <- rownames(sample_meta)
-  
-  if (!(sample_col %in% names(sample_meta))) {
-    sample_meta[[sample_col]] <- sample_meta$.__sample_id__
-  }
-  
-  sample_meta[[sample_col]] <- as.character(sample_meta[[sample_col]])
-  long_df[[sample_col]] <- as.character(long_df[[sample_col]])
-  
-  meta_cols_to_add <- setdiff(names(sample_meta), names(long_df))
-  meta_cols_to_add <- setdiff(meta_cols_to_add, ".__sample_id__")
-  
-  if (length(meta_cols_to_add) > 0) {
-    long_df <- dplyr::left_join(
-      long_df,
-      sample_meta[, c(sample_col, meta_cols_to_add), drop = FALSE],
-      by = sample_col
-    )
-  }
   
   # ------------------------------------------------------------
   # Type handling
   # ------------------------------------------------------------
   
-  long_df[[site_col]]   <- as.character(long_df[[site_col]])
-  long_df[[otu_col]]    <- as.character(long_df[[otu_col]])
-  long_df[[sample_col]] <- as.character(long_df[[sample_col]])
+  long_df[[site_col]]   <- as.factor(long_df[[site_col]])
+  long_df[[otu_col]]    <- as.factor(long_df[[otu_col]])
+  long_df[[sample_col]] <- as.factor(long_df[[sample_col]])
   long_df[[count_col]]  <- as.numeric(long_df[[count_col]])
   
   if (!is.null(replicate_col) && replicate_col %in% names(long_df)) {
-    long_df[[replicate_col]] <- as.character(long_df[[replicate_col]])
+    long_df[[replicate_col]] <- as.factor(long_df[[replicate_col]])
   }
   
   long_df <- long_df[!is.na(long_df[[count_col]]), ]
-  
-  # ------------------------------------------------------------
-  # Compute total_reads from processed data
-  # ------------------------------------------------------------
-  
-  total_reads_df <- long_df |>
-    dplyr::group_by(.data[[sample_col]]) |>
-    dplyr::summarise(
-      total_reads = sum(.data[[count_col]], na.rm = TRUE),
-      .groups = "drop"
-    )
-  
-  long_df <- dplyr::left_join(long_df, total_reads_df, by = sample_col)
-  
-  uses_offset <- any(grepl("offset", deparse(abundance_formula)))
-  
-  if (uses_offset) {
-    if (verbose) message("Offset detected -> cleaning zero-read samples...")
-    
-    zero_samples <- unique(long_df[[sample_col]][long_df$total_reads <= 0])
-    
-    if (length(zero_samples) > 0) {
-      long_df <- long_df |>
-        dplyr::filter(!(.data[[sample_col]] %in% zero_samples))
-      
-      if (verbose) {
-        message(length(zero_samples), " zero-read samples removed.")
-      }
-    }
-    
-    if (any(long_df$total_reads <= 0, na.rm = TRUE)) {
-      stop("total_reads must be positive when using offset(log(total_reads)).")
-    }
-  } else {
-    if (verbose) message("No offset used.")
-  }
-  
-  # ------------------------------------------------------------
-  # Check formula variables
-  # ------------------------------------------------------------
-  
-  occ_vars <- get_formula_vars(occupancy_formula, "z_sim")
-  cap_vars <- get_formula_vars(capture_formula, "a_sim")
-  abund_vars <- get_formula_vars(abundance_formula, count_col)
-  
-  all_formula_vars <- unique(c(occ_vars, cap_vars, abund_vars))
-  all_formula_vars <- setdiff(all_formula_vars, c(count_col, "total_reads"))
-  
-  missing_formula_vars <- setdiff(all_formula_vars, names(long_df))
-  
-  if (length(missing_formula_vars) > 0) {
-    stop(
-      "The following formula variables are missing from long_df: ",
-      paste(missing_formula_vars, collapse = ", ")
-    )
-  }
-  
-  for (v in all_formula_vars) {
-    if (v %in% names(long_df) && is.character(long_df[[v]])) {
-      long_df[[v]] <- factor(long_df[[v]])
-    }
-  }
   
   # ------------------------------------------------------------
   # OTU filtering
@@ -322,13 +246,7 @@ prep <- prepare_long_data(
     stop("No OTUs remain after filtering.")
   }
   
-  long_df[[site_col]]   <- factor(long_df[[site_col]])
-  long_df[[otu_col]]    <- factor(long_df[[otu_col]])
-  long_df[[sample_col]] <- factor(long_df[[sample_col]])
-  
-  if (!is.null(replicate_col) && replicate_col %in% names(long_df)) {
-    long_df[[replicate_col]] <- factor(long_df[[replicate_col]])
-  }
+  long_df[[otu_col]] <- droplevels(long_df[[otu_col]])
   
   if (verbose) {
     message("OTUs before filtering: ", dplyr::n_distinct(otu_stats[[otu_col]]))
@@ -336,7 +254,7 @@ prep <- prepare_long_data(
   }
   
   # ------------------------------------------------------------
-  # Define hierarchy keys
+  # Keys
   # ------------------------------------------------------------
   
   site_keys <- c(site_col, otu_col)
@@ -349,23 +267,13 @@ prep <- prepare_long_data(
   }
   
   # ------------------------------------------------------------
-  # Build site-level Z and biological-sample-level A
+  # Build site-level Z and sample-level A
   # ------------------------------------------------------------
-  
-  site_keep_vars <- setdiff(occ_vars, c(site_keys, "z_sim"))
-  site_keep_vars <- intersect(site_keep_vars, names(long_df))
-  
-  sample_keep_vars <- setdiff(cap_vars, c(sample_keys, "a_sim"))
-  sample_keep_vars <- intersect(sample_keep_vars, names(long_df))
   
   site_data <- long_df |>
     dplyr::group_by(dplyr::across(dplyr::all_of(site_keys))) |>
     dplyr::summarise(
       z_obs = as.integer(any(.data[[count_col]] > abundance_threshold)),
-      dplyr::across(
-        dplyr::all_of(site_keep_vars),
-        ~ dplyr::first(.x)
-      ),
       .groups = "drop"
     ) |>
     dplyr::mutate(z_sim = .data$z_obs)
@@ -374,49 +282,9 @@ prep <- prepare_long_data(
     dplyr::group_by(dplyr::across(dplyr::all_of(sample_keys))) |>
     dplyr::summarise(
       a_obs = as.integer(any(.data[[count_col]] > abundance_threshold)),
-      dplyr::across(
-        dplyr::all_of(sample_keep_vars),
-        ~ dplyr::first(.x)
-      ),
       .groups = "drop"
     ) |>
     dplyr::mutate(a_sim = .data$a_obs)
-  
-  # ------------------------------------------------------------
-  # Validate formulas
-  # ------------------------------------------------------------
-  
-  validate_formula <- function(formula, data, expected_response, model_name) {
-    
-    if (!inherits(formula, "formula")) {
-      stop(model_name, " formula must be a valid formula.")
-    }
-    
-    response <- all.vars(formula)[1]
-    
-    if (response != expected_response) {
-      stop(
-        model_name, " formula response must be '", expected_response,
-        "', but got '", response, "'."
-      )
-    }
-    
-    vars <- all.vars(formula)
-    missing_vars <- setdiff(vars, names(data))
-    
-    if (length(missing_vars) > 0) {
-      stop(
-        "Missing variables in ", model_name, " formula: ",
-        paste(missing_vars, collapse = ", ")
-      )
-    }
-    
-    invisible(TRUE)
-  }
-  
-  validate_formula(occupancy_formula, site_data, "z_sim", "occupancy")
-  validate_formula(capture_formula, sample_data, "a_sim", "capture")
-  validate_formula(abundance_formula, long_df, count_col, "abundance")
   
   # ------------------------------------------------------------
   # Family setup
@@ -424,53 +292,37 @@ prep <- prepare_long_data(
   
   fam <- switch(
     abundance_family,
-    poisson = stats::poisson(),
-    nbinom  = glmmTMB::nbinom2(),
-    zip     = stats::poisson(),
-    zinb    = glmmTMB::nbinom2()
+    poisson = poisson(),
+    nbinom  = nbinom2(),
+    zip     = poisson(),
+    zinb    = nbinom2()
   )
+  
   
   zi_formula <- if (abundance_family %in% c("zip", "zinb")) ~1 else ~0
   
   # ------------------------------------------------------------
-  # Helper: PCR-level zero probability
+  # Helper: p_detect from simulated abundance eta
   # ------------------------------------------------------------
   
-  get_p0_pcr <- function(fit, newdata, family_name) {
+  compute_pdetect <- function(eta_sim, fit, family_name, zi_prob = 0) {
     
-    mu <- as.numeric(predict(
-      fit,
-      type = "response",
-      newdata = newdata,
-      allow.new.levels = TRUE
-    ))
-    
-    zi <- rep(0, length(mu))
-    
-    if (family_name %in% c("zip", "zinb")) {
-      zi <- tryCatch(
-        as.numeric(predict(
-          fit,
-          type = "zprob",
-          newdata = newdata,
-          allow.new.levels = TRUE
-        )),
-        error = function(e) rep(0, length(mu))
-      )
-    }
+    mu <- exp(eta_sim)
     
     p0_cond <- switch(
       family_name,
       poisson = stats::dpois(0, lambda = mu),
       zip     = stats::dpois(0, lambda = mu),
-      nbinom  = {
-        theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+      
+      nbinom = {
+        theta <- tryCatch(glmmTMB::sigma(fit), error = function(e) NA_real_)
         if (!is.finite(theta) || theta <= 0) {
           stats::dpois(0, lambda = mu)
         } else {
           stats::dnbinom(0, mu = mu, size = theta)
         }
       },
+      
       zinb = {
         theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
         if (!is.finite(theta) || theta <= 0) {
@@ -481,8 +333,8 @@ prep <- prepare_long_data(
       }
     )
     
-    p0 <- zi + (1 - zi) * p0_cond
-    pmin(pmax(p0, 1e-12), 1)
+    p0 <- zi_prob + (1 - zi_prob) * p0_cond
+    1 - pmin(pmax(p0, 1e-12), 1)
   }
   
   # ------------------------------------------------------------
@@ -514,7 +366,7 @@ prep <- prepare_long_data(
     if (verbose) message("Iteration ", i)
     
     # ----------------------------------------------------------
-    # 1. Occupancy model: Z_site,OTU
+    # 1. Occupancy model: Z
     # ----------------------------------------------------------
     
     occ_fit <- glmmTMB::glmmTMB(
@@ -523,24 +375,27 @@ prep <- prepare_long_data(
       family = stats::binomial()
     )
     
-    eta_psi <- as.numeric(predict(
+    pred_psi <- predict(
       occ_fit,
       type = "link",
       newdata = site_data,
+      se.fit = TRUE,
       allow.new.levels = TRUE
-    ))
+    )
     
+    eta_psi <- as.numeric(pred_psi$fit)
     psi <- stats::plogis(eta_psi)
     
     psi_list[[i]] <- data.frame(
       site_data[site_keys],
-      eta = eta_psi
+      eta = eta_psi,
+      se = as.numeric(pred_psi$se.fit)
     )
     
     occupancy_models[[i]] <- occ_fit
     
     # ----------------------------------------------------------
-    # 2. Capture model: A_sample,OTU | Z = 1
+    # 2. Capture model: A | Z = 1
     # ----------------------------------------------------------
     
     sample_data <- sample_data |>
@@ -564,24 +419,27 @@ prep <- prepare_long_data(
       family = stats::binomial()
     )
     
-    eta_capture <- as.numeric(predict(
+    pred_capture <- predict(
       cap_fit,
       type = "link",
       newdata = sample_data,
+      se.fit = TRUE,
       allow.new.levels = TRUE
-    ))
+    )
     
+    eta_capture <- as.numeric(pred_capture$fit)
     capture_prob <- stats::plogis(eta_capture)
     
     capture_list[[i]] <- data.frame(
       sample_data[sample_keys],
-      eta = eta_capture
+      eta = eta_capture,
+      se = as.numeric(pred_capture$se.fit)
     )
     
     capture_models[[i]] <- cap_fit
     
     # ----------------------------------------------------------
-    # 3. Abundance model: PCR reads Y | A = 1
+    # 3. Abundance model: Y | A = 1
     # ----------------------------------------------------------
     
     abund_fit_data <- long_df |>
@@ -603,42 +461,77 @@ prep <- prepare_long_data(
       ziformula = zi_formula
     )
     
-    # Predict conditional abundance for all PCR rows
-    eta_lambda_all <- as.numeric(predict(
+    pred_lambda <- predict(
       abund_fit,
       type = "link",
       newdata = long_df,
+      se.fit = TRUE,
       allow.new.levels = TRUE
-    ))
+    )
     
-    lambda_all <- exp(eta_lambda_all)
+    eta_lambda <- as.numeric(pred_lambda$fit)
+    se_lambda <- as.numeric(pred_lambda$se.fit)
     
     lambda_list[[i]] <- data.frame(
       long_df[pcr_keys],
-      eta = eta_lambda_all
+      eta = eta_lambda,
+      se = se_lambda
     )
     
-    # PCR-level P(Y = 0 | A = 1)
-    p0_pcr <- get_p0_pcr(
-      fit = abund_fit,
-      newdata = long_df,
-      family_name = abundance_family
-    )
+    # ----------------------------------------------------------
+    # 4. p_detect with uncertainty propagated from eta_lambda
+    # ----------------------------------------------------------
     
-    p_detect_pcr <- 1 - p0_pcr
-    p_detect_eta <- log(-log(pmax(p0_pcr, 1e-12)))
+    zi_prob <- rep(0, length(eta_lambda))
+    
+    if (abundance_family %in% c("zip", "zinb")) {
+      zi_prob <- tryCatch(
+        as.numeric(predict(
+          abund_fit,
+          type = "zprob",
+          newdata = long_df,
+          allow.new.levels = TRUE
+        )),
+        error = function(e) rep(0, length(eta_lambda))
+      )
+    }
+    
+    p_detect_sim <- lapply(seq_along(eta_lambda), function(j) {
+      
+      mu_j <- eta_lambda[j]
+      se_j <- se_lambda[j]
+      zi_j <- zi_prob[j]
+      
+      if (is.na(se_j) || se_j <= 0) {
+        eta_sim <- mu_j
+      } else {
+        eta_sim <- stats::rnorm(n_sim, mean = mu_j, sd = se_j)
+      }
+      
+      compute_pdetect(
+        eta_sim = eta_sim,
+        fit = abund_fit,
+        family_name = abundance_family,
+        zi_prob = zi_j
+      )
+    })
+    
+    p_detect_mean <- vapply(p_detect_sim, mean, numeric(1), na.rm = TRUE)
+    p_detect_sd   <- vapply(p_detect_sim, stats::sd, numeric(1), na.rm = TRUE)
     
     p_detect_list[[i]] <- data.frame(
       long_df[pcr_keys],
-      eta = p_detect_eta
+      eta = p_detect_mean,
+      se = p_detect_sd
     )
     
     abundance_models[[i]] <- abund_fit
     
     # ----------------------------------------------------------
-    # 4. Collapse PCR probabilities to biological sample level
-    #    P(all PCR replicates zero | A = 1)
+    # 5. Collapse replicate probabilities to biological sample
     # ----------------------------------------------------------
+    
+    p0_pcr <- 1 - p_detect_mean
     
     sample_p0 <- long_df |>
       dplyr::mutate(p0_pcr = p0_pcr) |>
@@ -656,9 +549,7 @@ prep <- prepare_long_data(
     sample_data$p0_sample[is.na(sample_data$p0_sample)] <- 1
     
     # ----------------------------------------------------------
-    # 5. Update A_sample,OTU
-    #    If any PCR is positive, A = 1.
-    #    If all PCRs are zero, sample A using posterior probability.
+    # 6. Update A
     # ----------------------------------------------------------
     
     zero_sample <- which(sample_data$a_obs == 0 & sample_data$z_sim == 1)
@@ -686,7 +577,7 @@ prep <- prepare_long_data(
     sample_data$a_sim[sample_data$z_sim == 0] <- 0
     
     # ----------------------------------------------------------
-    # 6. Update Z_site,OTU
+    # 7. Collapse to site level and update Z
     # ----------------------------------------------------------
     
     site_p0 <- sample_data |>
@@ -740,16 +631,16 @@ prep <- prepare_long_data(
   }
   
   # ------------------------------------------------------------
-  # Summaries on natural scale
+  # Summaries
   # ------------------------------------------------------------
   
   summarise_link <- function(lst, link_name, prefix) {
     
     inv_link <- switch(
       link_name,
-      logit   = stats::plogis,
-      log     = exp,
-      cloglog = function(x) 1 - exp(-exp(x)),
+      logit    = stats::plogis,
+      log      = exp,
+      identity = function(x) x,
       stop("Unknown link_name: ", link_name)
     )
     
@@ -757,16 +648,64 @@ prep <- prepare_long_data(
     
     if (nrow(df) == 0) return(data.frame())
     
-    keys <- setdiff(names(df), "eta")
+    keys <- setdiff(names(df), c("eta", "se"))
     
     out <- df |>
-      dplyr::mutate(value = inv_link(.data$eta)) |>
       dplyr::group_by(dplyr::across(dplyr::all_of(keys))) |>
       dplyr::summarise(
-        mean = mean(.data$value, na.rm = TRUE),
-        median = stats::median(.data$value, na.rm = TRUE),
-        lwr = stats::quantile(.data$value, 0.025, na.rm = TRUE),
-        upr = stats::quantile(.data$value, 0.975, na.rm = TRUE),
+        
+        mean = {
+          sim_vals <- unlist(
+            lapply(seq_along(eta), function(j) {
+              if (is.na(se[j]) || se[j] <= 0) {
+                inv_link(eta[j])
+              } else {
+                inv_link(rnorm(n_sim, eta[j], se[j]))
+              }
+            })
+          )
+          mean(sim_vals, na.rm = TRUE)
+        },
+        
+        median = {
+          sim_vals <- unlist(
+            lapply(seq_along(eta), function(j) {
+              if (is.na(se[j]) || se[j] <= 0) {
+                inv_link(eta[j])
+              } else {
+                inv_link(rnorm(n_sim, eta[j], se[j]))
+              }
+            })
+          )
+          stats::median(sim_vals, na.rm = TRUE)
+        },
+        
+        lwr = {
+          sim_vals <- unlist(
+            lapply(seq_along(eta), function(j) {
+              if (is.na(se[j]) || se[j] <= 0) {
+                inv_link(eta[j])
+              } else {
+                inv_link(rnorm(n_sim, eta[j], se[j]))
+              }
+            })
+          )
+          as.numeric(stats::quantile(sim_vals, 0.025, na.rm = TRUE))
+        },
+        
+        upr = {
+          sim_vals <- unlist(
+            lapply(seq_along(eta), function(j) {
+              if (is.na(se[j]) || se[j] <= 0) {
+                inv_link(eta[j])
+              } else {
+                inv_link(rnorm(n_sim, eta[j], se[j]))
+              }
+            })
+          )
+          as.numeric(stats::quantile(sim_vals, 0.975, na.rm = TRUE))
+        },
+        
         .groups = "drop"
       )
     
@@ -780,63 +719,38 @@ prep <- prepare_long_data(
   
   keep <- seq.int(burn_in + 1, n_iter)
   
-  # ------------------------------------------------------------
-# Choose final fitted models for prediction
-# ------------------------------------------------------------
-
-final_iter <- n_iter
-
-occ_fit_final   <- occupancy_models[[final_iter]]
-cap_fit_final   <- capture_models[[final_iter]]
-abund_fit_final <- abundance_models[[final_iter]]
-
-# ------------------------------------------------------------
-# Return object
-# ------------------------------------------------------------
-
-list(
-  psi = summarise_link(psi_list[keep], "logit", "psi"),
-  capture = summarise_link(capture_list[keep], "logit", "capture"),
-  lambda = summarise_link(lambda_list[keep], "log", "lambda"),
-  p_detect = summarise_link(p_detect_list[keep], "cloglog", "p_detect"),
-  
-  psi_list = psi_list[keep],
-  capture_list = capture_list[keep],
-  lambda_list = lambda_list[keep],
-  p_detect_list = p_detect_list[keep],
-  
-  # ----------------------------------------------------------
-  # IMPORTANT: final models used by predict_FitModel()
-  # ----------------------------------------------------------
-  occ_fit = occ_fit_final,
-  cap_fit = cap_fit_final,
-  abund_fit = abund_fit_final,
-  
-  abundance_family = abundance_family,
-  
-  # Also keep all fitted models if needed
-  occupancy_models = occupancy_models[keep],
-  capture_models = capture_models[keep],
-  abundance_models = abundance_models[keep],
-  
-  site_data = site_data,
-  sample_data = sample_data,
-  long_df = long_df,
-  
-  filter_summary = list(
-    otu_stats = otu_stats,
-    kept_otus = keep_otus
-  ),
-  
-  diagnostic_AIC = diagnostic_AIC,
-  
-  note = paste(
-    "Approximate three-level EM-like GLMM.",
-    "Hierarchy: site occupancy Z -> biological-sample capture A -> PCR replicate counts Y.",
-    "Formula covariates are automatically preserved in site/sample data.",
-    "AIC values are exploratory component-model diagnostics, not a formal joint-likelihood criterion."
+  list(
+    psi = summarise_link(psi_list[keep], "logit", "psi"),
+    capture = summarise_link(capture_list[keep], "logit", "capture"),
+    lambda = summarise_link(lambda_list[keep], "log", "lambda"),
+    p_detect = summarise_link(p_detect_list[keep], "identity", "p_detect"),
+    
+    psi_list = psi_list[keep],
+    capture_list = capture_list[keep],
+    lambda_list = lambda_list[keep],
+    p_detect_list = p_detect_list[keep],
+    
+    occupancy_models = occupancy_models[keep],
+    capture_models = capture_models[keep],
+    abundance_models = abundance_models[keep],
+    
+    site_data = site_data,
+    sample_data = sample_data,
+    long_df = long_df,
+    
+    filter_summary = list(
+      otu_stats = otu_stats,
+      kept_otus = keep_otus
+    ),
+    
+    diagnostic_AIC = diagnostic_AIC,
+    
+    note = paste(
+      "Approximate three-level EM-like GLMM.",
+      "Hierarchy: site occupancy Z -> biological-sample capture A -> replicate-level read counts Y.",
+      "Intervals are based on simulation from eta uncertainty and transformed to the natural scale.",
+      "p_detect uncertainty is propagated from the abundance model linear predictor.",
+      "AIC values are exploratory component-model diagnostics, not a formal joint-likelihood criterion."
+    )
   )
-)
 }
-                          
-  

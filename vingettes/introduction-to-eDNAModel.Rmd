@@ -89,8 +89,8 @@ out <- FitModel(
     # --- DISTRIBUTION ---
     abundance_family = "nbinom",
     
-    verbose = TRUE,
-    n_sim = 50
+    verbose = TRUE, 
+    n_sim_ci = 50
 )
 
 

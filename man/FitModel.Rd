@@ -20,31 +20,32 @@ FitModel(
   n_iter = 50,
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-  verbose = TRUE
+  verbose = TRUE,
+  n_sim = 200
 )
 }
 \arguments{
-\item{phyloseq}{A `phyloseq` object containing OTU table and sample data.}
+\item{phyloseq}{A \code{phyloseq} object containing OTU counts and sample metadata.}
 
-\item{site_col}{Character. Column representing sites (occupancy level).}
+\item{site_col}{Character. Column identifying sites (occupancy level).}
 
-\item{sample_col}{Character. Column representing biological samples (capture level).}
+\item{sample_col}{Character. Column identifying biological samples (capture level).}
 
-\item{replicate_col}{Character or `NULL`. Column representing PCR replicates.}
+\item{replicate_col}{Character or \code{NULL}. Column identifying PCR replicates.}
 
-\item{occupancy_formula}{Formula for occupancy model (response must be `z_sim`).}
+\item{occupancy_formula}{Formula for occupancy model (response must be \code{z_sim}).}
 
-\item{capture_formula}{Formula for capture model (response must be `a_sim`).}
+\item{capture_formula}{Formula for capture model (response must be \code{a_sim}).}
 
-\item{abundance_formula}{Formula for abundance model (response must match `count_col`).}
+\item{abundance_formula}{Formula for abundance model (response must match \code{count_col}).}
 
 \item{otu_col}{Character. OTU identifier column.}
 
-\item{count_col}{Character. Count column (e.g., read counts).}
+\item{count_col}{Character. Count column (e.g. read counts).}
 
 \item{min_species_sum}{Minimum total counts required to retain an OTU.}
 
-\item{min_detection_replicates}{Minimum detections required per OTU.}
+\item{min_detection_replicates}{Minimum number of detections required per OTU.}
 
 \item{abundance_threshold}{Threshold defining detection (default = 0).}
 
@@ -52,111 +53,131 @@ FitModel(
 
 \item{burn_in}{Number of initial iterations discarded.}
 
-\item{abundance_family}{One of `"poisson"`, `"nbinom"`, `"zip"`, `"zinb"`.}
+\item{abundance_family}{One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.}
 
-\item{verbose}{Logical; print progress.}
+\item{verbose}{Logical; print progress during fitting.}
+
+\item{n_sim}{Number of simulations used for uncertainty propagation.}
 }
 \value{
-A list with:
+A list containing:
 \describe{
-  \item{psi}{Occupancy probabilities (`psi_mean`, `psi_median`, `psi_lwr`, `psi_upr`).}
-  \item{capture}{Capture probabilities (`capture_mean`, etc.).}
-  \item{lambda}{Abundance (`lambda_mean`, etc.).}
+  \item{psi}{Occupancy probability summaries (\code{psi_mean}, \code{psi_lwr}, etc.).}
+  \item{capture}{Capture probability summaries.}
+  \item{lambda}{Abundance (expected counts) summaries.}
   \item{p_detect}{Detection probability derived from abundance.}
-  \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration draws.}
-  \item{occupancy_models, capture_models, abundance_models}{Fitted GLMMs.}
-  \item{site_data, sample_data, long_df}{Processed data.}
-  \item{filter_summary}{OTU filtering summary.}
-  \item{diagnostic_AIC}{AIC values per iteration.}
-  \item{note}{Model description.}
+  \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration values (eta and SE).}
+  \item{occupancy_models, capture_models, abundance_models}{Fitted GLMM objects.}
+  \item{site_data, sample_data, long_df}{Processed datasets.}
+  \item{filter_summary}{OTU filtering information.}
+  \item{diagnostic_AIC}{Component-wise AIC per iteration.}
 }
 }
 \description{
-Implements an EM-like iterative framework using repeated GLMM fitting
-to jointly estimate microbial occupancy, detection (capture), and abundance
-for OTU-level microbiome data stored in a `phyloseq` object.
+Fits a three-level hierarchical model for eDNA / microbiome count data using an
+EM-like iterative procedure based on repeated GLMM estimation via \code{glmmTMB}.
 }
 \details{
-The model explicitly follows a **three-level eDNA hierarchy**:
+The model explicitly represents the ecological observation process:
+
 \itemize{
-  \item Site level: true presence/absence (\eqn{z})
-  \item Biological sample level: capture/detection (\eqn{a})
-  \item PCR replicate level: observed counts (\eqn{y})
+  \item \strong{Site level}: true presence/absence (\eqn{Z})
+  \item \strong{Biological sample level}: capture/detection (\eqn{A})
+  \item \strong{PCR replicate level}: observed read counts (\eqn{Y})
 }
 
-Formula covariates are automatically preserved and propagated into the
-internally constructed site-level and sample-level datasets. This allows
-covariates such as `in_out`, `Samplingmonth`, treatments, interactions,
-and nested random effects to be used directly in model formulas.
+Covariates specified in the model formulas are automatically preserved and
+propagated into the internally constructed datasets (site-level and sample-level),
+allowing flexible inclusion of environmental variables, treatments, interactions,
+and random effects.
 
 
-The model decomposes microbial occurrence into:
-
-\enumerate{
-  \item \strong{Occupancy (\eqn{\psi})}:
-  Probability an OTU is present at a site.
-
-  \item \strong{Capture (\eqn{p})}:
-  Probability a biological sample captures DNA given presence.
-
-  \item \strong{Abundance (\eqn{\lambda})}:
-  Expected read counts at PCR replicate level given capture.
-}
-
-The hierarchical structure is:
+The hierarchical model is defined as:
 
 \deqn{
-z_{i} \sim \text{Bernoulli}(\psi_i), \quad
-a_{ij} \sim \text{Bernoulli}(p_{ij} \cdot z_i), \quad
-y_{ijk} \sim \text{Count}(\lambda_{ijk} \cdot a_{ij})
+Z_{i} \sim \text{Bernoulli}(\psi_i)
+}
+\deqn{
+A_{ij} \mid Z_i \sim \text{Bernoulli}(p_{ij} \cdot Z_i)
+}
+\deqn{
+Y_{ijk} \mid A_{ij} \sim \text{Count}(\lambda_{ijk} \cdot A_{ij})
 }
 
-Detection probability implied by abundance is:
-
-\deqn{p_{\text{detect}} = 1 - \exp(-\lambda)}
-
-
-\strong{Important interpretation:}
+where:
 \itemize{
-  \item For small \eqn{\lambda}: \eqn{p_{\text{detect}} \approx \lambda}
-  \item For large \eqn{\lambda}: \eqn{p_{\text{detect}} \to 1}
+  \item \eqn{i} indexes sites
+  \item \eqn{j} indexes biological samples
+  \item \eqn{k} indexes PCR replicates
 }
 
-Thus, `p_detect` is not independent of `lambda` and should not be interpreted
-as a separate parameter.
+The abundance model defines \eqn{\lambda}, which induces a detection probability:
+
+\deqn{
+p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
+}
+
+For a Poisson model, this simplifies to:
+
+\deqn{
+p_{\text{detect}} = 1 - \exp(-\lambda)
+}
+
+For NB / ZIP / ZINB models, the probability of zero is computed using the
+corresponding distribution (including zero-inflation when applicable).
+
+\strong{Important:}
+\itemize{
+  \item \code{p_detect} is a deterministic function of the abundance model.
+  \item It is not an independently estimated parameter.
+}
 }
 \section{EM-like algorithm}{
 
+Each iteration performs:
 \enumerate{
-  \item Fit occupancy model using current \eqn{z_sim}
-  \item Fit capture model conditional on \eqn{z_sim = 1}
-  \item Fit abundance model conditional on \eqn{a_sim = 1}
-  \item Update \eqn{a_sim} using capture + abundance
-  \item Update \eqn{z_sim} using capture + abundance
+  \item Fit occupancy model using current \eqn{Z}
+  \item Fit capture model conditional on \eqn{Z = 1}
+  \item Fit abundance model conditional on \eqn{A = 1}
+  \item Update \eqn{A} using capture + abundance probabilities
+  \item Update \eqn{Z} using capture + abundance probabilities
+}
 }
 
-Posterior summaries are computed from empirical distributions across
-iterations (after burn-in), i.e., **true empirical quantiles**, not Wald intervals.
+\section{Uncertainty estimation}{
+
+Uncertainty is propagated by simulation:
+
+\itemize{
+  \item Linear predictors (\eqn{\eta}) are treated as:
+  \deqn{\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)}
+
+  \item Simulated values are transformed to the natural scale
+  \item Empirical summaries (mean, median, 95\% intervals) are computed
+}
+
+This approach avoids reliance on asymptotic (Wald) intervals and correctly
+accounts for link-function nonlinearity.
 }
 
 \section{Model features}{
 
 \itemize{
-  \item Explicit 3-level eDNA hierarchy (site → sample → PCR replicate)
-  \item Supports complex random-effects structures
-  \item Automatically handles covariates from `sample_data`
-  \item Supports offsets via `offset(log(total_reads))`
-  \item Works with Poisson, NB, ZIP, ZINB
+  \item Explicit 3-level eDNA hierarchy
+  \item Supports random effects via \code{glmmTMB}
+  \item Handles Poisson, NB, ZIP, ZINB families
+  \item Supports offsets (e.g. \code{offset(log(total_reads))})
+  \item Automatically propagates covariates across hierarchy levels
 }
 }
 
 \section{Caveats}{
 
 \itemize{
-  \item This is an approximate EM-like method, not a full joint likelihood.
-  \item AIC values are component-wise diagnostics only.
-  \item Detection from abundance assumes Poisson-type logic (approximate for NB/ZIP).
-  \item Large \eqn{\lambda} leads to saturated detection probabilities (~1).
+  \item This is an approximate EM-like method, not a full joint likelihood model
+  \item AIC values are component-wise diagnostics only
+  \item Detection from abundance depends on distributional assumptions
+  \item Large \eqn{\lambda} values imply detection saturation (\eqn{p_{\text{detect}} \approx 1})
 }
 }
 
@@ -182,6 +203,7 @@ fit <- FitModel(
 head(fit$psi)
 head(fit$capture)
 head(fit$lambda)
+head(fit$p_detect)
 }
 
 }

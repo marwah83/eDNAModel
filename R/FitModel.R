@@ -180,11 +180,11 @@ FitModel <- function(
     min_species_sum = 10,
     min_detection_replicates = 1,
     abundance_threshold = 0,
-    n_iter = 50,
-    burn_in = 10,
+    n_iter = 20,
+    burn_in = 5,
     abundance_family = c("poisson", "nbinom", "zip", "zinb"),
     verbose = TRUE,
-    n_sim_ci = 1000
+    n_sim_ci = 100
 ) {
 
   abundance_family <- match.arg(abundance_family)

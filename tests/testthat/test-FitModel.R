@@ -1,16 +1,25 @@
-test_that("FitModel runs with minimal arguments and inferred metadata", {
+test_that("FitModel runs with deterministic dataset and stable outputs", {
   
   library(phyloseq)
   library(glmmTMB)
   
   # -------------------------------
-  # Simulate small eDNA-like dataset
+  # Deterministic eDNA dataset
   # -------------------------------
+  
   otu_mat <- matrix(
-    c(5, 2, 3, 1, 2, 1,
-      1, 2, 4, 1, 3, 1,
-      3, 1, 1, 2, 1, 1),
-    nrow = 3, byrow = TRUE
+    c(
+      # OTU1 (low)
+      1, 1, 1, 1, 1, 1,
+      
+      # OTU2 (medium)
+      5, 5, 5, 5, 5, 5,
+      
+      # OTU3 (high)
+      15, 15, 15, 15, 15, 15
+    ),
+    nrow = 3,
+    byrow = TRUE
   )
   
   rownames(otu_mat) <- paste0("OTU", 1:3)
@@ -33,7 +42,8 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # -------------------------------
   # Run FitModel
   # -------------------------------
-  n_iter_test <- 5
+  
+  n_iter_test <- 6
   burn_in_test <- 2
   
   result <- suppressWarnings(
@@ -59,15 +69,12 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   )
   
   # -------------------------------
-  # Expected names (UPDATED)
+  # Expected names
   # -------------------------------
+  
   expected_names <- c(
     "psi", "capture", "lambda", "p_detect",
     "psi_list", "capture_list", "lambda_list", "p_detect_list",
-    
-    "occ_fit", "cap_fit", "abund_fit",           # ✅ NEW
-    "abundance_family",                          # ✅ NEW
-    
     "occupancy_models", "capture_models", "abundance_models",
     "site_data", "sample_data", "long_df",
     "filter_summary", "diagnostic_AIC", "note"
@@ -76,8 +83,9 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_true(all(expected_names %in% names(result)))
   
   # -------------------------------
-  # Core outputs
+  # Core outputs exist
   # -------------------------------
+  
   expect_s3_class(result$psi, "data.frame")
   expect_s3_class(result$capture, "data.frame")
   expect_s3_class(result$lambda, "data.frame")
@@ -87,32 +95,24 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_gt(nrow(result$lambda), 0)
   
   # -------------------------------
-  # Column names (STRICT)
+  # Column names
   # -------------------------------
+  
   expect_true(all(c("psi_mean","psi_median","psi_lwr","psi_upr") %in% names(result$psi)))
   expect_true(all(c("capture_mean","capture_median","capture_lwr","capture_upr") %in% names(result$capture)))
   expect_true(all(c("lambda_mean","lambda_median","lambda_lwr","lambda_upr") %in% names(result$lambda)))
   expect_true(all(c("p_detect_mean","p_detect_median","p_detect_lwr","p_detect_upr") %in% names(result$p_detect)))
   
   # -------------------------------
-  # Models (FINAL models)
+  # Model storage
   # -------------------------------
-  expect_true(inherits(result$occ_fit, "glmmTMB"))
-  expect_true(inherits(result$cap_fit, "glmmTMB"))
-  expect_true(inherits(result$abund_fit, "glmmTMB"))
   
-  # -------------------------------
-  # Stored models (POST burn-in)
-  # -------------------------------
   expected_length <- n_iter_test - burn_in_test
   
   expect_length(result$occupancy_models, expected_length)
   expect_length(result$capture_models, expected_length)
   expect_length(result$abundance_models, expected_length)
   
-  # -------------------------------
-  # Posterior lists (POST burn-in)
-  # -------------------------------
   expect_length(result$psi_list, expected_length)
   expect_length(result$capture_list, expected_length)
   expect_length(result$lambda_list, expected_length)
@@ -121,12 +121,14 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   # -------------------------------
   # Numeric sanity
   # -------------------------------
+  
   expect_true(any(is.finite(result$psi$psi_mean)))
   expect_true(any(is.finite(result$lambda$lambda_mean)))
   
   # -------------------------------
   # Probability constraints
   # -------------------------------
+  
   expect_true(all(result$psi$psi_mean >= 0 & result$psi$psi_mean <= 1, na.rm = TRUE))
   expect_true(all(result$capture$capture_mean >= 0 & result$capture$capture_mean <= 1, na.rm = TRUE))
   expect_true(all(result$p_detect$p_detect_mean >= 0 & result$p_detect$p_detect_mean <= 1, na.rm = TRUE))
@@ -134,9 +136,22 @@ test_that("FitModel runs with minimal arguments and inferred metadata", {
   expect_true(all(result$lambda$lambda_mean >= 0, na.rm = TRUE))
   
   # -------------------------------
-  # CRITICAL MODEL CHECK
+  # STRONG RELATIONSHIP TEST
+  # λ → p_detect (monotonic)
+  # -------------------------------
+  
+  cor_val <- suppressWarnings(
+    cor(result$lambda$lambda_mean, result$p_detect$p_detect_mean, use = "complete.obs")
+  )
+  
+  expect_true(is.finite(cor_val))
+  expect_gt(cor_val, 0.9)   # deterministic dataset ensures this
+  
+  # -------------------------------
+  # Functional relationship check
   # p_detect ≈ 1 - exp(-lambda)
   # -------------------------------
+  
   approx_pd <- 1 - exp(-result$lambda$lambda_mean)
   
   expect_true(

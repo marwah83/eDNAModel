@@ -63,18 +63,34 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 
 ```{r fit-model, echo=FALSE}
 out <- FitModel(
-  phyloseq      = ps,
-  site_col      = "site_month",
-  sample_col = "Name",
-  replicate_col = "Replicate",
-  otu_col = "OTU",
-  count_col = "y",
-  abundance_formula =  y ~  (1 | OTU) + (1 | Name / OTU),
-  occupancy_formula  = z_sim ~ 1 + (1 | OTU) + (1 | Sampling.area.Name),
-  capture_formula =    a_sim ~ 1 + (1 | OTU),
-  min_species_sum = 10,
-  n_iter = 20, burn_in = 5,
-  abundance_family = "nbinom"
+    phyloseq      = ps,                  # your phyloseq object
+    site_col      = "site_month",        # site-level variable
+    sample_col    = "Name",              # biological sample ID
+    replicate_col = "Replicate",         # PCR replicate (optional but recommended)
+    
+    # --- MODEL STRUCTURE ---
+    occupancy_formula = z_sim ~ 1 + (1 | OTU),
+    capture_formula   = a_sim ~ 1 + (1 | OTU),
+    abundance_formula = y ~ (1 | OTU) + (1 | Name),
+    
+    # --- REQUIRED ---
+    otu_col   = "OTU",
+    count_col = "y",
+    
+    # --- FILTERING ---
+    min_species_sum = 10,
+    min_detection_replicates = 1,
+    abundance_threshold = 0,
+    
+    # --- EM SETTINGS ---
+    n_iter  = 10,
+    burn_in = 1,
+    
+    # --- DISTRIBUTION ---
+    abundance_family = "nbinom",
+    
+    verbose = TRUE,
+    n_sim = 50
 )
 
 
@@ -137,40 +153,39 @@ ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
 library(dplyr)
 library(ggplot2)
 
-# Combine iteration draws
-p_detect_draws <- bind_rows(out$p_detect_list)
+# Combine all iterations
+p_detect_draws <- dplyr::bind_rows(out$p_detect_list)
 
-# Proper summary (quantile-based)
+# Summarise at OTU level (correct: eta is already p_detect)
 p_detect_otu_summary <- p_detect_draws %>%
-    group_by(OTU) %>%
-    summarise(
-        p_detect_mean = mean(1 - exp(-exp(eta)), na.rm = TRUE),
-        p_detect_lwr  = quantile(1 - exp(-exp(eta)), 0.025, na.rm = TRUE),
-        p_detect_upr  = quantile(1 - exp(-exp(eta)), 0.975, na.rm = TRUE),
-        .groups = "drop"
-    ) %>%
-    arrange(p_detect_mean) %>%
-    mutate(OTU = factor(OTU, levels = OTU))
+  group_by(OTU) %>%
+  summarise(
+    p_detect_mean = mean(eta, na.rm = TRUE),
+    p_detect_lwr  = quantile(eta, 0.025, na.rm = TRUE),
+    p_detect_upr  = quantile(eta, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(p_detect_mean) %>%
+  mutate(OTU = factor(OTU, levels = OTU))
 
 # Plot
 ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
-    geom_point(color = "steelblue", size = 2) +
-    geom_errorbarh(
-        aes(xmin = p_detect_lwr, xmax = p_detect_upr),
-        height = 0.2,
-        color = "steelblue"
-    ) +
-    labs(
-        title = "Caterpillar Plot: Detection Probability by OTU",
-        x = "Detection Probability (p)",
-        y = "OTU"
-    ) +
-    theme_minimal() +
-    theme(
-        axis.text.y = element_text(size = 8),
-        plot.title = element_text(hjust = 0.5)
-    )
-
+  geom_point(color = "steelblue", size = 2) +
+  geom_errorbarh(
+    aes(xmin = p_detect_lwr, xmax = p_detect_upr),
+    height = 0.2,
+    color = "steelblue"
+  ) +
+  labs(
+    title = "Caterpillar Plot: Detection Probability by OTU",
+    x = "Detection probability (p_detect)",
+    y = "OTU"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5)
+  )
 ```
 
 ---
@@ -244,7 +259,7 @@ library(tidyr)
 library(tibble)
 library(pheatmap)
 
-site_col <- "Sampling.area.Name"
+site_col <- "site_month"
 
 # ------------------------------------------------------------
 # Step 1: Combine ψ draws

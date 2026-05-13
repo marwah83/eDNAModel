@@ -342,7 +342,14 @@ pheatmap(
         y ~ offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU),
       n_iter = 12,
       burn_in = 4,
-      abundance_family = "nbinom"
+      abundance_family = "nbinom",
+    min_species_sum = 10,
+    min_detection_replicates = 1,
+    abundance_threshold = 0,
+    n_iter  = 10,
+    burn_in = 1,    
+    verbose = TRUE, 
+    n_sim_ci = 50
     ),
 
     B = function(ps) FitModel(
@@ -361,7 +368,14 @@ pheatmap(
         (1 | Name / OTU),
       n_iter = 12,
       burn_in = 4,
-      abundance_family = "nbinom"
+      abundance_family = "nbinom",
+    min_species_sum = 10,
+    min_detection_replicates = 1,
+    abundance_threshold = 0,
+    n_iter  = 10,
+    burn_in = 1,    
+    verbose = TRUE, 
+    n_sim_ci = 50
     ),
 
     C = function(ps) FitModel(
@@ -380,7 +394,14 @@ pheatmap(
         (1 | Name / OTU),
       n_iter = 12,
       burn_in = 4,
-      abundance_family = "nbinom"
+      abundance_family = "nbinom",
+    min_species_sum = 10,
+    min_detection_replicates = 1,
+    abundance_threshold = 0,
+    n_iter  = 10,
+    burn_in = 1,    
+    verbose = TRUE, 
+    n_sim_ci = 50
     )
   )
 

@@ -21,7 +21,7 @@ FitModel(
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
   verbose = TRUE,
-  n_sim = 200
+  n_sim_ci = 1000
 )
 }
 \arguments{
@@ -57,7 +57,7 @@ FitModel(
 
 \item{verbose}{Logical; print progress during fitting.}
 
-\item{n_sim}{Number of simulations used for uncertainty propagation.}
+\item{n_sim_ci}{Number of simulations used for uncertainty propagation (ψ, capture, λ only).}
 }
 \value{
 A list containing:
@@ -65,8 +65,9 @@ A list containing:
   \item{psi}{Occupancy probability summaries (\code{psi_mean}, \code{psi_lwr}, etc.).}
   \item{capture}{Capture probability summaries.}
   \item{lambda}{Abundance (expected counts) summaries.}
-  \item{p_detect}{Detection probability derived from abundance.}
-  \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration values (eta and SE).}
+  \item{p_detect}{Detection probability derived from abundance (natural scale).}
+  \item{psi_list, capture_list, lambda_list}{Per-iteration linear predictors (eta) and SE.}
+  \item{p_detect_list}{Per-iteration detection probabilities (natural scale, no SE).}
   \item{occupancy_models, capture_models, abundance_models}{Fitted GLMM objects.}
   \item{site_data, sample_data, long_df}{Processed datasets.}
   \item{filter_summary}{OTU filtering information.}
@@ -117,19 +118,20 @@ The abundance model defines \eqn{\lambda}, which induces a detection probability
 p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
 }
 
-For a Poisson model, this simplifies to:
+For a Poisson model:
 
 \deqn{
 p_{\text{detect}} = 1 - \exp(-\lambda)
 }
 
-For NB / ZIP / ZINB models, the probability of zero is computed using the
+For NB / ZIP / ZINB models, the zero probability is computed using the
 corresponding distribution (including zero-inflation when applicable).
 
 \strong{Important:}
 \itemize{
-  \item \code{p_detect} is a deterministic function of the abundance model.
+  \item \code{p_detect} is computed directly from the abundance model.
   \item It is not an independently estimated parameter.
+  \item It is stored on the natural scale (not as a linear predictor).
 }
 }
 \section{EM-like algorithm}{
@@ -139,6 +141,7 @@ Each iteration performs:
   \item Fit occupancy model using current \eqn{Z}
   \item Fit capture model conditional on \eqn{Z = 1}
   \item Fit abundance model conditional on \eqn{A = 1}
+  \item Compute detection probability from abundance model
   \item Update \eqn{A} using capture + abundance probabilities
   \item Update \eqn{Z} using capture + abundance probabilities
 }
@@ -146,18 +149,22 @@ Each iteration performs:
 
 \section{Uncertainty estimation}{
 
-Uncertainty is propagated by simulation:
+Uncertainty is propagated via simulation for:
 
 \itemize{
-  \item Linear predictors (\eqn{\eta}) are treated as:
-  \deqn{\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)}
-
-  \item Simulated values are transformed to the natural scale
-  \item Empirical summaries (mean, median, 95\% intervals) are computed
+  \item Occupancy (\eqn{\psi})
+  \item Capture probability
+  \item Abundance (\eqn{\lambda})
 }
 
-This approach avoids reliance on asymptotic (Wald) intervals and correctly
-accounts for link-function nonlinearity.
+using:
+
+\deqn{\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)}
+
+followed by transformation to the natural scale.
+
+Detection probability (\code{p_detect}) is summarized empirically across iterations,
+as it is a deterministic transformation of the abundance model.
 }
 
 \section{Model features}{
@@ -174,9 +181,9 @@ accounts for link-function nonlinearity.
 \section{Caveats}{
 
 \itemize{
-  \item This is an approximate EM-like method, not a full joint likelihood model
+  \item Approximate EM-like method (not a full joint likelihood)
   \item AIC values are component-wise diagnostics only
-  \item Detection from abundance depends on distributional assumptions
+  \item Detection depends on abundance distribution assumptions
   \item Large \eqn{\lambda} values imply detection saturation (\eqn{p_{\text{detect}} \approx 1})
 }
 }

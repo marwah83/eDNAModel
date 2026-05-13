@@ -449,12 +449,12 @@ FitModel <- function(
   # ------------------------------------------------------------
 
   fam <- switch(
-    abundance_family,
-    poisson = stats::poisson(),
-    nbinom  = glmmTMB::nbinom2(),
-    zip     = stats::poisson(),
-    zinb    = glmmTMB::nbinom2()
-  )
+  abundance_family,
+  poisson = poisson(),
+  nbinom  = nbinom2(),
+  zip     = poisson(),
+  zinb    = nbinom2()
+)
 
   zi_formula <- if (abundance_family %in% c("zip", "zinb")) ~1 else ~0
 

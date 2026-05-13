@@ -490,7 +490,7 @@ FitModel <- function(
       poisson = stats::dpois(0, lambda = mu),
       zip     = stats::dpois(0, lambda = mu),
       nbinom  = {
-        theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+        theta <- tryCatch(glmmTMB::sigma(fit), error = function(e) NA_real_)
         if (!is.finite(theta) || theta <= 0) {
           stats::dpois(0, lambda = mu)
         } else {

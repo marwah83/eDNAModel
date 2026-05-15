@@ -34,17 +34,25 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   physeq <- phyloseq::phyloseq(otu_tab, sample_tab)
 
   # ------------------------------------------------------------
-  # Run model (simplified + stable specification)
+  # Run 3-level model
   # ------------------------------------------------------------
   out <- suppressWarnings(
     FitModel_gllvm(
       phyloseq = physeq,
       site_col = "Site",
+      sample_col = "Name",
+      replicate_col = "Replicate",
+
       abundance_rhs = (1 | OTU) + (1 | Name / OTU),
-      occupancy_covars = NULL,   # <-- FIXED (must be site-level)
+
+      capture_formula = a_sim ~ 1 + (1 | OTU),
+
+      occupancy_covars = NULL,
       abundance_family = "poisson",
+
       min_species_sum = 1,
       min_detection_replicates = 1,
+
       n_iter = 3,
       burn_in = 1,
       num_lv_c = 1
@@ -57,10 +65,12 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_type(out, "list")
 
   expected_components <- c(
-    "summary", "psi_list", "lambda_list", "p_detect_list",
-    "occupancy_models", "abundance_models", "reduced_data",
+    "summary",
+    "psi_list", "capture_list", "lambda_list", "p_detect_list",
+    "occupancy_models", "capture_models", "abundance_models",
+    "site_data", "sample_data", "long_df",
     "lv_sites", "lv_species", "mean_lv_sites", "mean_lv_species",
-    "filter_summary"   # <-- FIXED
+    "filter_summary"
   )
 
   expect_true(all(expected_components %in% names(out)))
@@ -76,13 +86,30 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   # ------------------------------------------------------------
   # Iteration-related checks
   # ------------------------------------------------------------
-  expect_length(out$psi_list, 2)       # n_iter - burn_in = 2
-  expect_length(out$lambda_list, 2)
-  expect_length(out$p_detect_list, 2)
+  expected_length <- 3 - 1  # n_iter - burn_in
+
+  expect_length(out$psi_list, expected_length)
+  expect_length(out$capture_list, expected_length)
+  expect_length(out$lambda_list, expected_length)
+  expect_length(out$p_detect_list, expected_length)
 
   # ------------------------------------------------------------
   # Summary columns exist
   # ------------------------------------------------------------
-  expect_true(all(c("psi_mean", "lambda_mean", "p_detect_mean") %in% names(out$summary)))
+  expect_true(all(c(
+    "psi_mean",
+    "capture_mean",
+    "lambda_mean",
+    "p_detect_mean"
+  ) %in% names(out$summary)))
+
+  # ------------------------------------------------------------
+  # Probability sanity checks
+  # ------------------------------------------------------------
+  expect_true(all(out$summary$psi_mean >= 0 & out$summary$psi_mean <= 1, na.rm = TRUE))
+  expect_true(all(out$summary$capture_mean >= 0 & out$summary$capture_mean <= 1, na.rm = TRUE))
+  expect_true(all(out$summary$p_detect_mean >= 0 & out$summary$p_detect_mean <= 1, na.rm = TRUE))
+
+  expect_true(all(out$summary$lambda_mean >= 0, na.rm = TRUE))
 
 })

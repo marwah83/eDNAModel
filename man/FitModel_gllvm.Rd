@@ -33,17 +33,16 @@ FitModel_gllvm(
 
 \item{replicate_col}{Character or \code{NULL} identifying PCR replicates (abundance level).}
 
-\item{otu_col}{Character string identifying taxa/species column (replaces hardcoded \code{"OTU"}).}
+\item{otu_col}{Character string identifying taxa/species column.}
 
-\item{count_col}{Character string identifying the response/count variable
-(replaces hardcoded \code{"y"}).}
+\item{count_col}{Character string identifying the response/count variable.}
 
 \item{abundance_rhs}{Right-hand side of the abundance model, e.g.
 \code{(1 | taxon)} or \code{offset(log(total_reads)) + (1 | taxon)}.}
 
 \item{capture_formula}{Formula for capture model (response must be \code{a_sim}).}
 
-\item{occupancy_covars}{Optional character vector of site-level covariates used in the GLLVM occupancy model.}
+\item{occupancy_covars}{Optional character vector of site-level covariates.}
 
 \item{min_species_sum}{Minimum total count required to retain a taxon.}
 
@@ -77,37 +76,37 @@ A list containing:
   \item{lv_sites, lv_species}{Latent variable coordinates from the GLLVM.}
   \item{mean_lv_sites, mean_lv_species}{Posterior mean latent variables.}
   \item{filter_summary}{Filtering information for retained taxa.}
-  \item{diagnostic_AIC}{Per-iteration model diagnostics (AIC and log-likelihood).}
+  \item{diagnostic_AIC}{Per-iteration model diagnostics.}
 }
 }
 \description{
 This function fits a hierarchical three-level model for eDNA / microbiome data
-stored as a \code{phyloseq} object. The model explicitly separates:
+stored as a \code{phyloseq} object. The model separates:
 }
 \details{
 \itemize{
   \item \strong{Site level (Z)}: true presence/absence of each taxon
   \item \strong{Biological sample level (A)}: capture / detection process
-  \item \strong{PCR replicate level (Y)}: observed counts or measurements
+  \item \strong{PCR replicate level (Y)}: observed counts
 }
 
-Occupancy is modeled at the site-by-taxon level using a binomial Generalized
-Linear Latent Variable Model (GLLVM), while capture and abundance are modeled
-using GLMMs via \code{glmmTMB}.
+Occupancy is modeled at the site-by-taxon level using a binomial
+Generalized Linear Latent Variable Model (GLLVM), while capture and
+abundance are modeled using GLMMs via \code{glmmTMB}.
 
 
 The model defines a three-level hierarchical structure:
 
 \deqn{
-Z_{i,m} \sim \text{Bernoulli}(\psi_{i,m})
+Z_{i,m} \sim \mathrm{Bernoulli}(\psi_{i,m})
 }
 
 \deqn{
-A_{i,j,m} \mid Z_{i,m} \sim \text{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+A_{i,j,m} \mid Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
 }
 
 \deqn{
-Y_{i,j,k,m} \mid A_{i,j,m} \sim \text{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
+Y_{i,j,k,m} \mid A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
 }
 
 where:
@@ -115,7 +114,7 @@ where:
   \item \(i\): site,
   \item \(j\): biological sample,
   \item \(k\): PCR replicate,
-  \item \(m\): taxon (defined by \code{otu_col}).
+  \item \(m\): taxon.
 }
 
 Observed occupancy is defined as:
@@ -126,55 +125,55 @@ z^{obs}_{i,m} = I\left(\max_{j,k} Y_{i,j,k,m} > c\right)
 
 where \(c =\) \code{abundance_threshold}.
 
-The occupancy model uses a GLLVM:
+The occupancy model is:
 
 \deqn{
-\text{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
+\mathrm{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
 }
 
-The capture model is a binomial GLMM:
+The capture model is:
 
 \deqn{
-\text{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
+\mathrm{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
 }
 
-The abundance model defines \(\lambda\), which induces a detection probability:
+The abundance model defines \eqn{\lambda}, which induces a detection probability:
 
 \deqn{
-p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
+p_{\mathrm{detect}} = 1 - P(Y = 0 \mid A = 1)
 }
 
-Internally, detection is computed using the complementary log-log (cloglog) link:
+Detection is computed internally using the complementary log-log link:
 
 \deqn{
 \eta = \log\left(-\log(P(Y = 0))\right)
 }
 
-and then transformed back to the natural scale.
+and transformed back to the natural scale.
 
 \strong{Important:}
 \itemize{
   \item \code{p_detect} is a deterministic function of the abundance model
-  \item No standard error is estimated directly for \code{p_detect}
+  \item No standard error is directly estimated for \code{p_detect}
 }
 }
 \section{EM-like algorithm}{
 
-Each iteration performs:
+The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 \enumerate{
   \item Fit GLLVM occupancy model for \(Z\)
-  \item Fit GLMM capture model for \(A\) conditional on \(Z=1\)
-  \item Fit GLMM abundance model for \(Y\) conditional on \(A=1\)
-  \item Update latent \(A\) using capture and abundance probabilities
-  \item Update latent \(Z\) using capture and abundance probabilities
+  \item Fit GLMM capture model for \(A \mid Z = 1\)
+  \item Fit GLMM abundance model for \(Y \mid A = 1\)
+  \item Update latent \(A\) via posterior sampling
+  \item Update latent \(Z\) via posterior sampling
 }
 }
 
 \section{Model features}{
 
 \itemize{
-  \item Fully general: no hard-coded taxon or response column names
-  \item Three-level hierarchical structure (Z → A → Y)
+  \item Fully general (no hard-coded taxon or response names)
+  \item Three-level hierarchy (Z → A → Y)
   \item Latent ecological structure via GLLVM
   \item Flexible abundance families (Poisson, NB, ZIP, ZINB)
   \item Supports offsets (e.g. \code{offset(log(total_reads))})
@@ -184,9 +183,9 @@ Each iteration performs:
 \section{Caveats}{
 
 \itemize{
-  \item Approximate EM-like inference (not full joint likelihood)
-  \item Detection depends on abundance model assumptions
-  \item Large \(\lambda\) implies detection saturation
+  \item Approximate inference (not full joint likelihood)
+  \item Detection depends on abundance model specification
+  \item Large \eqn{\lambda} implies near-certain detection
 }
 }
 

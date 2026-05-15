@@ -9,8 +9,10 @@ FitModel_gllvm(
   site_col,
   sample_col = "Name",
   replicate_col = NULL,
+  otu_col = "OTU",
+  count_col = "y",
   abundance_rhs,
-  capture_formula = a_sim ~ 1 + (1 | OTU),
+  capture_formula = NULL,
   occupancy_covars = NULL,
   min_species_sum = 50,
   min_detection_replicates = 1,
@@ -23,7 +25,7 @@ FitModel_gllvm(
 )
 }
 \arguments{
-\item{phyloseq}{A \code{phyloseq} object containing OTU count data and sample metadata.}
+\item{phyloseq}{A \code{phyloseq} object containing count data and sample metadata.}
 
 \item{site_col}{Character string identifying sites (occupancy level).}
 
@@ -31,16 +33,21 @@ FitModel_gllvm(
 
 \item{replicate_col}{Character or \code{NULL} identifying PCR replicates (abundance level).}
 
+\item{otu_col}{Character string identifying taxa/species column (replaces hardcoded \code{"OTU"}).}
+
+\item{count_col}{Character string identifying the response/count variable
+(replaces hardcoded \code{"y"}).}
+
 \item{abundance_rhs}{Right-hand side of the abundance model, e.g.
-\code{(1 | OTU)} or \code{offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU)}.}
+\code{(1 | taxon)} or \code{offset(log(total_reads)) + (1 | taxon)}.}
 
 \item{capture_formula}{Formula for capture model (response must be \code{a_sim}).}
 
 \item{occupancy_covars}{Optional character vector of site-level covariates used in the GLLVM occupancy model.}
 
-\item{min_species_sum}{Minimum total read count required to retain an OTU.}
+\item{min_species_sum}{Minimum total count required to retain a taxon.}
 
-\item{min_detection_replicates}{Minimum number of detections required per OTU.}
+\item{min_detection_replicates}{Minimum number of detections required per taxon.}
 
 \item{abundance_threshold}{Threshold defining detection (default = 1).}
 
@@ -57,7 +64,7 @@ FitModel_gllvm(
 \value{
 A list containing:
 \describe{
-  \item{summary}{Posterior summaries at the site-by-OTU level for:
+  \item{summary}{Posterior summaries at the site-by-taxon level for:
     occupancy (\code{psi_*}), capture (\code{capture_*}),
     abundance (\code{lambda_*}), and detection (\code{p_detect_*}).}
   \item{capture}{Sample-level capture summaries.}
@@ -67,9 +74,10 @@ A list containing:
   \item{capture_models}{List of fitted GLMM capture models.}
   \item{abundance_models}{List of fitted GLMM abundance models.}
   \item{reduced_data, sample_data, long_df}{Processed hierarchical datasets.}
-  \item{lv_sites, lv_species}{Latent variable coordinates.}
+  \item{lv_sites, lv_species}{Latent variable coordinates from the GLLVM.}
   \item{mean_lv_sites, mean_lv_species}{Posterior mean latent variables.}
-  \item{filter_summary}{OTU filtering information.}
+  \item{filter_summary}{Filtering information for retained taxa.}
+  \item{diagnostic_AIC}{Per-iteration model diagnostics (AIC and log-likelihood).}
 }
 }
 \description{
@@ -78,12 +86,12 @@ stored as a \code{phyloseq} object. The model explicitly separates:
 }
 \details{
 \itemize{
-  \item \strong{Site level (Z)}: true OTU presence/absence
+  \item \strong{Site level (Z)}: true presence/absence of each taxon
   \item \strong{Biological sample level (A)}: capture / detection process
-  \item \strong{PCR replicate level (Y)}: observed read counts
+  \item \strong{PCR replicate level (Y)}: observed counts or measurements
 }
 
-Occupancy is modeled at the site-by-OTU level using a binomial Generalized
+Occupancy is modeled at the site-by-taxon level using a binomial Generalized
 Linear Latent Variable Model (GLLVM), while capture and abundance are modeled
 using GLMMs via \code{glmmTMB}.
 
@@ -104,10 +112,10 @@ Y_{i,j,k,m} \mid A_{i,j,m} \sim \text{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
 
 where:
 \itemize{
-  \item \(i\): site
-  \item \(j\): biological sample
-  \item \(k\): PCR replicate
-  \item \(m\): OTU
+  \item \(i\): site,
+  \item \(j\): biological sample,
+  \item \(k\): PCR replicate,
+  \item \(m\): taxon (defined by \code{otu_col}).
 }
 
 Observed occupancy is defined as:
@@ -116,7 +124,7 @@ Observed occupancy is defined as:
 z^{obs}_{i,m} = I\left(\max_{j,k} Y_{i,j,k,m} > c\right)
 }
 
-where \(c\) is the \code{abundance_threshold}.
+where \(c =\) \code{abundance_threshold}.
 
 The occupancy model uses a GLLVM:
 
@@ -157,30 +165,18 @@ Each iteration performs:
   \item Fit GLLVM occupancy model for \(Z\)
   \item Fit GLMM capture model for \(A\) conditional on \(Z=1\)
   \item Fit GLMM abundance model for \(Y\) conditional on \(A=1\)
-  \item Update \(A\) using capture and abundance probabilities
-  \item Update \(Z\) using capture and abundance probabilities
+  \item Update latent \(A\) using capture and abundance probabilities
+  \item Update latent \(Z\) using capture and abundance probabilities
 }
-}
-
-\section{Uncertainty estimation}{
-
-Uncertainty is propagated using simulation on the link scale:
-
-\deqn{
-\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)
-}
-
-and transformed to the natural scale. For detection, uncertainty is propagated
-through the abundance model without explicit SE.
 }
 
 \section{Model features}{
 
 \itemize{
-  \item Full 3-level eDNA hierarchy (Z → A → Y)
+  \item Fully general: no hard-coded taxon or response column names
+  \item Three-level hierarchical structure (Z → A → Y)
   \item Latent ecological structure via GLLVM
-  \item Flexible GLMMs for capture and abundance
-  \item Supports Poisson, NB, ZIP, ZINB families
+  \item Flexible abundance families (Poisson, NB, ZIP, ZINB)
   \item Supports offsets (e.g. \code{offset(log(total_reads))})
 }
 }
@@ -188,7 +184,7 @@ through the abundance model without explicit SE.
 \section{Caveats}{
 
 \itemize{
-  \item Approximate EM-like inference (not a full joint likelihood)
+  \item Approximate EM-like inference (not full joint likelihood)
   \item Detection depends on abundance model assumptions
   \item Large \(\lambda\) implies detection saturation
 }
@@ -201,10 +197,10 @@ fit <- FitModel_gllvm(
   site_col = "site_month",
   sample_col = "Name",
   replicate_col = "Replicate",
-
-  abundance_rhs = (1 | OTU),
-  capture_formula = a_sim ~ 1 + (1 | OTU),
-
+  otu_col = "Taxon",
+  count_col = "count",
+  abundance_rhs = (1 | Taxon),
+  capture_formula = a_sim ~ 1 + (1 | Taxon),
   abundance_family = "nbinom",
   n_iter = 10,
   burn_in = 2

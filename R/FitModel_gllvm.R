@@ -104,7 +104,6 @@
 #'
 #' @import dplyr
 #' @import tidyr
-#' @importFrom stats as.formula deparse dpois dnbinom plogis predict qlogis quantile rbinom relevel sd sigma
 #' @importFrom gllvm gllvm
 #' @importFrom glmmTMB glmmTMB nbinom2
 #' @importFrom reshape2 melt acast

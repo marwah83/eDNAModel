@@ -130,8 +130,8 @@
 FitModel_gllvm <- function(
   phyloseq,
   site_col,
-  species_col = "OTU",        # replaces hardcoded 'OTU'
-  response_col = "y",         # replaces hardcoded 'y'
+  species_col = "OTU",        
+  response_col = "y",         
   sample_col = "Name",
   replicate_col = NULL,
   abundance_rhs,

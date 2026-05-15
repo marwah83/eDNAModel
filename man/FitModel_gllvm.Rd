@@ -140,7 +140,7 @@ The capture model is:
 The abundance model defines \eqn{\lambda}, which induces a detection probability:
 
 \deqn{
-p_{\mathrm{detect}} = 1 - P(Y = 0 \mid A = 1)
+p_{\mathrm{detect}} = 1 - P(Y = 0 | A = 1)
 }
 
 Detection is computed internally using the complementary log-log link:
@@ -162,8 +162,8 @@ and transformed back to the natural scale.
 The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 \enumerate{
   \item Fit GLLVM occupancy model for \(Z\)
-  \item Fit GLMM capture model for \(A \mid Z = 1\)
-  \item Fit GLMM abundance model for \(Y \mid A = 1\)
+  \item Fit GLMM capture model for \(A | Z = 1\)
+  \item Fit GLMM abundance model for \(Y | A = 1\)
   \item Update latent \(A\) via posterior sampling
   \item Update latent \(Z\) via posterior sampling
 }

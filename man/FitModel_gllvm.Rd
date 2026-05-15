@@ -138,7 +138,7 @@ The capture model is a binomial GLMM:
 \text{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
 }
 
-The abundance model defines \eqn{\lambda}, which induces a detection probability:
+The abundance model defines \(\lambda\), which induces a detection probability:
 
 \deqn{
 p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
@@ -186,7 +186,7 @@ Each iteration performs:
 \itemize{
   \item Approximate EM-like inference (not full joint likelihood)
   \item Detection depends on abundance model assumptions
-  \item Large \eqn{\lambda} implies detection saturation
+  \item Large \(\lambda\) implies detection saturation
 }
 }
 

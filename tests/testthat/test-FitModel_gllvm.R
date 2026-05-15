@@ -5,19 +5,19 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   skip_if_not_installed("phyloseq")
 
   # ----------------------------
-  # Data
+  # Synthetic data
   # ----------------------------
-  otu_mat <- matrix(
+  species_mat <- matrix(
     c(5,2,3,4,6,1,
       1,4,4,3,3,2,
       3,1,2,2,5,4),
     nrow = 3, byrow = TRUE
   )
 
-  rownames(otu_mat) <- paste0("OTU", 1:3)
-  colnames(otu_mat) <- paste0("S", 1:6)
+  rownames(species_mat) <- paste0("Sp", 1:3)
+  colnames(species_mat) <- paste0("S", 1:6)
 
-  otu_tab <- phyloseq::otu_table(otu_mat, taxa_are_rows = TRUE)
+  otu_tab <- phyloseq::otu_table(species_mat, taxa_are_rows = TRUE)
 
   sample_df <- data.frame(
     Site      = rep(c("Loc1","Loc2","Loc3"), each = 2),
@@ -32,17 +32,19 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Run model (FIXED: add sample_col + capture_formula)
+  # Run model (use species_col & response_col)
   # ----------------------------
   out <- suppressWarnings(
     FitModel_gllvm(
       phyloseq = physeq,
       site_col = "Site",
+      species_col = "Sp",          # first level of taxonomy / rows
+      response_col = "y",          # counts column created internally
       sample_col = "Name",
       replicate_col = "Replicate",
 
-      abundance_rhs = (1 | OTU) + (1 | Name / OTU),
-      capture_formula = a_sim ~ 1 + (1 | OTU),
+      abundance_rhs = (1 | Sp) + (1 | Name / Sp),
+      capture_formula = a_sim ~ 1 + (1 | Sp),
 
       occupancy_covars = NULL,
       abundance_family = "poisson",
@@ -58,7 +60,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Structure (UPDATED for 3-level model)
+  # Expected structure (3-level model)
   # ----------------------------
   expected_components <- c(
     "summary",
@@ -108,7 +110,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_length(out$p_detect_list, expected_length)
 
   # ----------------------------
-  # Summary columns (UPDATED)
+  # Summary columns
   # ----------------------------
   expect_true(all(c(
     "psi_mean",
@@ -116,7 +118,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "p_detect_mean"
   ) %in% names(out$summary)))
 
-  # capture is NOT inside summary anymore
+  # capture summaries separate from summary
   expect_true(all(c(
     "capture_mean",
     "capture_median",
@@ -125,10 +127,9 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   ) %in% names(out$capture)))
 
   # ----------------------------
-  # Sanity checks
+  # Sanity checks: valid probability ranges
   # ----------------------------
   expect_true(all(out$summary$psi_mean >= 0 & out$summary$psi_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$p_detect_mean >= 0 & out$summary$p_detect_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$lambda_mean >= 0, na.rm = TRUE))
-
 })

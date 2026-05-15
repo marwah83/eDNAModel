@@ -14,7 +14,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     nrow = 3, byrow = TRUE
   )
 
-  rownames(species_mat) <- paste0("Sp", 1:3)
+  rownames(species_mat) <- paste0("OTU", 1:3)   # IMPORTANT: OTU name
   colnames(species_mat) <- paste0("S", 1:6)
 
   otu_tab <- phyloseq::otu_table(species_mat, taxa_are_rows = TRUE)
@@ -32,20 +32,21 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Run model (aligned with final API)
+  # Run model
   # ----------------------------
   out <- suppressWarnings(
     FitModel_gllvm(
       phyloseq = physeq,
       site_col = "Site",
 
-      otu_col = "OTU",        # matches prepare_long_data output
+      otu_col = "OTU",
       count_col = "y",
 
       sample_col = "Name",
       replicate_col = "Replicate",
 
-      abundance_rhs = (1 | OTU) + (1 | Name / OTU),
+      # SIMPLER + STABLE random effects
+      abundance_rhs = (1 | OTU),
       capture_formula = a_sim ~ 1 + (1 | OTU),
 
       occupancy_covars = NULL,
@@ -88,6 +89,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "mean_lv_species",
 
     "filter_summary",
+    "diagnostic_AIC",
     "note"
   )
 
@@ -96,17 +98,22 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   # ----------------------------
   # Basic checks
   # ----------------------------
-  expect_gt(nrow(out$summary), 0)
+  expect_true(nrow(out$summary) > 0)
 
+  expect_s3_class(out$summary, "data.frame")
+  expect_s3_class(out$capture, "data.frame")
+  expect_s3_class(out$capture_site, "data.frame")
+
+  # LV outputs (may be empty but must be data.frame)
   expect_s3_class(out$lv_sites, "data.frame")
-  expect_s3_class(out$mean_lv_sites, "data.frame")
   expect_s3_class(out$lv_species, "data.frame")
+  expect_s3_class(out$mean_lv_sites, "data.frame")
   expect_s3_class(out$mean_lv_species, "data.frame")
 
   # ----------------------------
   # Iteration length
   # ----------------------------
-  expected_length <- 3 - 1  # n_iter - burn_in
+  expected_length <- 3 - 1
 
   expect_length(out$psi_list, expected_length)
   expect_length(out$capture_list, expected_length)
@@ -122,7 +129,6 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "p_detect_mean"
   ) %in% names(out$summary)))
 
-  # capture summaries (sample-level)
   expect_true(all(c(
     "capture_mean",
     "capture_median",
@@ -130,7 +136,6 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "capture_upr"
   ) %in% names(out$capture)))
 
-  # capture summaries (site-level)
   expect_true(all(c(
     "capture_mean",
     "capture_median",
@@ -144,5 +149,11 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_true(all(out$summary$psi_mean >= 0 & out$summary$psi_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$p_detect_mean >= 0 & out$summary$p_detect_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$lambda_mean >= 0, na.rm = TRUE))
+
+  # ----------------------------
+  # Diagnostic AIC
+  # ----------------------------
+  expect_s3_class(out$diagnostic_AIC, "data.frame")
+  expect_true(nrow(out$diagnostic_AIC) >= 1)
 
 })

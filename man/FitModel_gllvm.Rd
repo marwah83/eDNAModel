@@ -102,11 +102,11 @@ Z_{i,m} \sim \mathrm{Bernoulli}(\psi_{i,m})
 }
 
 \deqn{
-A_{i,j,m} | Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+A_{i,j,m} \mid Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
 }
 
 \deqn{
-Y_{i,j,k,m} | A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
+Y_{i,j,k,m} \mid A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
 }
 
 where:
@@ -140,7 +140,7 @@ The capture model is:
 The abundance model defines \eqn{\lambda}, which induces a detection probability:
 
 \deqn{
-p_{\mathrm{detect}} = 1 - P(Y = 0 | A = 1)
+p_{\mathrm{detect}} = 1 - P(Y = 0 \mid A = 1)
 }
 
 Detection is computed internally using the complementary log-log link:
@@ -162,8 +162,8 @@ and transformed back to the natural scale.
 The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 \enumerate{
   \item Fit GLLVM occupancy model for \(Z\)
-  \item Fit GLMM capture model for \(A | Z = 1\)
-  \item Fit GLMM abundance model for \(Y | A = 1\)
+  \item Fit GLMM capture model for \(A \mid Z = 1\)
+  \item Fit GLMM abundance model for \(Y \mid A = 1\)
   \item Update latent \(A\) via posterior sampling
   \item Update latent \(Z\) via posterior sampling
 }

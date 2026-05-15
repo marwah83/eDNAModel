@@ -1,29 +1,28 @@
 #' Fit a Multispecies 3-Level Occupancy–Detection–Abundance Model using GLLVM and GLMM
 #'
 #' This function fits a hierarchical three-level model for eDNA / microbiome data
-#' stored as a \code{phyloseq} object. The model explicitly separates:
+#' stored as a \code{phyloseq} object. The model separates:
 #'
 #' \itemize{
 #'   \item \strong{Site level (Z)}: true presence/absence of each taxon
 #'   \item \strong{Biological sample level (A)}: capture / detection process
-#'   \item \strong{PCR replicate level (Y)}: observed counts or measurements
+#'   \item \strong{PCR replicate level (Y)}: observed counts
 #' }
 #'
-#' Occupancy is modeled at the site-by-taxon level using a binomial Generalized
-#' Linear Latent Variable Model (GLLVM), while capture and abundance are modeled
-#' using GLMMs via \code{glmmTMB}.
+#' Occupancy is modeled at the site-by-taxon level using a binomial
+#' Generalized Linear Latent Variable Model (GLLVM), while capture and
+#' abundance are modeled using GLMMs via \code{glmmTMB}.
 #'
 #' @param phyloseq A \code{phyloseq} object containing count data and sample metadata.
 #' @param site_col Character string identifying sites (occupancy level).
 #' @param sample_col Character string identifying biological samples (capture level).
 #' @param replicate_col Character or \code{NULL} identifying PCR replicates (abundance level).
-#' @param otu_col Character string identifying taxa/species column (replaces hardcoded \code{"OTU"}).
-#' @param count_col Character string identifying the response/count variable
-#'   (replaces hardcoded \code{"y"}).
+#' @param otu_col Character string identifying taxa/species column.
+#' @param count_col Character string identifying the response/count variable.
 #' @param abundance_rhs Right-hand side of the abundance model, e.g.
 #'   \code{(1 | taxon)} or \code{offset(log(total_reads)) + (1 | taxon)}.
 #' @param capture_formula Formula for capture model (response must be \code{a_sim}).
-#' @param occupancy_covars Optional character vector of site-level covariates used in the GLLVM occupancy model.
+#' @param occupancy_covars Optional character vector of site-level covariates.
 #' @param min_species_sum Minimum total count required to retain a taxon.
 #' @param min_detection_replicates Minimum number of detections required per taxon.
 #' @param abundance_threshold Threshold defining detection (default = 1).
@@ -48,22 +47,22 @@
 #'   \item{lv_sites, lv_species}{Latent variable coordinates from the GLLVM.}
 #'   \item{mean_lv_sites, mean_lv_species}{Posterior mean latent variables.}
 #'   \item{filter_summary}{Filtering information for retained taxa.}
-#'   \item{diagnostic_AIC}{Per-iteration model diagnostics (AIC and log-likelihood).}
+#'   \item{diagnostic_AIC}{Per-iteration model diagnostics.}
 #' }
 #'
 #' @details
 #' The model defines a three-level hierarchical structure:
 #'
 #' \deqn{
-#' Z_{i,m} \sim \text{Bernoulli}(\psi_{i,m})
+#' Z_{i,m} \sim \mathrm{Bernoulli}(\psi_{i,m})
 #' }
 #'
 #' \deqn{
-#' A_{i,j,m} \mid Z_{i,m} \sim \text{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+#' A_{i,j,m} \mid Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
 #' }
 #'
 #' \deqn{
-#' Y_{i,j,k,m} \mid A_{i,j,m} \sim \text{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
+#' Y_{i,j,k,m} \mid A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
 #' }
 #'
 #' where:
@@ -71,7 +70,7 @@
 #'   \item \(i\): site,
 #'   \item \(j\): biological sample,
 #'   \item \(k\): PCR replicate,
-#'   \item \(m\): taxon (defined by \code{otu_col}).
+#'   \item \(m\): taxon.
 #' }
 #'
 #' Observed occupancy is defined as:
@@ -82,52 +81,52 @@
 #'
 #' where \(c =\) \code{abundance_threshold}.
 #'
-#' The occupancy model uses a GLLVM:
+#' The occupancy model is:
 #'
 #' \deqn{
-#' \text{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
+#' \mathrm{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
 #' }
 #'
-#' The capture model is a binomial GLMM:
+#' The capture model is:
 #'
 #' \deqn{
-#' \text{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
+#' \mathrm{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
 #' }
 #'
-#' The abundance model defines \(\lambda\), which induces a detection probability:
+#' The abundance model defines \eqn{\lambda}, which induces a detection probability:
 #'
 #' \deqn{
-#' p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
+#' p_{\mathrm{detect}} = 1 - P(Y = 0 \mid A = 1)
 #' }
 #'
-#' Internally, detection is computed using the complementary log-log (cloglog) link:
+#' Detection is computed internally using the complementary log-log link:
 #'
 #' \deqn{
 #' \eta = \log\left(-\log(P(Y = 0))\right)
 #' }
 #'
-#' and then transformed back to the natural scale.
+#' and transformed back to the natural scale.
 #'
 #' \strong{Important:}
 #' \itemize{
 #'   \item \code{p_detect} is a deterministic function of the abundance model
-#'   \item No standard error is estimated directly for \code{p_detect}
+#'   \item No standard error is directly estimated for \code{p_detect}
 #' }
 #'
 #' @section EM-like algorithm:
-#' Each iteration performs:
+#' The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 #' \enumerate{
 #'   \item Fit GLLVM occupancy model for \(Z\)
-#'   \item Fit GLMM capture model for \(A\) conditional on \(Z=1\)
-#'   \item Fit GLMM abundance model for \(Y\) conditional on \(A=1\)
-#'   \item Update latent \(A\) using capture and abundance probabilities
-#'   \item Update latent \(Z\) using capture and abundance probabilities
+#'   \item Fit GLMM capture model for \(A \mid Z = 1\)
+#'   \item Fit GLMM abundance model for \(Y \mid A = 1\)
+#'   \item Update latent \(A\) via posterior sampling
+#'   \item Update latent \(Z\) via posterior sampling
 #' }
 #'
 #' @section Model features:
 #' \itemize{
-#'   \item Fully general: no hard-coded taxon or response column names
-#'   \item Three-level hierarchical structure (Z → A → Y)
+#'   \item Fully general (no hard-coded taxon or response names)
+#'   \item Three-level hierarchy (Z → A → Y)
 #'   \item Latent ecological structure via GLLVM
 #'   \item Flexible abundance families (Poisson, NB, ZIP, ZINB)
 #'   \item Supports offsets (e.g. \code{offset(log(total_reads))})
@@ -135,9 +134,9 @@
 #'
 #' @section Caveats:
 #' \itemize{
-#'   \item Approximate EM-like inference (not full joint likelihood)
-#'   \item Detection depends on abundance model assumptions
-#'   \item Large \(\lambda\) implies detection saturation
+#'   \item Approximate inference (not full joint likelihood)
+#'   \item Detection depends on abundance model specification
+#'   \item Large \eqn{\lambda} implies near-certain detection
 #' }
 #'
 #' @examples
@@ -193,6 +192,20 @@ FitModel_gllvm <- function(
 
   bt <- function(x) paste0("`", x, "`")
 
+  to_factor_cols <- function(df, cols) {
+    cols <- unique(stats::na.omit(cols))
+    for (col in cols) {
+      if (col %in% names(df)) {
+        df[[col]] <- as.factor(as.character(df[[col]]))
+      }
+    }
+    df
+  }
+
+  get_formula_vars <- function(formula, response) {
+    setdiff(all.vars(formula), response)
+  }
+
   abundance_rhs_expr <- substitute(abundance_rhs)
   abundance_rhs_txt <- paste(deparse(abundance_rhs_expr), collapse = " ")
 
@@ -206,20 +219,6 @@ FitModel_gllvm <- function(
       paste("a_sim ~ 1 + (1 |", bt(otu_col), ")"),
       env = parent.frame()
     )
-  }
-
-  to_factor_cols <- function(df, cols) {
-    cols <- unique(stats::na.omit(cols))
-    for (col in cols) {
-      if (col %in% names(df)) {
-        df[[col]] <- as.factor(as.character(df[[col]]))
-      }
-    }
-    df
-  }
-
-  get_formula_vars <- function(formula, response) {
-    setdiff(all.vars(formula), response)
   }
 
   prep <- prepare_long_data(
@@ -336,22 +335,13 @@ FitModel_gllvm <- function(
   site_keys <- c(site_col, otu_col)
   sample_keys <- c(site_col, sample_col, otu_col)
 
-  pcr_keys <- c(site_col, sample_col, otu_col)
-
-  if (!is.null(replicate_col) && replicate_col %in% names(long_df)) {
-    pcr_keys <- c(site_col, sample_col, replicate_col, otu_col)
-  }
-
   site_keep_vars <- intersect(occupancy_covars, names(long_df))
 
   reduced_data <- long_df |>
     dplyr::group_by(dplyr::across(dplyr::all_of(site_keys))) |>
     dplyr::summarise(
       z_obs = as.integer(any(.data[[count_col]] > abundance_threshold)),
-      dplyr::across(
-        dplyr::all_of(site_keep_vars),
-        ~ dplyr::first(.x)
-      ),
+      dplyr::across(dplyr::all_of(site_keep_vars), ~ dplyr::first(.x)),
       .groups = "drop"
     ) |>
     dplyr::mutate(z_sim = .data$z_obs)
@@ -366,10 +356,7 @@ FitModel_gllvm <- function(
     dplyr::group_by(dplyr::across(dplyr::all_of(sample_keys))) |>
     dplyr::summarise(
       a_obs = as.integer(any(.data[[count_col]] > abundance_threshold)),
-      dplyr::across(
-        dplyr::all_of(sample_keep_vars),
-        ~ dplyr::first(.x)
-      ),
+      dplyr::across(dplyr::all_of(sample_keep_vars), ~ dplyr::first(.x)),
       .groups = "drop"
     ) |>
     dplyr::mutate(a_sim = .data$a_obs)
@@ -380,19 +367,15 @@ FitModel_gllvm <- function(
     response <- all.vars(formula)[1]
 
     if (response != expected_response) {
-      stop(
-        model_name, " formula response must be '", expected_response,
-        "', but got '", response, "'."
-      )
+      stop(model_name, " formula response must be '", expected_response,
+           "', but got '", response, "'.")
     }
 
     missing_vars <- setdiff(all.vars(formula), names(data))
 
     if (length(missing_vars) > 0) {
-      stop(
-        "Missing variables in ", model_name, " formula: ",
-        paste(missing_vars, collapse = ", ")
-      )
+      stop("Missing variables in ", model_name, " formula: ",
+           paste(missing_vars, collapse = ", "))
     }
 
     invisible(TRUE)
@@ -460,6 +443,39 @@ FitModel_gllvm <- function(
     pmin(pmax(p0, 1e-12), 1)
   }
 
+  ## ------------------------------------------------------------
+  ## Precompute site x OTU template and occupancy covariates once
+  ## ------------------------------------------------------------
+
+  z_template <- reshape2::acast(
+    reduced_data,
+    stats::as.formula(paste(bt(site_col), "~", bt(otu_col))),
+    value.var = "z_sim",
+    fill = 0
+  )
+
+  z_sites <- rownames(z_template)
+  z_otus  <- colnames(z_template)
+
+  cov_cols <- unique(c(site_col, occupancy_covars))
+
+  cov_df <- reduced_data |>
+    dplyr::select(dplyr::all_of(cov_cols)) |>
+    dplyr::distinct()
+
+  cov_df[[site_col]] <- as.character(cov_df[[site_col]])
+  cov_df <- to_factor_cols(cov_df, occupancy_covars)
+  cov_df <- cov_df[match(z_sites, cov_df[[site_col]]), , drop = FALSE]
+
+  X_cov <- if (!is.null(occupancy_covars) && length(occupancy_covars) > 0) {
+    stats::model.matrix(
+      ~ .,
+      data = cov_df[, occupancy_covars, drop = FALSE]
+    )[, -1, drop = FALSE]
+  } else {
+    NULL
+  }
+
   psi_list <- vector("list", n_iter)
   capture_list <- vector("list", n_iter)
   lambda_list <- vector("list", n_iter)
@@ -483,36 +499,18 @@ FitModel_gllvm <- function(
   for (i in seq_len(n_iter)) {
 
     if (verbose) message("Iteration ", i)
+    t_iter <- Sys.time()
 
-    reduced_data[[site_col]] <- as.character(reduced_data[[site_col]])
-    long_df[[site_col]] <- as.character(long_df[[site_col]])
+    ## Update z_matrix without rebuilding acast
+    z_matrix <- z_template
+    z_matrix[,] <- 0
 
-    z_matrix <- reshape2::acast(
-      reduced_data,
-      stats::as.formula(paste(bt(site_col), "~", bt(otu_col))),
-      value.var = "z_sim",
-      fill = 0
+    idx <- cbind(
+      match(as.character(reduced_data[[site_col]]), z_sites),
+      match(as.character(reduced_data[[otu_col]]), z_otus)
     )
 
-    z_sites <- rownames(z_matrix)
-
-    cov_cols <- unique(c(site_col, occupancy_covars))
-
-    cov_df <- reduced_data |>
-      dplyr::select(dplyr::all_of(cov_cols)) |>
-      dplyr::distinct()
-
-    cov_df <- to_factor_cols(cov_df, occupancy_covars)
-    cov_df <- cov_df[match(z_sites, cov_df[[site_col]]), , drop = FALSE]
-
-    X_cov <- if (!is.null(occupancy_covars) && length(occupancy_covars) > 0) {
-      stats::model.matrix(
-        ~ .,
-        data = cov_df[, occupancy_covars, drop = FALSE]
-      )[, -1, drop = FALSE]
-    } else {
-      NULL
-    }
+    z_matrix[idx] <- reduced_data$z_sim
 
     model_occupancy <- tryCatch(
       gllvm::gllvm(
@@ -521,23 +519,44 @@ FitModel_gllvm <- function(
         family = "binomial",
         num.lv = num_lv_c
       ),
-      error = function(e) NULL
+      error = function(e) {
+        message("GLLVM failed at iteration ", i, ": ", e$message)
+        NULL
+      }
     )
 
     if (is.null(model_occupancy)) next
 
     occupancy_models[[i]] <- model_occupancy
 
-    lv_sites <- as.data.frame(model_occupancy$lvs)
-    colnames(lv_sites) <- paste0("LV", seq_len(ncol(lv_sites)))
-    lv_sites[[site_col]] <- rownames(model_occupancy$lvs)
-    lv_sites$Iteration <- i
+    ## Safe latent variables: works also when num_lv_c = 0
+    if (!is.null(model_occupancy$lvs) &&
+        length(model_occupancy$lvs) > 0 &&
+        ncol(as.data.frame(model_occupancy$lvs)) > 0) {
 
-    theta_mat <- as.matrix(model_occupancy$params$theta)
-    lv_species <- as.data.frame(theta_mat)
-    colnames(lv_species) <- paste0("LV", seq_len(ncol(lv_species)))
-    lv_species[[otu_col]] <- rownames(theta_mat)
-    lv_species$Iteration <- i
+      lv_sites <- as.data.frame(model_occupancy$lvs)
+      colnames(lv_sites) <- paste0("LV", seq_len(ncol(lv_sites)))
+      lv_sites[[site_col]] <- rownames(model_occupancy$lvs)
+      lv_sites$Iteration <- i
+
+    } else {
+      lv_sites <- data.frame()
+    }
+
+    if (!is.null(model_occupancy$params$theta) &&
+        length(model_occupancy$params$theta) > 0 &&
+        ncol(as.matrix(model_occupancy$params$theta)) > 0) {
+
+      theta_mat <- as.matrix(model_occupancy$params$theta)
+
+      lv_species <- as.data.frame(theta_mat)
+      colnames(lv_species) <- paste0("LV", seq_len(ncol(lv_species)))
+      lv_species[[otu_col]] <- rownames(theta_mat)
+      lv_species$Iteration <- i
+
+    } else {
+      lv_species <- data.frame()
+    }
 
     lv_sites_list[[i]] <- lv_sites
     lv_species_list[[i]] <- lv_species
@@ -578,7 +597,10 @@ FitModel_gllvm <- function(
         data = capture_fit_data,
         family = stats::binomial()
       ),
-      error = function(e) NULL
+      error = function(e) {
+        message("Capture model failed at iteration ", i, ": ", e$message)
+        NULL
+      }
     )
 
     if (is.null(cap_fit)) next
@@ -620,21 +642,22 @@ FitModel_gllvm <- function(
         family = abundance_glmm_family,
         ziformula = zi_formula
       ),
-      error = function(e) NULL
+      error = function(e) {
+        message("Abundance model failed at iteration ", i, ": ", e$message)
+        NULL
+      }
     )
 
     if (is.null(model_abundance)) next
 
     abundance_models[[i]] <- model_abundance
 
-    lambda_pred <- stats::predict(
+    lambda_eta <- as.numeric(stats::predict(
       model_abundance,
       type = "link",
       newdata = long_df,
       allow.new.levels = TRUE
-    )
-
-    lambda_eta <- as.numeric(lambda_pred)
+    ))
 
     lambda_list[[i]] <- data.frame(
       long_df[site_keys],
@@ -687,7 +710,7 @@ FitModel_gllvm <- function(
         sample_data$p0_sample[zero_sample]
 
       posterior_a <- numerator_a / pmax(denominator_a, 1e-12)
-      posterior_a <- pmin(pmax(posterior_a, 0.001), 0.999)
+      posterior_a <- pmin(pmax(posterior_a, 1e-4), 1 - 1e-4)
 
       sample_data$a_sim[zero_sample] <- stats::rbinom(
         n = length(zero_sample),
@@ -740,7 +763,7 @@ FitModel_gllvm <- function(
         z_merge$p0_site[zero_indices]
 
       posterior_z <- numerator_z / pmax(denominator_z, 1e-12)
-      posterior_z <- pmin(pmax(posterior_z, 0.001), 0.999)
+      posterior_z <- pmin(pmax(posterior_z, 1e-4), 1 - 1e-4)
 
       reduced_data$z_sim[zero_indices] <- stats::rbinom(
         n = length(zero_indices),
@@ -761,6 +784,14 @@ FitModel_gllvm <- function(
         abundance_logLik = tryCatch(as.numeric(stats::logLik(model_abundance)), error = function(e) NA_real_)
       )
     )
+
+    if (verbose) {
+      message(
+        "Iteration ", i, " finished in ",
+        round(difftime(Sys.time(), t_iter, units = "secs"), 2),
+        " seconds"
+      )
+    }
   }
 
   keep <- seq.int(burn_in + 1, n_iter)
@@ -851,25 +882,27 @@ FitModel_gllvm <- function(
   lv_sites_combined <- dplyr::bind_rows(lv_sites_list[keep])
   lv_species_combined <- dplyr::bind_rows(lv_species_list[keep])
 
-  mean_lv_sites <- lv_sites_combined |>
-    dplyr::group_by(.data[[site_col]]) |>
-    dplyr::summarise(
-      dplyr::across(
-        dplyr::starts_with("LV"),
-        ~ mean(.x, na.rm = TRUE)
-      ),
-      .groups = "drop"
-    )
+  mean_lv_sites <- if (nrow(lv_sites_combined) > 0) {
+    lv_sites_combined |>
+      dplyr::group_by(.data[[site_col]]) |>
+      dplyr::summarise(
+        dplyr::across(dplyr::starts_with("LV"), ~ mean(.x, na.rm = TRUE)),
+        .groups = "drop"
+      )
+  } else {
+    data.frame()
+  }
 
-  mean_lv_species <- lv_species_combined |>
-    dplyr::group_by(.data[[otu_col]]) |>
-    dplyr::summarise(
-      dplyr::across(
-        dplyr::starts_with("LV"),
-        ~ mean(.x, na.rm = TRUE)
-      ),
-      .groups = "drop"
-    )
+  mean_lv_species <- if (nrow(lv_species_combined) > 0) {
+    lv_species_combined |>
+      dplyr::group_by(.data[[otu_col]]) |>
+      dplyr::summarise(
+        dplyr::across(dplyr::starts_with("LV"), ~ mean(.x, na.rm = TRUE)),
+        .groups = "drop"
+      )
+  } else {
+    data.frame()
+  }
 
   list(
     summary = final_summary,
@@ -907,8 +940,8 @@ FitModel_gllvm <- function(
     note = paste(
       "Three-level GLLVM-GLMM model.",
       "Hierarchy: site occupancy Z estimated by gllvm, biological-sample capture A estimated by GLMM,",
-      "and replicate-level abundance Y estimated by GLMM.",
-      "Column names are controlled by otu_col and count_col; no OTU/count column is hard-coded."
+      "and replicate-level abundance Y estimated by GLMM."
     )
   )
 }
+                               

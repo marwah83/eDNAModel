@@ -32,19 +32,21 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Run model (use species_col & response_col)
+  # Run model (aligned with final API)
   # ----------------------------
   out <- suppressWarnings(
     FitModel_gllvm(
       phyloseq = physeq,
       site_col = "Site",
-      species_col = "Sp",          # first level of taxonomy / rows
-      response_col = "y",          # counts column created internally
+
+      otu_col = "OTU",        # matches prepare_long_data output
+      count_col = "y",
+
       sample_col = "Name",
       replicate_col = "Replicate",
 
-      abundance_rhs = (1 | Sp) + (1 | Name / Sp),
-      capture_formula = a_sim ~ 1 + (1 | Sp),
+      abundance_rhs = (1 | OTU) + (1 | Name / OTU),
+      capture_formula = a_sim ~ 1 + (1 | OTU),
 
       occupancy_covars = NULL,
       abundance_family = "poisson",
@@ -60,7 +62,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Expected structure (3-level model)
+  # Expected structure
   # ----------------------------
   expected_components <- c(
     "summary",
@@ -97,6 +99,8 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_gt(nrow(out$summary), 0)
 
   expect_s3_class(out$lv_sites, "data.frame")
+  expect_s3_class(out$mean_lv_sites, "data.frame")
+  expect_s3_class(out$lv_species, "data.frame")
   expect_s3_class(out$mean_lv_species, "data.frame")
 
   # ----------------------------
@@ -118,7 +122,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "p_detect_mean"
   ) %in% names(out$summary)))
 
-  # capture summaries separate from summary
+  # capture summaries (sample-level)
   expect_true(all(c(
     "capture_mean",
     "capture_median",
@@ -126,10 +130,19 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "capture_upr"
   ) %in% names(out$capture)))
 
+  # capture summaries (site-level)
+  expect_true(all(c(
+    "capture_mean",
+    "capture_median",
+    "capture_lwr",
+    "capture_upr"
+  ) %in% names(out$capture_site)))
+
   # ----------------------------
-  # Sanity checks: valid probability ranges
+  # Sanity checks
   # ----------------------------
   expect_true(all(out$summary$psi_mean >= 0 & out$summary$psi_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$p_detect_mean >= 0 & out$summary$p_detect_mean <= 1, na.rm = TRUE))
   expect_true(all(out$summary$lambda_mean >= 0, na.rm = TRUE))
+
 })

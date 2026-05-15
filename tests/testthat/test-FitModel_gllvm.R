@@ -5,19 +5,19 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   skip_if_not_installed("phyloseq")
 
   # ----------------------------
-  # Data
+  # Synthetic data
   # ----------------------------
-  otu_mat <- matrix(
+  species_mat <- matrix(
     c(5,2,3,4,6,1,
       1,4,4,3,3,2,
       3,1,2,2,5,4),
     nrow = 3, byrow = TRUE
   )
 
-  rownames(otu_mat) <- paste0("OTU", 1:3)
-  colnames(otu_mat) <- paste0("S", 1:6)
+  rownames(species_mat) <- paste0("Sp", 1:3)
+  colnames(species_mat) <- paste0("S", 1:6)
 
-  otu_tab <- phyloseq::otu_table(otu_mat, taxa_are_rows = TRUE)
+  otu_tab <- phyloseq::otu_table(species_mat, taxa_are_rows = TRUE)
 
   sample_df <- data.frame(
     Site      = rep(c("Loc1","Loc2","Loc3"), each = 2),
@@ -32,12 +32,16 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Run model (FIXED: add sample_col + capture_formula)
+  # Run model (aligned with final API)
   # ----------------------------
   out <- suppressWarnings(
     FitModel_gllvm(
       phyloseq = physeq,
       site_col = "Site",
+
+      otu_col = "OTU",        # matches prepare_long_data output
+      count_col = "y",
+
       sample_col = "Name",
       replicate_col = "Replicate",
 
@@ -58,7 +62,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   )
 
   # ----------------------------
-  # Structure (UPDATED for 3-level model)
+  # Expected structure
   # ----------------------------
   expected_components <- c(
     "summary",
@@ -95,6 +99,8 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_gt(nrow(out$summary), 0)
 
   expect_s3_class(out$lv_sites, "data.frame")
+  expect_s3_class(out$mean_lv_sites, "data.frame")
+  expect_s3_class(out$lv_species, "data.frame")
   expect_s3_class(out$mean_lv_species, "data.frame")
 
   # ----------------------------
@@ -108,7 +114,7 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
   expect_length(out$p_detect_list, expected_length)
 
   # ----------------------------
-  # Summary columns (UPDATED)
+  # Summary columns
   # ----------------------------
   expect_true(all(c(
     "psi_mean",
@@ -116,13 +122,21 @@ test_that("FitModel_gllvm runs and returns expected structure with synthetic dat
     "p_detect_mean"
   ) %in% names(out$summary)))
 
-  # capture is NOT inside summary anymore
+  # capture summaries (sample-level)
   expect_true(all(c(
     "capture_mean",
     "capture_median",
     "capture_lwr",
     "capture_upr"
   ) %in% names(out$capture)))
+
+  # capture summaries (site-level)
+  expect_true(all(c(
+    "capture_mean",
+    "capture_median",
+    "capture_lwr",
+    "capture_upr"
+  ) %in% names(out$capture_site)))
 
   # ----------------------------
   # Sanity checks

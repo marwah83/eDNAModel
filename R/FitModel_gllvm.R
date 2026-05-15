@@ -89,6 +89,7 @@ FitModel_gllvm <- function(
   abundance_rhs,
   occupancy_covars = NULL,
   min_species_sum = 50,
+  min_detection_replicates = 1,
   abundance_threshold = 1,
   n_iter = 50,
   burn_in = 10,
@@ -100,13 +101,6 @@ FitModel_gllvm <- function(
     stop("burn_in must be smaller than n_iter.")
   }
 
-  abundance_rhs_expr <- substitute(abundance_rhs)
-  abundance_rhs_txt <- paste(deparse(abundance_rhs_expr), collapse = " ")
-  abundance_formula <- stats::as.formula(
-    paste("y ~", abundance_rhs_txt),
-    env = parent.frame()
-  )
-
   valid_families <- c("poisson", "nbinom", "zip", "zinb")
   if (!(abundance_family %in% valid_families)) {
     stop(
@@ -114,6 +108,14 @@ FitModel_gllvm <- function(
       paste(valid_families, collapse = ", ")
     )
   }
+
+  abundance_rhs_expr <- substitute(abundance_rhs)
+  abundance_rhs_txt <- paste(deparse(abundance_rhs_expr), collapse = " ")
+
+  abundance_formula <- stats::as.formula(
+    paste("y ~", abundance_rhs_txt),
+    env = parent.frame()
+  )
 
   to_factor_cols <- function(df, cols) {
     for (col in cols) {
@@ -125,7 +127,7 @@ FitModel_gllvm <- function(
   }
 
   # ------------------------------------------------------------
-  # Prepare long data: NO filtering here
+  # Prepare long data
   # ------------------------------------------------------------
   prep <- prepare_long_data(
     physeq_obj = phyloseq,
@@ -146,7 +148,7 @@ FitModel_gllvm <- function(
   }
 
   # ------------------------------------------------------------
-  # Explicit OTU filtering inside FitModel_gllvm
+  # Explicit OTU filtering
   # ------------------------------------------------------------
   otu_stats <- long_df |>
     dplyr::group_by(.data$OTU) |>
@@ -157,7 +159,10 @@ FitModel_gllvm <- function(
     )
 
   keep_otus <- otu_stats |>
-    dplyr::filter(.data$total_count >= min_species_sum) |>
+    dplyr::filter(
+      .data$total_count >= min_species_sum,
+      .data$detected_replicates >= min_detection_replicates
+    ) |>
     dplyr::pull(.data$OTU)
 
   long_df <- long_df |>
@@ -178,7 +183,10 @@ FitModel_gllvm <- function(
 
   otu_abundances <- long_df |>
     dplyr::group_by(.data$OTU) |>
-    dplyr::summarise(total_count = sum(.data$y, na.rm = TRUE), .groups = "drop")
+    dplyr::summarise(
+      total_count = sum(.data$y, na.rm = TRUE),
+      .groups = "drop"
+    )
 
   top_otu <- otu_abundances |>
     dplyr::arrange(dplyr::desc(.data$total_count)) |>
@@ -223,7 +231,7 @@ FitModel_gllvm <- function(
   psi_cols <- c(site_col, "OTU")
 
   # ------------------------------------------------------------
-  # Helper: zero probability for abundance model
+  # Helper: zero probability from abundance model
   # ------------------------------------------------------------
   get_p0_abundance <- function(fit, newdata, family_name) {
 
@@ -250,18 +258,24 @@ FitModel_gllvm <- function(
 
     p0_cond <- switch(
       family_name,
+
       poisson = stats::dpois(0, lambda = mu),
-      zip     = stats::dpois(0, lambda = mu),
-      nbinom  = {
+
+      zip = stats::dpois(0, lambda = mu),
+
+      nbinom = {
         theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+
         if (!is.finite(theta) || theta <= 0) {
           stats::dpois(0, lambda = mu)
         } else {
           stats::dnbinom(0, mu = mu, size = theta)
         }
       },
+
       zinb = {
         theta <- tryCatch(stats::sigma(fit), error = function(e) NA_real_)
+
         if (!is.finite(theta) || theta <= 0) {
           stats::dpois(0, lambda = mu)
         } else {
@@ -275,7 +289,7 @@ FitModel_gllvm <- function(
   }
 
   # ------------------------------------------------------------
-  # Iterations
+  # Main EM-like iterations
   # ------------------------------------------------------------
   for (i in seq_len(n_iter)) {
 
@@ -285,7 +299,7 @@ FitModel_gllvm <- function(
     long_df[[site_col]] <- as.character(long_df[[site_col]])
 
     # ----------------------------------------------------------
-    # Occupancy matrix for GLLVM
+    # Occupancy matrix: site × OTU
     # ----------------------------------------------------------
     z_matrix <- reshape2::acast(
       reduced_data,
@@ -310,7 +324,10 @@ FitModel_gllvm <- function(
     cov_df <- cov_df[match(z_sites, cov_df[[site_col]]), , drop = FALSE]
 
     X_cov <- if (!is.null(occupancy_covars) && length(occupancy_covars) > 0) {
-      stats::model.matrix(~ ., data = cov_df[, occupancy_covars, drop = FALSE])[, -1, drop = FALSE]
+      stats::model.matrix(
+        ~ .,
+        data = cov_df[, occupancy_covars, drop = FALSE]
+      )[, -1, drop = FALSE]
     } else {
       NULL
     }
@@ -322,7 +339,7 @@ FitModel_gllvm <- function(
       y = z_matrix,
       X = X_cov,
       family = "binomial",
-      num.lv.c = num_lv_c
+      num.lv = num_lv_c
     )
 
     # ----------------------------------------------------------
@@ -345,6 +362,7 @@ FitModel_gllvm <- function(
     # Predict occupancy probabilities
     # ----------------------------------------------------------
     psi_prob <- stats::predict(model_occupancy, type = "response")
+
     rownames(psi_prob) <- rownames(z_matrix)
 
     psi_long <- reshape2::melt(
@@ -360,7 +378,7 @@ FitModel_gllvm <- function(
     occupancy_models[[i]] <- model_occupancy
 
     # ----------------------------------------------------------
-    # Abundance data conditional on Z = 1
+    # Abundance data conditional on current Z = 1
     # ----------------------------------------------------------
     abundance_data <- long_df |>
       dplyr::left_join(
@@ -395,8 +413,6 @@ FitModel_gllvm <- function(
 
     # ----------------------------------------------------------
     # Abundance model
-    # This keeps nesting, e.g.:
-    # y ~ (1 | OTU) + (1 | Name / OTU)
     # ----------------------------------------------------------
     model_abundance <- glmmTMB::glmmTMB(
       formula = abundance_formula,
@@ -407,44 +423,63 @@ FitModel_gllvm <- function(
 
     abundance_models[[i]] <- model_abundance
 
+    # ----------------------------------------------------------
+    # Lambda predictions on abundance_data
+    # ----------------------------------------------------------
     lambda_pred <- stats::predict(
       model_abundance,
       type = "link",
+      newdata = abundance_data,
       se.fit = TRUE,
       allow.new.levels = TRUE
     )
 
     lambda_eta <- as.numeric(lambda_pred$fit)
-    lambda_mu <- exp(lambda_eta)
-
-    p0_abund <- get_p0_abundance(
-      fit = model_abundance,
-      newdata = abundance_data,
-      family_name = abundance_family
-    )
-
-    p_detect_eta <- log(-log(pmax(p0_abund, 1e-12)))
 
     lambda_list[[i]] <- data.frame(
       abundance_data[psi_cols],
       eta = lambda_eta
-    )
-
-    p_detect_list[[i]] <- data.frame(
-      abundance_data[psi_cols],
-      eta = p_detect_eta
-    )
+    ) |>
+      dplyr::group_by(dplyr::across(dplyr::all_of(psi_cols))) |>
+      dplyr::summarise(
+        eta = mean(.data$eta, na.rm = TRUE),
+        .groups = "drop"
+      )
 
     # ----------------------------------------------------------
-    # Collapse detection probability to site × OTU level
+    # IMPORTANT:
+    # Predict p0 for ALL long_df rows, not only z_sim == 1 rows
     # ----------------------------------------------------------
-    site_p0 <- abundance_data |>
-      dplyr::mutate(p0_abund = p0_abund) |>
+    pred_data_all <- long_df |>
+      dplyr::left_join(
+        reduced_data |>
+          dplyr::select(dplyr::all_of(c(site_col, "OTU", "z_sim"))),
+        by = c(site_col, "OTU")
+      )
+
+    pred_data_all <- to_factor_cols(pred_data_all, factor_cols)
+
+    p0_all <- get_p0_abundance(
+      fit = model_abundance,
+      newdata = pred_data_all,
+      family_name = abundance_family
+    )
+
+    site_p0 <- pred_data_all |>
+      dplyr::mutate(p0_abund = p0_all) |>
       dplyr::group_by(dplyr::across(dplyr::all_of(psi_cols))) |>
       dplyr::summarise(
         p0_site = prod(.data$p0_abund, na.rm = TRUE),
         .groups = "drop"
       )
+
+    # Site-level detection probability:
+    # p_detect = 1 - P(all PCR/sample reads are zero | Z = 1)
+    p_detect_list[[i]] <- site_p0 |>
+      dplyr::mutate(
+        eta = log(-log(pmax(.data$p0_site, 1e-12)))
+      ) |>
+      dplyr::select(dplyr::all_of(psi_cols), eta)
 
     reduced_data <- reduced_data |>
       dplyr::select(-dplyr::any_of("p0_site")) |>
@@ -471,7 +506,7 @@ FitModel_gllvm <- function(
 
       denominator <- (1 - z_merge$psi_prob[zero_indices]) +
         z_merge$psi_prob[zero_indices] *
-        z_merge$p0_site[zero_indices]
+          z_merge$p0_site[zero_indices]
 
       posterior_z <- numerator / pmax(denominator, 1e-12)
       posterior_z <- pmin(pmax(posterior_z, 0.001), 0.999)
@@ -499,28 +534,13 @@ FitModel_gllvm <- function(
       return(data.frame())
     }
 
-    df_summary <- df |>
-      dplyr::group_by(dplyr::across(dplyr::all_of(psi_cols))) |>
-      dplyr::summarise(
-        eta_mean = mean(.data$eta, na.rm = TRUE),
-        eta_var = stats::var(.data$eta, na.rm = TRUE),
-        .groups = "drop"
-      )
-
-    df <- dplyr::left_join(df, df_summary, by = psi_cols) |>
-      dplyr::mutate(
-        weight = 1 / ifelse(is.na(.data$eta_var) | .data$eta_var == 0, 1e-6, .data$eta_var)
-      )
-
     out <- df |>
       dplyr::group_by(dplyr::across(dplyr::all_of(psi_cols))) |>
       dplyr::summarise(
-        eta_mean = sum(.data$eta * .data$weight, na.rm = TRUE) /
-          sum(.data$weight, na.rm = TRUE),
-        eta_var = stats::var(.data$eta, na.rm = TRUE),
-        se = sqrt(.data$eta_var),
-        lwr_eta = .data$eta_mean - 1.96 * .data$se,
-        upr_eta = .data$eta_mean + 1.96 * .data$se,
+        eta_mean = mean(.data$eta, na.rm = TRUE),
+        eta_sd = stats::sd(.data$eta, na.rm = TRUE),
+        lwr_eta = stats::quantile(.data$eta, 0.025, na.rm = TRUE),
+        upr_eta = stats::quantile(.data$eta, 0.975, na.rm = TRUE),
         .groups = "drop"
       )
 
@@ -534,10 +554,11 @@ FitModel_gllvm <- function(
     out |>
       dplyr::mutate(
         mean = inv_link(.data$eta_mean),
+        sd = .data$eta_sd,
         lwr = inv_link(.data$lwr_eta),
         upr = inv_link(.data$upr_eta)
       ) |>
-      dplyr::select(dplyr::all_of(psi_cols), mean, se, lwr, upr)
+      dplyr::select(dplyr::all_of(psi_cols), mean, sd, lwr, upr)
   }
 
   keep <- seq.int(burn_in + 1, n_iter)
@@ -547,15 +568,24 @@ FitModel_gllvm <- function(
   p_detect_summary <- bind_summary_link(p_detect_list[keep], "cloglog")
 
   final_summary <- psi_summary |>
-    dplyr::rename_with(~ paste0("psi_", .x), -dplyr::all_of(psi_cols)) |>
+    dplyr::rename_with(
+      ~ paste0("psi_", .x),
+      -dplyr::all_of(psi_cols)
+    ) |>
     dplyr::left_join(
       lambda_summary |>
-        dplyr::rename_with(~ paste0("lambda_", .x), -dplyr::all_of(psi_cols)),
+        dplyr::rename_with(
+          ~ paste0("lambda_", .x),
+          -dplyr::all_of(psi_cols)
+        ),
       by = psi_cols
     ) |>
     dplyr::left_join(
       p_detect_summary |>
-        dplyr::rename_with(~ paste0("p_detect_", .x), -dplyr::all_of(psi_cols)),
+        dplyr::rename_with(
+          ~ paste0("p_detect_", .x),
+          -dplyr::all_of(psi_cols)
+        ),
       by = psi_cols
     )
 
@@ -568,34 +598,47 @@ FitModel_gllvm <- function(
   mean_lv_sites <- lv_sites_combined |>
     dplyr::group_by(.data$Site) |>
     dplyr::summarise(
-      dplyr::across(dplyr::starts_with("LV"), mean, na.rm = TRUE),
+      dplyr::across(
+        dplyr::starts_with("LV"),
+        ~ mean(.x, na.rm = TRUE)
+      ),
       .groups = "drop"
     )
 
   mean_lv_species <- lv_species_combined |>
     dplyr::group_by(.data$OTU) |>
     dplyr::summarise(
-      dplyr::across(dplyr::starts_with("LV"), mean, na.rm = TRUE),
+      dplyr::across(
+        dplyr::starts_with("LV"),
+        ~ mean(.x, na.rm = TRUE)
+      ),
       .groups = "drop"
     )
 
   return(list(
     summary = final_summary,
+
     psi_list = psi_list[keep],
     lambda_list = lambda_list[keep],
     p_detect_list = p_detect_list[keep],
+
     occupancy_models = occupancy_models,
     abundance_models = abundance_models,
+
     reduced_data = reduced_data,
+
     lv_sites = lv_sites_combined,
     lv_species = lv_species_combined,
     mean_lv_sites = mean_lv_sites,
     mean_lv_species = mean_lv_species,
+
     filter_summary = list(
       otu_stats = otu_stats,
       kept_otus = keep_otus,
       min_species_sum = min_species_sum,
+      min_detection_replicates = min_detection_replicates,
       abundance_threshold = abundance_threshold
     )
   ))
 }
+                          

@@ -2,7 +2,7 @@
 % Please edit documentation in R/FitModel_gllvm.R
 \name{FitModel_gllvm}
 \alias{FitModel_gllvm}
-\title{Fit a Multispecies Occupancy–Detection Model using GLLVM and GLMM}
+\title{Fit a Multispecies Occupancy--Detection Model using GLLVM and GLMM}
 \usage{
 FitModel_gllvm(
   phyloseq,
@@ -10,6 +10,7 @@ FitModel_gllvm(
   abundance_rhs,
   occupancy_covars = NULL,
   min_species_sum = 50,
+  min_detection_replicates = 1,
   abundance_threshold = 1,
   n_iter = 50,
   burn_in = 10,
@@ -18,87 +19,115 @@ FitModel_gllvm(
 )
 }
 \arguments{
-\item{phyloseq}{A `phyloseq` object containing OTU count data, sample metadata, and taxonomy.}
+\item{phyloseq}{A `phyloseq` object containing OTU count data and sample metadata.}
 
-\item{site_col}{Character string specifying the name of the column in sample metadata to use as the site identifier.}
+\item{site_col}{Character string giving the sample metadata column used as the site identifier.}
 
-\item{abundance_rhs}{A one-sided formula specifying the right-hand side of the abundance model (e.g., `(1 | Samplingmonth/OTU)`).}
+\item{abundance_rhs}{Right-hand side of the abundance model, for example `(1 | OTU)` or
+`offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU)`.}
 
-\item{occupancy_covars}{Optional character vector specifying covariates to use in the occupancy model.}
+\item{occupancy_covars}{Optional character vector of site-level covariates used in the GLLVM occupancy model.}
 
-\item{min_species_sum}{Integer specifying the minimum total abundance required for an OTU to be retained (default = 50).}
+\item{min_species_sum}{Integer; minimum total read count required for an OTU to be retained. Default is 50.}
 
-\item{abundance_threshold}{Integer; a threshold of detections above which a taxon is considered present (default = 1).}
+\item{min_detection_replicates}{Integer; minimum number of replicate rows with reads greater than
+`abundance_threshold` required for an OTU to be retained. Default is 1.}
 
-\item{n_iter}{Integer; number of Monte Carlo iterations to run (default = 50).}
+\item{abundance_threshold}{Numeric; read-count threshold above which an OTU is treated as detected.
+Default is 1.}
 
-\item{burn_in}{Integer; number of burn-in iterations to discard (default = 10).}
+\item{n_iter}{Integer; number of Monte Carlo EM-style iterations. Default is 50.}
 
-\item{abundance_family}{Distribution to use for abundance model. One of `"poisson"`, `"nbinom"`, `"zip"`, or `"zinb"`.}
+\item{burn_in}{Integer; number of initial iterations discarded before summarising. Default is 10.}
 
-\item{num_lv_c}{Number of constrained latent variables for the occupancy model. Defaults to 2. Must be <= number of species.}
+\item{abundance_family}{Character string giving the abundance family. One of `"poisson"`,
+`"nbinom"`, `"zip"`, or `"zinb"`.}
+
+\item{num_lv_c}{Integer; number of latent variables in the GLLVM occupancy model. Default is 2.}
 }
 \value{
 A list with the following components:
 \describe{
-  \item{summary}{A data frame with posterior summaries of occupancy (`psi_`), abundance (`lambda_`), and detection probability (`p_detect_`).}
-  \item{psi_list}{List of occupancy probability estimates across iterations.}
-  \item{lambda_list}{List of abundance estimates across iterations (log-scale).}
-  \item{p_detect_list}{List of detection probabilities (1 - exp(-lambda)) across iterations.}
-  \item{occupancy_models}{List of fitted GLLVM models for occupancy.}
-  \item{abundance_models}{List of fitted GLMMs for abundance.}
-  \item{reduced_data}{Data frame containing presence/absence data and site/taxon information.}
-  \item{lv_sites}{Latent variable coordinates for sites from GLLVM across iterations.}
-  \item{lv_species}{Latent variable coordinates for species (OTUs) from GLLVM across iterations.}
-  \item{mean_lv_sites}{Averaged site positions in latent variable space (used in biplots).}
-  \item{mean_lv_species}{Averaged species positions in latent variable space (used in biplots).}
+  \item{summary}{Data frame with posterior summaries for occupancy probability (`psi_`),
+  abundance intensity (`lambda_`), and site-level detection probability (`p_detect_`).}
+  \item{psi_list}{List of occupancy linear predictors across post-burn-in iterations.}
+  \item{lambda_list}{List of abundance linear predictors across post-burn-in iterations,
+  aggregated to the site-by-OTU level.}
+  \item{p_detect_list}{List of site-level detection linear predictors across post-burn-in iterations.}
+  \item{occupancy_models}{List of fitted GLLVM occupancy models from all iterations.}
+  \item{abundance_models}{List of fitted `glmmTMB` abundance models from all iterations.}
+  \item{reduced_data}{Final site-by-OTU data frame containing observed and simulated occupancy states.}
+  \item{lv_sites}{Site latent variable coordinates from post-burn-in GLLVM fits.}
+  \item{lv_species}{Species/OTU latent variable coordinates from post-burn-in GLLVM fits.}
+  \item{mean_lv_sites}{Post-burn-in mean site positions in latent variable space.}
+  \item{mean_lv_species}{Post-burn-in mean OTU positions in latent variable space.}
+  \item{filter_summary}{List containing OTU filtering information.}
 }
 }
 \description{
-This function implements a hierarchical two-part multispecies occupancy model using **gllvm** for modeling species presence (occupancy).
-
-The function decomposes species occurrence into two ecological processes:
-
-1. **Occupancy** (presence/absence):
-   - Modeled using a **binomial Generalized Linear Latent Variable Model (GLLVM)** with optional environmental covariates (`occupancy_covars`) and two common latent variables.
-   - Latent variables capture residual structure (e.g., species co-occurrence or unmeasured environmental gradients).
-
-2. **Abundance** (counts conditional on presence):
-   - Modeled using a **Generalized Linear Mixed Model (GLMM)** via `glmmTMB`, allowing for Poisson, Negative Binomial, Zero-Inflated Poisson (ZIP), or Zero-Inflated Negative Binomial (ZINB) families.
-
-At each iteration:
-- Presence data (`z_sim`) is simulated based on detection and occupancy probabilities.
-- A GLLVM is fitted to estimate occupancy-related parameters.
-- Conditional abundance is modeled with the specified GLMM formula (`abundance_rhs`).
-- Detection probabilities and occupancy are updated using posterior predictions.
-
-After the burn-in period, posterior summaries (occupancy, abundance, detection probabilities) are computed using **inverse-variance weighted averaging**.
-
-In addition, latent variable scores are averaged across iterations to allow **ordination-style visualizations** (biplots) of species and site structure.
+This function fits a hierarchical multispecies occupancy--abundance model
+for eDNA data stored as a `phyloseq` object. Occupancy is modeled at the
+site-by-OTU level using a binomial Generalized Linear Latent Variable Model
+(GLLVM), while read abundance conditional on simulated occupancy is modeled
+using a GLMM via `glmmTMB`.
 }
 \details{
-This function implements a hierarchical Bayesian occupancy–detection model
-using Generalized Linear Latent Variable Models (GLLVM) for occupancy and 
-GLMMs for abundance, iterating between them in a Monte Carlo scheme.
-It is specifically designed for analyzing environmental DNA (eDNA) data
-structured as a `phyloseq` object.
+The model separates the eDNA observation process into two components.
+First, latent occupancy is defined at the site-by-OTU level. The observed
+detection indicator is
+\deqn{
+  z_{s,m}^{obs} = I\left(\max_j y_{s,j,m} > c\right),
+}
+where \(y_{s,j,m}\) is the read count for OTU \(m\) in replicate/sample row
+\(j\) at site \(s\), and \(c\) is `abundance_threshold`.
+
+Occupancy is modeled with a binomial GLLVM. The latent variables represent
+residual site structure and OTU associations not explained by the supplied
+occupancy covariates.
+
+Second, read abundance is modeled conditional on the current simulated
+occupancy state, \(Z_{s,m}=1\), using `glmmTMB`. The abundance model may use
+Poisson, negative binomial, zero-inflated Poisson, or zero-inflated negative
+binomial families.
+
+At each iteration, the function:
+\enumerate{
+  \item fits a binomial GLLVM to the current simulated occupancy matrix;
+  \item fits a GLMM abundance model to rows whose current simulated occupancy is one;
+  \item predicts the probability of observing all zero reads for every site-by-OTU
+  combination conditional on occupancy;
+  \item updates unobserved occupancy states using
+  \deqn{
+  P(Z=1 \mid \text{all observed reads are zero}) =
+  \frac{\psi p_0}{(1-\psi) + \psi p_0}.
+  }
+}
+
+Post-burn-in summaries are computed from the retained iterations. Intervals
+are empirical 2.5% and 97.5% quantiles on the link scale and transformed to
+the natural scale.
 }
 \examples{
 \dontrun{
 library(phyloseq)
 data(GlobalPatterns)
-# Replace with real site_col and covariates relevant to your dataset
+
 physeq <- subset_samples(GlobalPatterns, SampleType \%in\% c("Feces", "Mock"))
+
 out <- FitModel_gllvm(
-phyloseq = physeq,
-site_col = "SampleType",
-abundance_rhs = (1 | OTU),
-occupancy_covars = c("SampleType"),
-abundance_family = "poisson",
-n_iter = 10,
-burn_in = 2, 
-num_lv_c = 2
+  phyloseq = physeq,
+  site_col = "SampleType",
+  abundance_rhs = (1 | OTU),
+  occupancy_covars = c("SampleType"),
+  min_species_sum = 50,
+  min_detection_replicates = 1,
+  abundance_threshold = 1,
+  abundance_family = "poisson",
+  n_iter = 10,
+  burn_in = 2,
+  num_lv_c = 2
 )
+
 head(out$summary)
 }
 

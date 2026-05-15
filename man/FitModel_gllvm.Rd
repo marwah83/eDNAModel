@@ -2,136 +2,215 @@
 % Please edit documentation in R/FitModel_gllvm.R
 \name{FitModel_gllvm}
 \alias{FitModel_gllvm}
-\title{Fit a Multispecies Occupancy--Detection Model using GLLVM and GLMM}
+\title{Fit a Multispecies 3-Level Occupancy–Detection–Abundance Model using GLLVM and GLMM}
 \usage{
 FitModel_gllvm(
   phyloseq,
   site_col,
+  sample_col = "Name",
+  replicate_col = NULL,
   abundance_rhs,
+  capture_formula = a_sim ~ 1 + (1 | OTU),
   occupancy_covars = NULL,
   min_species_sum = 50,
   min_detection_replicates = 1,
   abundance_threshold = 1,
   n_iter = 50,
   burn_in = 10,
-  abundance_family = "poisson",
-  num_lv_c = 2
+  abundance_family = c("poisson", "nbinom", "zip", "zinb"),
+  num_lv_c = 2,
+  verbose = TRUE
 )
 }
 \arguments{
-\item{phyloseq}{A `phyloseq` object containing OTU count data and sample metadata.}
+\item{phyloseq}{A \code{phyloseq} object containing OTU count data and sample metadata.}
 
-\item{site_col}{Character string giving the sample metadata column used as the site identifier.}
+\item{site_col}{Character string identifying sites (occupancy level).}
 
-\item{abundance_rhs}{Right-hand side of the abundance model, for example `(1 | OTU)` or
-`offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU)`.}
+\item{sample_col}{Character string identifying biological samples (capture level).}
+
+\item{replicate_col}{Character or \code{NULL} identifying PCR replicates (abundance level).}
+
+\item{abundance_rhs}{Right-hand side of the abundance model, e.g.
+\code{(1 | OTU)} or \code{offset(log(total_reads)) + (1 | OTU) + (1 | Name / OTU)}.}
+
+\item{capture_formula}{Formula for capture model (response must be \code{a_sim}).}
 
 \item{occupancy_covars}{Optional character vector of site-level covariates used in the GLLVM occupancy model.}
 
-\item{min_species_sum}{Integer; minimum total read count required for an OTU to be retained. Default is 50.}
+\item{min_species_sum}{Minimum total read count required to retain an OTU.}
 
-\item{min_detection_replicates}{Integer; minimum number of replicate rows with reads greater than
-`abundance_threshold` required for an OTU to be retained. Default is 1.}
+\item{min_detection_replicates}{Minimum number of detections required per OTU.}
 
-\item{abundance_threshold}{Numeric; read-count threshold above which an OTU is treated as detected.
-Default is 1.}
+\item{abundance_threshold}{Threshold defining detection (default = 1).}
 
-\item{n_iter}{Integer; number of Monte Carlo EM-style iterations. Default is 50.}
+\item{n_iter}{Number of EM-like iterations.}
 
-\item{burn_in}{Integer; number of initial iterations discarded before summarising. Default is 10.}
+\item{burn_in}{Number of initial iterations discarded.}
 
-\item{abundance_family}{Character string giving the abundance family. One of `"poisson"`,
-`"nbinom"`, `"zip"`, or `"zinb"`.}
+\item{abundance_family}{One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.}
 
-\item{num_lv_c}{Integer; number of latent variables in the GLLVM occupancy model. Default is 2.}
+\item{num_lv_c}{Number of latent variables in the GLLVM occupancy model.}
+
+\item{verbose}{Logical; print progress during fitting.}
 }
 \value{
-A list with the following components:
+A list containing:
 \describe{
-  \item{summary}{Data frame with posterior summaries for occupancy probability (`psi_`),
-  abundance intensity (`lambda_`), and site-level detection probability (`p_detect_`).}
-  \item{psi_list}{List of occupancy linear predictors across post-burn-in iterations.}
-  \item{lambda_list}{List of abundance linear predictors across post-burn-in iterations,
-  aggregated to the site-by-OTU level.}
-  \item{p_detect_list}{List of site-level detection linear predictors across post-burn-in iterations.}
-  \item{occupancy_models}{List of fitted GLLVM occupancy models from all iterations.}
-  \item{abundance_models}{List of fitted `glmmTMB` abundance models from all iterations.}
-  \item{reduced_data}{Final site-by-OTU data frame containing observed and simulated occupancy states.}
-  \item{lv_sites}{Site latent variable coordinates from post-burn-in GLLVM fits.}
-  \item{lv_species}{Species/OTU latent variable coordinates from post-burn-in GLLVM fits.}
-  \item{mean_lv_sites}{Post-burn-in mean site positions in latent variable space.}
-  \item{mean_lv_species}{Post-burn-in mean OTU positions in latent variable space.}
-  \item{filter_summary}{List containing OTU filtering information.}
+  \item{summary}{Posterior summaries at the site-by-OTU level for:
+    occupancy (\code{psi_*}), capture (\code{capture_*}),
+    abundance (\code{lambda_*}), and detection (\code{p_detect_*}).}
+  \item{capture}{Sample-level capture summaries.}
+  \item{capture_site}{Capture summaries aggregated to the site level.}
+  \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration linear predictors.}
+  \item{occupancy_models}{List of fitted GLLVM occupancy models.}
+  \item{capture_models}{List of fitted GLMM capture models.}
+  \item{abundance_models}{List of fitted GLMM abundance models.}
+  \item{reduced_data, sample_data, long_df}{Processed hierarchical datasets.}
+  \item{lv_sites, lv_species}{Latent variable coordinates.}
+  \item{mean_lv_sites, mean_lv_species}{Posterior mean latent variables.}
+  \item{filter_summary}{OTU filtering information.}
 }
 }
 \description{
-This function fits a hierarchical multispecies occupancy--abundance model
-for eDNA data stored as a `phyloseq` object. Occupancy is modeled at the
-site-by-OTU level using a binomial Generalized Linear Latent Variable Model
-(GLLVM), while read abundance conditional on simulated occupancy is modeled
-using a GLMM via `glmmTMB`.
+This function fits a hierarchical three-level model for eDNA / microbiome data
+stored as a \code{phyloseq} object. The model explicitly separates:
 }
 \details{
-The model separates the eDNA observation process into two components.
-First, latent occupancy is defined at the site-by-OTU level. The observed
-detection indicator is
+\itemize{
+  \item \strong{Site level (Z)}: true OTU presence/absence
+  \item \strong{Biological sample level (A)}: capture / detection process
+  \item \strong{PCR replicate level (Y)}: observed read counts
+}
+
+Occupancy is modeled at the site-by-OTU level using a binomial Generalized
+Linear Latent Variable Model (GLLVM), while capture and abundance are modeled
+using GLMMs via \code{glmmTMB}.
+
+
+The model defines a three-level hierarchical structure:
+
 \deqn{
-  z_{s,m}^{obs} = I\left(\max_j y_{s,j,m} > c\right),
+Z_{i,m} \sim \text{Bernoulli}(\psi_{i,m})
 }
-where \(y_{s,j,m}\) is the read count for OTU \(m\) in replicate/sample row
-\(j\) at site \(s\), and \(c\) is `abundance_threshold`.
 
-Occupancy is modeled with a binomial GLLVM. The latent variables represent
-residual site structure and OTU associations not explained by the supplied
-occupancy covariates.
+\deqn{
+A_{i,j,m} \mid Z_{i,m} \sim \text{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+}
 
-Second, read abundance is modeled conditional on the current simulated
-occupancy state, \(Z_{s,m}=1\), using `glmmTMB`. The abundance model may use
-Poisson, negative binomial, zero-inflated Poisson, or zero-inflated negative
-binomial families.
+\deqn{
+Y_{i,j,k,m} \mid A_{i,j,m} \sim \text{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
+}
 
-At each iteration, the function:
+where:
+\itemize{
+  \item \(i\): site
+  \item \(j\): biological sample
+  \item \(k\): PCR replicate
+  \item \(m\): OTU
+}
+
+Observed occupancy is defined as:
+
+\deqn{
+z^{obs}_{i,m} = I\left(\max_{j,k} Y_{i,j,k,m} > c\right)
+}
+
+where \(c\) is the \code{abundance_threshold}.
+
+The occupancy model uses a GLLVM:
+
+\deqn{
+\text{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
+}
+
+The capture model is a binomial GLMM:
+
+\deqn{
+\text{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
+}
+
+The abundance model defines \(\lambda\), which induces a detection probability:
+
+\deqn{
+p_{\text{detect}} = 1 - P(Y = 0 \mid A = 1)
+}
+
+Internally, detection is computed using the complementary log-log (cloglog) link:
+
+\deqn{
+\eta = \log\left(-\log(P(Y = 0))\right)
+}
+
+and then transformed back to the natural scale.
+
+\strong{Important:}
+\itemize{
+  \item \code{p_detect} is a deterministic function of the abundance model
+  \item No standard error is estimated directly for \code{p_detect}
+}
+}
+\section{EM-like algorithm}{
+
+Each iteration performs:
 \enumerate{
-  \item fits a binomial GLLVM to the current simulated occupancy matrix;
-  \item fits a GLMM abundance model to rows whose current simulated occupancy is one;
-  \item predicts the probability of observing all zero reads for every site-by-OTU
-  combination conditional on occupancy;
-  \item updates unobserved occupancy states using
-  \deqn{
-  P(Z=1 \mid \text{all observed reads are zero}) =
-  \frac{\psi p_0}{(1-\psi) + \psi p_0}.
-  }
+  \item Fit GLLVM occupancy model for \(Z\)
+  \item Fit GLMM capture model for \(A\) conditional on \(Z=1\)
+  \item Fit GLMM abundance model for \(Y\) conditional on \(A=1\)
+  \item Update \(A\) using capture and abundance probabilities
+  \item Update \(Z\) using capture and abundance probabilities
+}
 }
 
-Post-burn-in summaries are computed from the retained iterations. Intervals
-are empirical 2.5% and 97.5% quantiles on the link scale and transformed to
-the natural scale.
+\section{Uncertainty estimation}{
+
+Uncertainty is propagated using simulation on the link scale:
+
+\deqn{
+\eta \sim \mathcal{N}(\hat{\eta}, \text{SE}^2)
 }
+
+and transformed to the natural scale. For detection, uncertainty is propagated
+through the abundance model without explicit SE.
+}
+
+\section{Model features}{
+
+\itemize{
+  \item Full 3-level eDNA hierarchy (Z → A → Y)
+  \item Latent ecological structure via GLLVM
+  \item Flexible GLMMs for capture and abundance
+  \item Supports Poisson, NB, ZIP, ZINB families
+  \item Supports offsets (e.g. \code{offset(log(total_reads))})
+}
+}
+
+\section{Caveats}{
+
+\itemize{
+  \item Approximate EM-like inference (not a full joint likelihood)
+  \item Detection depends on abundance model assumptions
+  \item Large \(\lambda\) implies detection saturation
+}
+}
+
 \examples{
 \dontrun{
-library(phyloseq)
-data(GlobalPatterns)
+fit <- FitModel_gllvm(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
 
-physeq <- subset_samples(GlobalPatterns, SampleType \%in\% c("Feces", "Mock"))
-
-out <- FitModel_gllvm(
-  phyloseq = physeq,
-  site_col = "SampleType",
   abundance_rhs = (1 | OTU),
-  occupancy_covars = c("SampleType"),
-  min_species_sum = 50,
-  min_detection_replicates = 1,
-  abundance_threshold = 1,
-  abundance_family = "poisson",
+  capture_formula = a_sim ~ 1 + (1 | OTU),
+
+  abundance_family = "nbinom",
   n_iter = 10,
-  burn_in = 2,
-  num_lv_c = 2
+  burn_in = 2
 )
 
-head(out$summary)
+head(fit$summary)
 }
 
-}
-\seealso{
-\code{\link[gllvm]{gllvm}}, \code{\link[glmmTMB]{glmmTMB}}
 }

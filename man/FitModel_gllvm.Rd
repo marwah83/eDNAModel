@@ -102,11 +102,11 @@ Z_{i,m} \sim \mathrm{Bernoulli}(\psi_{i,m})
 }
 
 \deqn{
-A_{i,j,m} \mid Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+A_{i,j,m} | Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
 }
 
 \deqn{
-Y_{i,j,k,m} \mid A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
+Y_{i,j,k,m} | A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m})
 }
 
 where:

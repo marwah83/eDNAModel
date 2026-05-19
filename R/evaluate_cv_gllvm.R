@@ -21,7 +21,7 @@
 #'
 #' @return A data.frame summarising model performance.
 #'
-#' @export
+#'
 #'
 #' @examples
 #' \dontrun{

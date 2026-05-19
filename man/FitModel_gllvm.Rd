@@ -198,7 +198,7 @@ fit <- FitModel_gllvm(
   replicate_col = "Replicate",
   otu_col = "Taxon",
   count_col = "count",
-  abundance_rhs = (1 | Taxon),
+  abundance_rhs = y ~ (1 | Taxon),
   capture_formula = a_sim ~ 1 + (1 | Taxon),
   abundance_family = "nbinom",
   n_iter = 10,

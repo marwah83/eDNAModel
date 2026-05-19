@@ -234,14 +234,123 @@ compare_models_cv_multilevel <- function(
         as.numeric(pROC::roc(sample_eval$a, sample_eval$capture, quiet = TRUE)$auc)
       } else NA_real_
 
-      lambda_log_score <- mean(
-        stats::dpois(
-          test_long[[count_col]],
-          lambda = pmax(test_long$lambda, 1e-8),
-          log = TRUE
-        ),
-        na.rm = TRUE
+      # ----------------------------------------------------
+# Predictive log-likelihood for abundance model
+# ----------------------------------------------------
+
+y_obs <- test_long[[count_col]]
+
+mu <- pmax(test_long$lambda, 1e-8)
+
+family_name <- fit$abundance_models[[1]]$modelInfo$family$family
+
+# ----------------------------------------------------
+# Poisson
+# ----------------------------------------------------
+
+if (family_name == "poisson") {
+
+  loglik_vec <- stats::dpois(
+    y_obs,
+    lambda = mu,
+    log = TRUE
+  )
+
+# ----------------------------------------------------
+# Negative Binomial
+# ----------------------------------------------------
+
+} else if (family_name == "nbinom2") {
+
+  theta <- sigma(abund_fit)
+
+  loglik_vec <- stats::dnbinom(
+    y_obs,
+    mu = mu,
+    size = theta,
+    log = TRUE
+  )
+
+# ----------------------------------------------------
+# ZIP
+# ----------------------------------------------------
+
+} else if (family_name == "truncated_poisson" ||
+           family_name == "ziPoisson") {
+
+  zi_prob <- tryCatch(
+    predict(
+      abund_fit,
+      newdata = test_long,
+      type = "zprob",
+      allow.new.levels = TRUE
+    ),
+    error = function(e) rep(0, nrow(test_long))
+  )
+
+  loglik_vec <- ifelse(
+    y_obs == 0,
+
+    log(
+      zi_prob +
+      (1 - zi_prob) * exp(-mu)
+    ),
+
+    log(1 - zi_prob) +
+      stats::dpois(
+        y_obs,
+        lambda = mu,
+        log = TRUE
       )
+  )
+
+# ----------------------------------------------------
+# ZINB
+# ----------------------------------------------------
+
+} else {
+
+  theta <- sigma(abund_fit)
+
+  zi_prob <- tryCatch(
+    predict(
+      abund_fit,
+      newdata = test_long,
+      type = "zprob",
+      allow.new.levels = TRUE
+    ),
+    error = function(e) rep(0, nrow(test_long))
+  )
+
+  p0_nb <- stats::dnbinom(
+    0,
+    mu = mu,
+    size = theta
+  )
+
+  loglik_vec <- ifelse(
+    y_obs == 0,
+
+    log(
+      zi_prob +
+      (1 - zi_prob) * p0_nb
+    ),
+
+    log(1 - zi_prob) +
+      stats::dnbinom(
+        y_obs,
+        mu = mu,
+        size = theta,
+        log = TRUE
+      )
+  )
+}
+
+# ----------------------------------------------------
+# Final predictive log score
+# ----------------------------------------------------
+
+lambda_log_score <- mean(loglik_vec, na.rm = TRUE)
 
       fold_metrics[[k]] <- data.frame(
         psi_AUC = psi_auc,

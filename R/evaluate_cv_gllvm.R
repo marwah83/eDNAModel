@@ -20,9 +20,6 @@
 #' \code{compare_models_cv()}.
 #'
 #' @return A data.frame summarising model performance.
-#'
-#'
-#'
 #' @examples
 #' \dontrun{
 #'

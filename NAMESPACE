@@ -2,6 +2,7 @@
 
 export(FitModel)
 export(FitModel_gllvm)
+export(compare_models_cv_gllvm)
 export(compare_models_cv_multilevel)
 export(evaluate_cv)
 export(filter_phyloseq_data)

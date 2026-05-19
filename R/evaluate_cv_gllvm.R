@@ -23,13 +23,13 @@
 #' @examples
 #' \dontrun{
 #'
-#' results_table <- evaluate_cv(cv_res)
+#' results_table <- evaluate_cv_gllvm(cv_res)
 #'
 #' print(results_table)
 #'
 #' }
 #' @export
-evaluate_cv <- function(cv_res) {
+evaluate_cv_gllvm <- function(cv_res) {
 
   if (!is.list(cv_res)) {
     stop("cv_res must be a list.")

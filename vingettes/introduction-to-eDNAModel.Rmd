@@ -36,8 +36,7 @@ library(reshape2)
 
 # 1. Introduction
 
-This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities, and comparing models using AIC/BIC.
-
+This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities and model comparison.
 ---
 
 # 2. Load and Subset Data

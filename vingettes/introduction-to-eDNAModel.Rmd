@@ -58,6 +58,35 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 
 ---
 
+meta <- as.data.frame(
+  phyloseq::sample_data(physeq_one)
+)
+
+# Extract sampling site from Subcode
+meta$site <- trimws(
+  sub("\\s*\\([^)]*\\)\\s*$", "", meta$Subcode)
+)
+
+# Site × month occupancy unit
+meta$site_month <- interaction(
+  meta$site,
+  meta$Samplingmonth,
+  sep = "_",
+  drop = TRUE
+)
+
+# Put metadata back into phyloseq
+phyloseq::sample_data(physeq_one) <- phyloseq::sample_data(meta)
+
+meta[, c(
+  "Name",
+  "Subcode",
+  "site",
+  "Samplingmonth",
+  "site_month",
+  "Replicate"
+)]
+
 # 3. Fit the Occupancy–Detection Model
 
 ```{r fit-model, echo=FALSE}
@@ -152,32 +181,44 @@ ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
 library(dplyr)
 library(ggplot2)
 
-# Combine all iterations
+# Combine retained iterations
 p_detect_draws <- dplyr::bind_rows(out$p_detect_list)
 
-# Summarise at OTU level (correct: eta is already p_detect)
+# Convert cloglog eta to detection probability
+p_detect_draws <- p_detect_draws %>%
+  mutate(
+    p_detect = 1 - exp(-exp(eta))
+  )
+
+# Summarise at OTU level
 p_detect_otu_summary <- p_detect_draws %>%
   group_by(OTU) %>%
   summarise(
-    p_detect_mean = mean(eta, na.rm = TRUE),
-    p_detect_lwr  = quantile(eta, 0.025, na.rm = TRUE),
-    p_detect_upr  = quantile(eta, 0.975, na.rm = TRUE),
+    p_detect_mean = mean(p_detect, na.rm = TRUE),
+    p_detect_lwr  = quantile(p_detect, 0.025, na.rm = TRUE),
+    p_detect_upr  = quantile(p_detect, 0.975, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   arrange(p_detect_mean) %>%
-  mutate(OTU = factor(OTU, levels = OTU))
+  mutate(
+    OTU = factor(OTU, levels = OTU)
+  )
 
-# Plot
-ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
-  geom_point(color = "steelblue", size = 2) +
+ggplot(
+  p_detect_otu_summary,
+  aes(x = p_detect_mean, y = OTU)
+) +
+  geom_point(size = 2) +
   geom_errorbarh(
-    aes(xmin = p_detect_lwr, xmax = p_detect_upr),
-    height = 0.2,
-    color = "steelblue"
+    aes(
+      xmin = p_detect_lwr,
+      xmax = p_detect_upr
+    ),
+    height = 0.2
   ) +
   labs(
     title = "Caterpillar Plot: Detection Probability by OTU",
-    x = "Detection probability (p_detect)",
+    x = "Detection probability",
     y = "OTU"
   ) +
   theme_minimal() +

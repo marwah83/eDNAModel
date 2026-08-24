@@ -62,7 +62,7 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 
 ```{r fit-model, echo=FALSE}
 out <- FitModel(
-    phyloseq      = ps,                  # your phyloseq object
+    phyloseq      = physeq_one,          # your phyloseq object
     site_col      = "site_month",        # site-level variable
     sample_col    = "Name",              # biological sample ID
     replicate_col = "Replicate",         # PCR replicate (optional but recommended)

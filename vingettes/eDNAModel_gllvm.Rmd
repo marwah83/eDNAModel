@@ -260,23 +260,60 @@ ggplot(
 ## 4.2  biplot
 
 ```{r biplot,fig.width=10, fig.height=9}
-
 library(ggplot2)
 library(grid)
 
-site_col <- "Name"
-otu_col  <- "OTU"
+# ------------------------------------------------------------
+# 1. Automatically identify identifier columns
+# ------------------------------------------------------------
 
-# Extract latent coordinates
+site_col <- setdiff(
+  names(out$mean_lv_sites),
+  c("LV1", "LV2")
+)[1]
+
+otu_col <- setdiff(
+  names(out$mean_lv_species),
+  c("LV1", "LV2")
+)[1]
+
+cat("Site column:", site_col, "\n")
+cat("OTU column:", otu_col, "\n")
+
+# ------------------------------------------------------------
+# 2. Extract latent coordinates
+# ------------------------------------------------------------
+
 site_mat <- as.matrix(
-  out$mean_lv_sites[, c("LV1", "LV2")]
+  out$mean_lv_sites[, c("LV1", "LV2"), drop = FALSE]
 )
 
 species_mat <- as.matrix(
-  out$mean_lv_species[, c("LV1", "LV2")]
+  out$mean_lv_species[, c("LV1", "LV2"), drop = FALSE]
 )
 
-# Common symmetric scaling
+# ------------------------------------------------------------
+# 3. Remove incomplete coordinates
+# ------------------------------------------------------------
+
+site_ok <- complete.cases(site_mat)
+species_ok <- complete.cases(species_mat)
+
+site_mat <- site_mat[site_ok, , drop = FALSE]
+species_mat <- species_mat[species_ok, , drop = FALSE]
+
+site_labels <- as.character(
+  out$mean_lv_sites[[site_col]][site_ok]
+)
+
+species_labels <- as.character(
+  out$mean_lv_species[[otu_col]][species_ok]
+)
+
+# ------------------------------------------------------------
+# 4. Common symmetric scaling
+# ------------------------------------------------------------
+
 site_radius <- max(
   sqrt(rowSums(site_mat^2)),
   na.rm = TRUE
@@ -287,6 +324,14 @@ species_radius <- max(
   na.rm = TRUE
 )
 
+if (!is.finite(site_radius) || site_radius <= 0) {
+  stop("Invalid site latent-variable coordinates.")
+}
+
+if (!is.finite(species_radius) || species_radius <= 0) {
+  stop("Invalid OTU latent-variable coordinates.")
+}
+
 scale_factor <- sqrt(
   site_radius / species_radius
 )
@@ -294,20 +339,36 @@ scale_factor <- sqrt(
 scaled_sites <- site_mat / scale_factor
 scaled_species <- species_mat * scale_factor
 
-# Add labels
+# ------------------------------------------------------------
+# 5. Create plotting data
+# ------------------------------------------------------------
+
 scaled_sites_df <- data.frame(
-  Site = out$mean_lv_sites[[site_col]],
-  LV1  = scaled_sites[, 1],
-  LV2  = scaled_sites[, 2]
+  Site = site_labels,
+  LV1 = scaled_sites[, 1],
+  LV2 = scaled_sites[, 2]
 )
 
 scaled_species_df <- data.frame(
-  OTU = out$mean_lv_species[[otu_col]],
+  OTU = species_labels,
   LV1 = scaled_species[, 1],
   LV2 = scaled_species[, 2]
 )
 
-# Plot
+# ------------------------------------------------------------
+# 6. Check dimensions
+# ------------------------------------------------------------
+
+dim(scaled_sites_df)
+dim(scaled_species_df)
+
+head(scaled_sites_df)
+head(scaled_species_df)
+
+# ------------------------------------------------------------
+# 7. GLLVM biplot
+# ------------------------------------------------------------
+
 ggplot() +
 
   geom_point(
@@ -319,7 +380,11 @@ ggplot() +
 
   geom_text(
     data = scaled_sites_df,
-    aes(x = LV1, y = LV2, label = Site),
+    aes(
+      x = LV1,
+      y = LV2,
+      label = Site
+    ),
     color = "blue",
     size = 2.5,
     vjust = -0.5
@@ -373,5 +438,4 @@ ggplot() +
   ) +
 
   theme_minimal()
-
 ```

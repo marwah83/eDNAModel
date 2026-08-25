@@ -59,8 +59,8 @@ out <- FitModel_gllvm(
   site_col = "Name",
 
   abundance_rhs =
-    y ~ (1 | Samplingmonth / OTU) +
-        (1 | OTU),
+    (1 | Samplingmonth / OTU) +
+    (1 | OTU),
 
   occupancy_covars = "Samplingmonth",
 

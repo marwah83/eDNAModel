@@ -55,15 +55,21 @@ physeq_one=physeq_new$`Marine Invasive species Trondheim`
 
 ```{r fit-model, echo=FALSE}
 out <- FitModel_gllvm(
-       phyloseq = physeq_one,
-       site_col = "Name",
-       abundance_rhs = (1|Samplingmonth/OTU)+(1|OTU),
-       occupancy_covars = "Samplingmonth",
-       abundance_family = "poisson",
-       n_iter = 50,
-       burn_in = 10,
-       num_lv_c = 2
-   )
+  phyloseq = physeq_one,
+  site_col = "Name",
+
+  abundance_rhs =
+    (1 | Samplingmonth / OTU) +
+    (1 | OTU),
+
+  occupancy_covars = "Samplingmonth",
+
+  abundance_family = "poisson",
+
+  n_iter = 50,
+  burn_in = 10,
+  num_lv_c = 2
+)
 
 ```
 # 4. Visualization
@@ -72,95 +78,300 @@ out <- FitModel_gllvm(
 
 ```{r plot-occupancy, fig.width=10, fig.height=9}
 
-psi_otu_summary <- out$summary %>%
-     group_by(OTU) %>%
-     summarise(
-         psi_mean = mean(psi_mean, na.rm = TRUE),
-         psi_lwr = mean(psi_lwr, na.rm = TRUE),
-         psi_upr = mean(psi_upr, na.rm = TRUE),
-         .groups = "drop"
-     ) %>%
-     arrange(psi_mean) %>%
-     mutate(OTU = factor(OTU, levels = unique(OTU)))
- 
- # Plot
- ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
-     geom_point(color = "darkgreen") +
-     geom_errorbarh(aes(xmin = psi_lwr, xmax = psi_upr), height = 0.2) +
-     labs(
-         title = "Caterpillar Plot: Occupancy Probability by OTU",
-         x = "Occupancy Probability (ψ)",
-         y = "OTU"
-     ) +
-     theme_minimal() +
-     theme(
-         axis.text.y = element_text(size = 8),
-         plot.title = element_text(hjust = 0.5)
-     )
+library(dplyr)
+library(ggplot2)
+
+otu_col <- "OTU"
+
+# ------------------------------------------------------------
+# 1. Combine retained GLLVM occupancy predictions
+# ------------------------------------------------------------
+
+psi_draws <- dplyr::bind_rows(out$psi_list)
+
+# eta is on the logit scale
+psi_draws <- psi_draws %>%
+    dplyr::mutate(
+        psi = stats::plogis(.data$eta)
+    )
+
+# ------------------------------------------------------------
+# 2. Summarise occupancy at the OTU level
+#
+# This averages across sites and retained iterations.
+# ------------------------------------------------------------
+
+psi_otu_summary <- psi_draws %>%
+    dplyr::group_by(.data[[otu_col]]) %>%
+    dplyr::summarise(
+        psi_mean = mean(.data$psi, na.rm = TRUE),
+        psi_median = stats::median(.data$psi, na.rm = TRUE),
+        psi_lwr = stats::quantile(
+            .data$psi,
+            0.025,
+            na.rm = TRUE,
+            names = FALSE
+        ),
+        psi_upr = stats::quantile(
+            .data$psi,
+            0.975,
+            na.rm = TRUE,
+            names = FALSE
+        ),
+        .groups = "drop"
+    ) %>%
+    dplyr::arrange(.data$psi_mean)
+
+# ------------------------------------------------------------
+# 3. Order OTUs by occupancy
+# ------------------------------------------------------------
+
+psi_otu_summary[[otu_col]] <- factor(
+    psi_otu_summary[[otu_col]],
+    levels = psi_otu_summary[[otu_col]]
+)
+
+# ------------------------------------------------------------
+# 4. Caterpillar plot
+# ------------------------------------------------------------
+
+ggplot(
+    psi_otu_summary,
+    aes(
+        x = psi_mean,
+        y = .data[[otu_col]]
+    )
+) +
+    geom_point(
+        color = "darkgreen",
+        size = 2
+    ) +
+    geom_errorbarh(
+        aes(
+            xmin = psi_lwr,
+            xmax = psi_upr
+        ),
+        height = 0.2,
+        color = "darkgreen"
+    ) +
+    labs(
+        title = "Caterpillar Plot: Occupancy Probability by OTU",
+        x = expression("Occupancy probability (" * psi * ")"),
+        y = "OTU"
+    ) +
+    theme_minimal() +
+    theme(
+        axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5)
+    )
+
 
 ```
 ## 4.2 Detection Probability Caterpillar Plot
 
 ```{r plot-detection,fig.width=10, fig.height=9}
+library(dplyr)
+library(ggplot2)
 
- p_detect_otu_summary <- out$summary %>%
-     group_by(OTU) %>%
-     summarise(
-         p_detect_mean = mean(p_detect_mean, na.rm = TRUE),
-         p_detect_lwr = mean(p_detect_lwr, na.rm = TRUE),
-         p_detect_upr = mean(p_detect_upr, na.rm = TRUE),
-         .groups = "drop"
-     ) %>%
-     arrange(p_detect_mean) %>%
-     mutate(OTU = factor(OTU, levels = unique(OTU)))
+otu_col <- "OTU"
+
+# ------------------------------------------------------------
+# 1. Combine retained detection predictors
+# ------------------------------------------------------------
+
+p_detect_draws <- dplyr::bind_rows(out$p_detect_list)
+
+# eta is on the cloglog scale
+p_detect_draws <- p_detect_draws %>%
+    dplyr::mutate(
+        p_detect = 1 - exp(-exp(.data$eta))
+    )
+
+# ------------------------------------------------------------
+# 2. Summarise detection probability by OTU
+# ------------------------------------------------------------
+
+p_detect_otu_summary <- p_detect_draws %>%
+    dplyr::group_by(.data[[otu_col]]) %>%
+    dplyr::summarise(
+        p_detect_mean = mean(.data$p_detect, na.rm = TRUE),
+        p_detect_median = stats::median(.data$p_detect, na.rm = TRUE),
+        p_detect_lwr = stats::quantile(
+            .data$p_detect,
+            0.025,
+            na.rm = TRUE,
+            names = FALSE
+        ),
+        p_detect_upr = stats::quantile(
+            .data$p_detect,
+            0.975,
+            na.rm = TRUE,
+            names = FALSE
+        ),
+        .groups = "drop"
+    ) %>%
+    dplyr::arrange(.data$p_detect_mean)
+
+# ------------------------------------------------------------
+# 3. Order OTUs
+# ------------------------------------------------------------
+
+p_detect_otu_summary[[otu_col]] <- factor(
+    p_detect_otu_summary[[otu_col]],
+    levels = p_detect_otu_summary[[otu_col]]
+)
+
+# ------------------------------------------------------------
+# 4. Caterpillar plot
+# ------------------------------------------------------------
+
+ggplot(
+    p_detect_otu_summary,
+    aes(
+        x = p_detect_mean,
+        y = .data[[otu_col]]
+    )
+) +
+    geom_point(
+        color = "steelblue",
+        size = 2
+    ) +
+    geom_errorbarh(
+        aes(
+            xmin = p_detect_lwr,
+            xmax = p_detect_upr
+        ),
+        height = 0.2,
+        color = "steelblue"
+    ) +
+    labs(
+        title = "Caterpillar Plot: Detection Probability by OTU",
+        x = "Detection Probability",
+        y = "OTU"
+    ) +
+    theme_minimal() +
+    theme(
+        axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5)
+    )
  
- # Plot
- ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
-     geom_point(color = "steelblue") +
-     geom_errorbarh(aes(xmin = p_detect_lwr, xmax = p_detect_upr), height = 0.2) +
-     labs(
-         title = "Caterpillar Plot: Detection Probability by OTU",
-         x = "Detection Probability (p)",
-         y = "OTU"
-     ) +
-     theme_minimal() +
-     theme(
-         axis.text.y = element_text(size = 8),
-         plot.title = element_text(hjust = 0.5)
-     )
 ```
 
 ## 4.2  biplot
 
 ```{r biplot,fig.width=10, fig.height=9}
 
-# 1. Extract matrix of LV coordinates
-site_mat <- as.matrix(out$mean_lv_sites[, c("LV1", "LV2")])
-species_mat <- as.matrix(out$mean_lv_species[, c("LV1", "LV2")])
+library(ggplot2)
+library(grid)
 
-# 2. Compute Euclidean norms column-wise
-site_norms <- sqrt(colSums(site_mat^2))
-species_norms <- sqrt(colSums(species_mat^2))
+site_col <- "Name"
+otu_col  <- "OTU"
 
-# 3. Multiply both by the square root of the product of the norms
-scale_factor <- sqrt(site_norms * species_norms)
+# Extract latent coordinates
+site_mat <- as.matrix(
+  out$mean_lv_sites[, c("LV1", "LV2")]
+)
 
-# 4. Standardize and scale each
-scaled_sites <- sweep(site_mat, 2, site_norms, "/") * matrix(rep(scale_factor, each = nrow(site_mat)), ncol = 2)
-scaled_species <- sweep(species_mat, 2, species_norms, "/") * matrix(rep(scale_factor, each = nrow(species_mat)), ncol = 2)
+species_mat <- as.matrix(
+  out$mean_lv_species[, c("LV1", "LV2")]
+)
 
-# 5. Combine with original labels
-scaled_sites_df <- data.frame(Site = out$mean_lv_sites$Site, LV1 = scaled_sites[, 1], LV2 = scaled_sites[, 2])
-scaled_species_df <- data.frame(OTU = out$mean_lv_species$OTU, LV1 = scaled_species[, 1], LV2 = scaled_species[, 2])
+# Common symmetric scaling
+site_radius <- max(
+  sqrt(rowSums(site_mat^2)),
+  na.rm = TRUE
+)
 
+species_radius <- max(
+  sqrt(rowSums(species_mat^2)),
+  na.rm = TRUE
+)
 
+scale_factor <- sqrt(
+  site_radius / species_radius
+)
+
+scaled_sites <- site_mat / scale_factor
+scaled_species <- species_mat * scale_factor
+
+# Add labels
+scaled_sites_df <- data.frame(
+  Site = out$mean_lv_sites[[site_col]],
+  LV1  = scaled_sites[, 1],
+  LV2  = scaled_sites[, 2]
+)
+
+scaled_species_df <- data.frame(
+  OTU = out$mean_lv_species[[otu_col]],
+  LV1 = scaled_species[, 1],
+  LV2 = scaled_species[, 2]
+)
+
+# Plot
 ggplot() +
-  geom_point(data = scaled_sites_df, aes(x = LV1, y = LV2), color = "blue", size = 2) +
-  geom_text(data = scaled_sites_df, aes(x = LV1, y = LV2, label = Site), color = "blue", size = 2.5, vjust = -0.5) +
-  geom_segment(data = scaled_species_df, aes(x = 0, y = 0, xend = LV1, yend = LV2),
-               arrow = arrow(length = unit(0.2, "cm")), color = "brown", alpha = 0.8) +
-  geom_text(data = scaled_species_df, aes(x = LV1, y = LV2, label = OTU),
-            color = "brown", size = 3, vjust = -0.5) +
-  labs(x = "Latent Variable 1", y = "Latent Variable 2", title = "Symmetrically Scaled GLLVM Biplot") +
+
+  geom_point(
+    data = scaled_sites_df,
+    aes(x = LV1, y = LV2),
+    color = "blue",
+    size = 2
+  ) +
+
+  geom_text(
+    data = scaled_sites_df,
+    aes(x = LV1, y = LV2, label = Site),
+    color = "blue",
+    size = 2.5,
+    vjust = -0.5
+  ) +
+
+  geom_segment(
+    data = scaled_species_df,
+    aes(
+      x = 0,
+      y = 0,
+      xend = LV1,
+      yend = LV2
+    ),
+    arrow = grid::arrow(
+      length = grid::unit(0.2, "cm")
+    ),
+    color = "brown",
+    alpha = 0.8
+  ) +
+
+  geom_text(
+    data = scaled_species_df,
+    aes(
+      x = LV1,
+      y = LV2,
+      label = OTU
+    ),
+    color = "brown",
+    size = 3,
+    vjust = -0.5
+  ) +
+
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    linewidth = 0.3
+  ) +
+
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    linewidth = 0.3
+  ) +
+
+  coord_equal() +
+
+  labs(
+    x = "Latent Variable 1",
+    y = "Latent Variable 2",
+    title = "GLLVM Latent Variable Biplot"
+  ) +
+
   theme_minimal()
+
 ```

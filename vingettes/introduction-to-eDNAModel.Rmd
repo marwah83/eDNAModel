@@ -36,8 +36,7 @@ library(reshape2)
 
 # 1. Introduction
 
-This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities, and comparing models using AIC/BIC.
-
+This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities and model comparison.
 ---
 
 # 2. Load and Subset Data
@@ -59,17 +58,55 @@ physeq_one=physeq_new$`Marine invasive species Thessaloniki`
 
 ---
 
+#meta <- as.data.frame(
+#  phyloseq::sample_data(physeq_one)
+#)
+
+# Extract sampling site from Subcode
+#meta$site <- trimws(
+ # sub("\\s*\\([^)]*\\)\\s*$", "", meta$Subcode)
+#)
+
+# Site × month occupancy unit
+#meta$site_month <- interaction(
+#  meta$site,
+ # meta$Samplingmonth,
+ # sep = "_",
+ # drop = TRUE
+#)
+
+# Put metadata back into phyloseq
+#phyloseq::sample_data(physeq_one) <- phyloseq::sample_data(meta)
+
+#meta[, c(
+#  "Name",
+#  "Subcode",
+#  "site",
+#  "Samplingmonth",
+#  "site_month",
+#  "Replicate"
+#)]
+
+########################## PS data####################
+
+ps <- readRDS("~/Downloads/ps_porto_12S_modelinput.rds")
+
+############################################################
 # 3. Fit the Occupancy–Detection Model
 
 ```{r fit-model, echo=FALSE}
 out <- FitModel(
-    phyloseq      = ps,                  # your phyloseq object
+    phyloseq      = ps,          # your phyloseq object
     site_col      = "site_month",        # site-level variable
     sample_col    = "Name",              # biological sample ID
     replicate_col = "Replicate",         # PCR replicate (optional but recommended)
     
     # --- MODEL STRUCTURE ---
-    occupancy_formula = z_sim ~ 1 + (1 | OTU),
+    occupancy_formula =
+  z_sim ~ Samplingmonth +
+  (1 | site_month) +
+  (1 | OTU) +
+  (1 | OTU:Samplingmonth),
     capture_formula   = a_sim ~ 1 + (1 | OTU),
     abundance_formula = y ~ (1 | OTU) + (1 | Name),
     
@@ -153,32 +190,44 @@ ggplot(psi_otu_summary, aes(x = psi_mean, y = OTU)) +
 library(dplyr)
 library(ggplot2)
 
-# Combine all iterations
+# Combine retained iterations
 p_detect_draws <- dplyr::bind_rows(out$p_detect_list)
 
-# Summarise at OTU level (correct: eta is already p_detect)
+# Convert cloglog eta to detection probability
+p_detect_draws <- p_detect_draws %>%
+  mutate(
+    p_detect = 1 - exp(-exp(eta))
+  )
+
+# Summarise at OTU level
 p_detect_otu_summary <- p_detect_draws %>%
   group_by(OTU) %>%
   summarise(
-    p_detect_mean = mean(eta, na.rm = TRUE),
-    p_detect_lwr  = quantile(eta, 0.025, na.rm = TRUE),
-    p_detect_upr  = quantile(eta, 0.975, na.rm = TRUE),
+    p_detect_mean = mean(p_detect, na.rm = TRUE),
+    p_detect_lwr  = quantile(p_detect, 0.025, na.rm = TRUE),
+    p_detect_upr  = quantile(p_detect, 0.975, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   arrange(p_detect_mean) %>%
-  mutate(OTU = factor(OTU, levels = OTU))
+  mutate(
+    OTU = factor(OTU, levels = OTU)
+  )
 
-# Plot
-ggplot(p_detect_otu_summary, aes(x = p_detect_mean, y = OTU)) +
-  geom_point(color = "steelblue", size = 2) +
+ggplot(
+  p_detect_otu_summary,
+  aes(x = p_detect_mean, y = OTU)
+) +
+  geom_point(size = 2) +
   geom_errorbarh(
-    aes(xmin = p_detect_lwr, xmax = p_detect_upr),
-    height = 0.2,
-    color = "steelblue"
+    aes(
+      xmin = p_detect_lwr,
+      xmax = p_detect_upr
+    ),
+    height = 0.2
   ) +
   labs(
     title = "Caterpillar Plot: Detection Probability by OTU",
-    x = "Detection probability (p_detect)",
+    x = "Detection probability",
     y = "OTU"
   ) +
   theme_minimal() +
@@ -198,53 +247,129 @@ library(dplyr)
 library(ggplot2)
 
 treatment_col <- "Samplingmonth"
+site_col <- "site_month"
+otu_col <- "OTU"
 
-# Combine draws
-psi_draws <- bind_rows(out$psi_list)
+# ------------------------------------------------------------
+# Combine retained occupancy draws
+# ------------------------------------------------------------
 
-# Merge treatment info from long_df
+psi_draws <- dplyr::bind_rows(out$psi_list)
+
+# ------------------------------------------------------------
+# Extract site-level treatment information
+# ------------------------------------------------------------
+
+treatment_info <- out$long_df %>%
+  dplyr::select(
+    dplyr::all_of(c(site_col, otu_col, treatment_col))
+  ) %>%
+  dplyr::distinct()
+
+# ------------------------------------------------------------
+# Join treatment information correctly:
+# site × OTU, NOT OTU alone
+# ------------------------------------------------------------
+
 psi_draws <- psi_draws %>%
-    left_join(
-        out$long_df %>%
-            select(OTU, !!sym(treatment_col)) %>%
-            distinct(),
-        by = "OTU"
-    )
+  dplyr::left_join(
+    treatment_info,
+    by = c(site_col, otu_col)
+  )
 
-# Proper summary
+# Check that treatment was matched
+stopifnot(
+  !any(is.na(psi_draws[[treatment_col]]))
+)
+
+# ------------------------------------------------------------
+# Transform logit eta -> occupancy probability
+# ------------------------------------------------------------
+
+psi_draws <- psi_draws %>%
+  dplyr::mutate(
+    psi = stats::plogis(.data$eta)
+  )
+
+# ------------------------------------------------------------
+# Summarise by OTU and treatment
+# ------------------------------------------------------------
+
 psi_data <- psi_draws %>%
-    group_by(OTU, .data[[treatment_col]]) %>%
-    summarise(
-        psi_mean = mean(plogis(eta), na.rm = TRUE),
-        psi_lwr  = quantile(plogis(eta), 0.025, na.rm = TRUE),
-        psi_upr  = quantile(plogis(eta), 0.975, na.rm = TRUE),
-        .groups = "drop"
-    ) %>%
-    group_by(OTU) %>%
-    mutate(otu_mean = mean(psi_mean, na.rm = TRUE)) %>%
-    ungroup() %>%
-    arrange(otu_mean) %>%
-    mutate(OTU = factor(OTU, levels = unique(OTU)))
+  dplyr::group_by(
+    .data[[otu_col]],
+    .data[[treatment_col]]
+  ) %>%
+  dplyr::summarise(
+    psi_mean   = mean(.data$psi, na.rm = TRUE),
+    psi_median = stats::median(.data$psi, na.rm = TRUE),
+    psi_lwr    = stats::quantile(
+      .data$psi,
+      0.025,
+      na.rm = TRUE
+    ),
+    psi_upr    = stats::quantile(
+      .data$psi,
+      0.975,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
 
+# ------------------------------------------------------------
+# Order OTUs according to overall occupancy
+# ------------------------------------------------------------
+
+psi_data <- psi_data %>%
+  dplyr::group_by(.data[[otu_col]]) %>%
+  dplyr::mutate(
+    otu_mean = mean(.data$psi_mean, na.rm = TRUE)
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::arrange(.data$otu_mean)
+
+otu_levels <- unique(psi_data[[otu_col]])
+
+psi_data[[otu_col]] <- factor(
+  psi_data[[otu_col]],
+  levels = otu_levels
+)
+
+# ------------------------------------------------------------
 # Plot
-ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
-    geom_point(position = position_dodge(width = 0.5)) +
-    geom_errorbarh(
-        aes(xmin = psi_lwr, xmax = psi_upr),
-        position = position_dodge(width = 0.5),
-        height = 0.2
-    ) +
-    labs(
-        title = "Caterpillar Plot: Occupancy by OTU and Treatment",
-        x = "Occupancy Probability (ψ)",
-        y = "OTU",
-        color = treatment_col
-    ) +
-    theme_minimal() +
-    theme(
-        axis.text.y = element_text(size = 8),
-        plot.title = element_text(hjust = 0.5)
-    )
+# ------------------------------------------------------------
+
+ggplot(
+  psi_data,
+  aes(
+    x = psi_mean,
+    y = .data[[otu_col]],
+    color = .data[[treatment_col]]
+  )
+) +
+  geom_point(
+    position = position_dodge(width = 0.5),
+    size = 2
+  ) +
+  geom_errorbarh(
+    aes(
+      xmin = psi_lwr,
+      xmax = psi_upr
+    ),
+    position = position_dodge(width = 0.5),
+    height = 0.2
+  ) +
+  labs(
+    title = "Occupancy Probability by OTU and Sampling Month",
+    x = expression("Occupancy probability (" * psi * ")"),
+    y = "OTU",
+    color = "Sampling month"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5)
+  )
 
 ```
 
@@ -254,72 +379,76 @@ ggplot(psi_data, aes(x = psi_mean, y = OTU, color = .data[[treatment_col]])) +
 
 ```{r heatmap-psi, fig.width=10, fig.height=9}
 
+
+
 library(dplyr)
 library(tidyr)
 library(tibble)
 library(pheatmap)
 
 site_col <- "site_month"
+otu_col  <- "OTU"
 
 # ------------------------------------------------------------
-# Step 1: Combine ψ draws
+# Step 1: Combine retained occupancy draws
 # ------------------------------------------------------------
-psi_draws <- bind_rows(out$psi_list)
+psi_draws <- dplyr::bind_rows(out$psi_list)
+
+# Check
+names(psi_draws)
+head(psi_draws)
 
 # ------------------------------------------------------------
-# Step 2: Create site–OTU structure
+# Step 2: Convert logit eta -> occupancy probability
 # ------------------------------------------------------------
-site_otu <- out$long_df %>%
-  select(OTU, !!sym(site_col)) %>%
-  distinct()
+psi_long <- psi_draws %>%
+    dplyr::mutate(
+        psi = stats::plogis(.data$eta)
+    )
 
 # ------------------------------------------------------------
-# Step 3: Safe join (explicit many-to-many)
+# Step 3: Average across retained EM-like iterations
+# for each site × OTU combination
 # ------------------------------------------------------------
-psi_long <- site_otu %>%
-  left_join(
-    psi_draws,
-    by = "OTU",
-    relationship = "many-to-many"   
-  )
+psi_site_otu <- psi_long %>%
+    dplyr::group_by(
+        .data[[site_col]],
+        .data[[otu_col]]
+    ) %>%
+    dplyr::summarise(
+        psi = mean(.data$psi, na.rm = TRUE),
+        .groups = "drop"
+    )
 
 # ------------------------------------------------------------
-# Step 4: Compute ψ and aggregate
+# Step 4: Convert to site × OTU matrix
 # ------------------------------------------------------------
-psi_matrix <- psi_long %>%
-  mutate(psi = plogis(eta)) %>%
-  group_by(.data[[site_col]], OTU) %>%
-  summarise(
-    psi = mean(psi, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  pivot_wider(
-    names_from = OTU,
-    values_from = psi
-  ) %>%
-  column_to_rownames(site_col) %>%
-  as.matrix()
+psi_matrix <- psi_site_otu %>%
+    tidyr::pivot_wider(
+        names_from  = dplyr::all_of(otu_col),
+        values_from = psi
+    ) %>%
+    tibble::column_to_rownames(site_col) %>%
+    as.matrix()
 
 # ------------------------------------------------------------
-# Step 5: Handle missing values
+# Step 5: Inspect
 # ------------------------------------------------------------
-psi_matrix[is.na(psi_matrix)] <- 0
+dim(psi_matrix)
+psi_matrix[1:min(5, nrow(psi_matrix)),
+           1:min(5, ncol(psi_matrix)),
+           drop = FALSE]
 
 # ------------------------------------------------------------
-# Step 6: Plot heatmap
+# Step 6: Heatmap
 # ------------------------------------------------------------
-pheatmap(
-  psi_matrix,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  scale = "none",
-  color = colorRampPalette(c("white", "darkblue"))(100),
-  main = "Heatmap of Occupancy Probability (ψ): Sites × OTUs",
-  fontsize_row = 8,
-  fontsize_col = 7,
-  angle_col = 45
+pheatmap::pheatmap(
+    psi_matrix,
+    cluster_rows = TRUE,
+    cluster_cols = TRUE,
+    main = "Occupancy Probability by Site and OTU",
+    border_color = NA
 )
-
 ```
 
 
@@ -429,7 +558,7 @@ cv_rep <- compare_models_cv_multilevel(
   otu_col = "OTU",
   count_col = "y",
   cv_level = "replicate",
-  K = 5
+  K = 3
 )
 
 cv_sample <- compare_models_cv_multilevel(phyloseq = ps,

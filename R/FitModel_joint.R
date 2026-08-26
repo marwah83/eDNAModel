@@ -1,3 +1,259 @@
+#' Fit a Joint Hierarchical eDNA Occupancy--Capture--Abundance Model
+#'
+#' @description
+#' Fits a joint hierarchical model for environmental DNA (eDNA) data that
+#' separates ecological occupancy, biological-sample capture, and sequencing
+#' read abundance. The discrete latent occupancy and capture states are
+#' analytically marginalized from the observed-data likelihood, while optional
+#' Gaussian random effects are integrated using the Laplace approximation
+#' implemented in \pkg{TMB}.
+#'
+#' The model contains three linked components:
+#'
+#' \deqn{
+#' Z_{im} \sim \mathrm{Bernoulli}(\psi_{im}),
+#' }
+#'
+#' \deqn{
+#' \mathrm{logit}(\psi_{im})
+#' =
+#' \mathbf{x}^{(\psi)\top}_{i}\boldsymbol{\beta}_{\psi}
+#' +
+#' b^{(\psi)}_{m},
+#' }
+#'
+#' \deqn{
+#' A_{ijm}\mid Z_{im}=1
+#' \sim
+#' \mathrm{Bernoulli}(p_{ijm}),
+#' }
+#'
+#' \deqn{
+#' \mathrm{logit}(p_{ijm})
+#' =
+#' \mathbf{x}^{(p)\top}_{ij}\boldsymbol{\beta}_{p}
+#' +
+#' b^{(p)}_{m},
+#' }
+#'
+#' and
+#'
+#' \deqn{
+#' \log(\lambda_{ijkm})
+#' =
+#' \mathbf{x}^{(\lambda)\top}_{ijk}
+#' \boldsymbol{\beta}_{\lambda}
+#' +
+#' b^{(\lambda)}_{m}
+#' +
+#' u_j
+#' +
+#' v_{jm}
+#' +
+#' o_{ijk}.
+#' }
+#'
+#' Here, \eqn{i} indexes sites or site--time units, \eqn{j} biological
+#' samples, \eqn{k} technical replicates, and \eqn{m} OTUs or taxa.
+#'
+#' @param phyloseq A \code{phyloseq} object containing an OTU/count table
+#'   and corresponding sample metadata.
+#'
+#' @param site_col Character string giving the column in
+#'   \code{sample_data(phyloseq)} defining the ecological site or
+#'   site--time occupancy unit.
+#'
+#' @param sample_col Character string giving the biological-sample identifier.
+#'   Default is \code{"Name"}.
+#'
+#' @param replicate_col Optional character string giving the technical or PCR
+#'   replicate identifier. Default is \code{NULL}.
+#'
+#' @param otu_col Character string giving the OTU/taxon identifier used in the
+#'   long-format model data. Default is \code{"OTU"}.
+#'
+#' @param count_col Character string giving the observed sequencing-read count
+#'   column. Default is \code{"y"}.
+#'
+#' @param occupancy_formula One-sided formula specifying fixed effects in the
+#'   occupancy component. Default is \code{~ 1}.
+#'
+#' @param capture_formula One-sided formula specifying fixed effects in the
+#'   biological-sample capture component. Default is \code{~ 1}.
+#'
+#' @param abundance_formula One-sided formula specifying fixed effects in the
+#'   sequencing-read abundance component. Default is \code{~ 1}.
+#'
+#' @param abundance_offset Optional character string naming a positive variable
+#'   to be included as a log-offset in the abundance linear predictor.
+#'   Default is \code{NULL}.
+#'
+#' @param abundance_family Character string specifying the conditional
+#'   read-count distribution. One of \code{"poisson"}, \code{"nbinom"},
+#'   \code{"zip"}, or \code{"zinb"}.
+#'
+#' @param min_species_sum Minimum total read count required for an OTU to be
+#'   retained in the analysis. Default is \code{10}.
+#'
+#' @param min_detection_replicates Minimum number of positive replicate-level
+#'   observations required for an OTU to be retained. Default is \code{1}.
+#'
+#' @param random_occ_otu Logical. If \code{TRUE}, include an OTU-specific
+#'   Gaussian random intercept in the occupancy model.
+#'
+#' @param random_capture_otu Logical. If \code{TRUE}, include an OTU-specific
+#'   Gaussian random intercept in the capture model.
+#'
+#' @param random_abund_otu Logical. If \code{TRUE}, include an OTU-specific
+#'   Gaussian random intercept in the abundance model.
+#'
+#' @param random_sample Logical. If \code{TRUE}, include a biological-sample
+#'   Gaussian random intercept in the abundance model.
+#'
+#' @param random_sample_otu Logical. If \code{TRUE}, include a sample-by-OTU
+#'   Gaussian random effect in the abundance model.
+#'
+#' @param DLL Character string specifying the TMB dynamic library containing
+#'   the joint likelihood template. For the installed \pkg{eDNAModel} package,
+#'   this should normally be \code{"eDNAModel"}.
+#'
+#' @param verbose Logical. If \code{TRUE}, print model dimensions,
+#'   optimization progress, convergence information, and post-fit calculations.
+#'
+#' @details
+#' The observed-data likelihood is obtained by analytically summing over the
+#' latent biological-sample capture state and latent site-level occupancy state.
+#' Consequently, these binary latent variables are not imputed during model
+#' fitting.
+#'
+#' For an all-zero biological sample, the contribution conditional on site
+#' occupancy is
+#'
+#' \deqn{
+#' (1-p_{ijm})
+#' +
+#' p_{ijm}
+#' \prod_k f(0;\lambda_{ijkm}),
+#' }
+#'
+#' whereas a biological sample containing at least one positive read has
+#' likelihood
+#'
+#' \deqn{
+#' p_{ijm}
+#' \prod_k
+#' f(Y_{ijkm};\lambda_{ijkm}).
+#' }
+#'
+#' At the site--OTU level, if the complete observation history is zero,
+#'
+#' \deqn{
+#' (1-\psi_{im})
+#' +
+#' \psi_{im}
+#' \prod_j L_{ijm}^{(1)}
+#' }
+#'
+#' is used. If any read count is positive, occupancy is necessarily present and
+#' the contribution is
+#'
+#' \deqn{
+#' \psi_{im}
+#' \prod_j L_{ijm}^{(1)}.
+#' }
+#'
+#' Enabled Gaussian random effects are integrated from the likelihood using
+#' TMB's Laplace approximation. Fixed-effect and variance-component uncertainty
+#' is obtained from the Hessian of the marginal likelihood through
+#' \code{TMB::sdreport()}.
+#'
+#' The negative-binomial model uses the NB2 parameterization
+#'
+#' \deqn{
+#' \mathrm{Var}(Y)
+#' =
+#' \mu + \frac{\mu^2}{\theta}.
+#' }
+#'
+#' For ZIP and ZINB models, the parameter \eqn{\pi} represents an additional
+#' structural-zero probability conditional on biological-sample capture.
+#'
+#' @return A list containing:
+#'
+#' \describe{
+#'   \item{\code{fit}}{The \code{nlminb} optimization result.}
+#'   \item{\code{tmb_object}}{The fitted TMB objective object.}
+#'   \item{\code{sdreport}}{The \code{TMB::sdreport} object containing
+#'     likelihood-based standard errors.}
+#'   \item{\code{report}}{Derived quantities reported by the C++ TMB model.}
+#'   \item{\code{fixed_effects}}{Estimated fixed parameters and standard errors.}
+#'   \item{\code{derived}}{Delta-method summaries for reported quantities such
+#'     as occupancy and capture probabilities.}
+#'   \item{\code{site_data}}{Site-by-OTU model data.}
+#'   \item{\code{sample_data}}{Biological-sample-by-OTU model data.}
+#'   \item{\code{long_df}}{Long-format count data used for fitting.}
+#'   \item{\code{otu_stats}}{OTU filtering statistics.}
+#'   \item{\code{retained_otus}}{Names of OTUs retained after filtering.}
+#'   \item{\code{random_effects}}{Names of Gaussian random effects integrated
+#'     using the Laplace approximation.}
+#'   \item{\code{formulas}}{Occupancy, capture, and abundance formulas.}
+#'   \item{\code{abundance_family}}{Conditional count distribution used.}
+#'   \item{\code{convergence}}{Optimizer convergence information and
+#'     standard-error diagnostics.}
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' data("physeq_new", package = "eDNAModel")
+#'
+#' physeq_one <-
+#'   physeq_new[["Marine Invasive species Trondheim"]]
+#'
+#' meta <- as.data.frame(
+#'   phyloseq::sample_data(physeq_one)
+#' )
+#'
+#' meta$site_month <- interaction(
+#'   meta$Sampling.area.Name,
+#'   meta$Samplingmonth,
+#'   drop = TRUE,
+#'   sep = "_"
+#' )
+#'
+#' phyloseq::sample_data(physeq_one) <-
+#'   phyloseq::sample_data(meta)
+#'
+#' fit <- FitModel_joint(
+#'   phyloseq = physeq_one,
+#'   site_col = "site_month",
+#'   sample_col = "Name",
+#'   replicate_col = "Replicate",
+#'   otu_col = "OTU",
+#'   count_col = "y",
+#'   occupancy_formula = ~ Samplingmonth,
+#'   capture_formula = ~ 1,
+#'   abundance_formula = ~ Samplingmonth + Replicate,
+#'   abundance_family = "zinb",
+#'   random_occ_otu = TRUE,
+#'   random_capture_otu = TRUE,
+#'   random_abund_otu = TRUE,
+#'   random_sample = TRUE,
+#'   random_sample_otu = TRUE
+#' )
+#'
+#' fit$convergence
+#' fit$fixed_effects
+#' }
+#'
+#' @references
+#' Kristensen, K., Nielsen, A., Berg, C. W., Skaug, H., and Bell, B. M.
+#' (2016). TMB: Automatic differentiation and Laplace approximation.
+#' \emph{Journal of Statistical Software}, 70(5), 1--21.
+#'
+#' @importFrom stats model.matrix nlminb qlogis
+#' @importFrom dplyr group_by summarise filter pull select left_join across
+#' @importFrom TMB MakeADFun sdreport
+#' @export
 FitModel_joint <- function(
         phyloseq,
         site_col,

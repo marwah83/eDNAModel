@@ -2,6 +2,7 @@
 
 export(FitModel)
 export(FitModel_gllvm)
+export(FitModel_joint)
 export(compare_models_cv_gllvm)
 export(compare_models_cv_multilevel)
 export(evaluate_cv)
@@ -11,9 +12,19 @@ export(prepare_long_data)
 import(dplyr)
 import(rlang)
 import(tidyr)
+importFrom(TMB,
+  MakeADFun,
+  sdreport
+)
 importFrom(dplyr,
+  across,
+  filter,
+  group_by,
   left_join,
-  mutate
+  mutate,
+  pull,
+  select,
+  summarise
 )
 importFrom(gllvm,gllvm)
 importFrom(glmmTMB,
@@ -36,9 +47,12 @@ importFrom(reshape2,
 )
 importFrom(stats,
   median,
+  model.matrix,
+  nlminb,
   plogis,
   poisson,
   predict,
+  qlogis,
   quantile,
   rbinom
 )

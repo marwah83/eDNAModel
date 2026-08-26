@@ -40,6 +40,6 @@ Suggests:
     rmarkdown,
     pheatmap
 VignetteBuilder: knitr
-RoxygenNote: 7.3.3
 Depends:
     R (>= 3.5)
+Config/roxygen2/version: 8.1.0

@@ -2566,22 +2566,17 @@ FitModel <- function(
   # Final models
   # ============================================================
 
-  final_iter <- n_iter
+  # ============================================================
+# Final models
+# ============================================================
 
-  occ_fit_final <-
-    occupancy_models[
-      [final_iter]
-    ]
+final_iter <- n_iter
 
-  cap_fit_final <-
-    capture_models[
-      [final_iter]
-    ]
+occ_fit_final <- occupancy_models[[final_iter]]
 
-  abund_fit_final <-
-    abundance_models[
-      [final_iter]
-    ]
+cap_fit_final <- capture_models[[final_iter]]
+
+abund_fit_final <- abundance_models[[final_iter]]
 
 
   # ============================================================

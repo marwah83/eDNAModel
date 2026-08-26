@@ -1,20 +1,15 @@
 #include <TMB.hpp>
 
-
-// ------------------------------------------------------------
-// log(invlogit(x))
-// ------------------------------------------------------------
+// ============================================================
+// Numerically stable logistic helpers
+// TMB already supplies logspace_add()
+// ============================================================
 
 template<class Type>
 Type log_invlogit(Type x)
 {
   return -logspace_add(Type(0), -x);
 }
-
-
-// ------------------------------------------------------------
-// log(1 - invlogit(x))
-// ------------------------------------------------------------
 
 template<class Type>
 Type log1m_invlogit(Type x)
@@ -24,7 +19,17 @@ Type log1m_invlogit(Type x)
 
 
 // ============================================================
-// Joint eDNA likelihood
+// Joint observed-data eDNA likelihood
+//
+// Hierarchy:
+//
+// Z_im ~ Bernoulli(psi_im)
+//
+// A_ijm | Z_im = 1 ~ Bernoulli(p_ijm)
+//
+// Y_ijkm | A_ijm = 1 ~ Count(lambda_ijkm)
+//
+// Z and A are analytically marginalized.
 // ============================================================
 
 template<class Type>
@@ -37,61 +42,57 @@ Type objective_function<Type>::operator() ()
 
   DATA_VECTOR(y);
 
-  // Fixed-effect design matrices
   DATA_MATRIX(X_occ);
   DATA_MATRIX(X_cap);
   DATA_MATRIX(X_abund);
 
-  // Offset for abundance
   DATA_VECTOR(offset_abund);
 
-  // Taxon index for each site-taxon occupancy row
+  // Site x OTU -> OTU
   DATA_IVECTOR(occ_otu);
 
-  // Taxon index for each sample-taxon group
+  // Sample x OTU -> OTU
   DATA_IVECTOR(sample_otu);
 
-  // Biological sample index
-  DATA_IVECTOR(sample_id);
-
-  // Sample x OTU interaction index
-  DATA_IVECTOR(sample_otu_re);
-
-  // Mapping PCR rows -> sample-taxon group
+  // PCR/read row -> sample x OTU
   DATA_IVECTOR(row_sample_group);
 
-  // Mapping sample-taxon groups -> site-taxon group
+  // Sample x OTU -> site x OTU
   DATA_IVECTOR(sample_site_group);
 
-  // Mapping PCR rows -> OTU
+  // PCR/read row -> OTU
   DATA_IVECTOR(row_otu);
 
-  // Mapping PCR rows -> biological sample
+  // PCR/read row -> biological sample
   DATA_IVECTOR(row_sample_id);
 
-  // Mapping PCR rows -> sample x OTU random effect
+  // PCR/read row -> sample x OTU RE
   DATA_IVECTOR(row_sample_otu_re);
 
-  // Does each sample-taxon group have any positive read?
+  // Whether sample x OTU has >= 1 positive count
   DATA_IVECTOR(sample_positive);
 
-  // Does each site-taxon group have any positive read?
+  // Whether site x OTU has >= 1 positive count
   DATA_IVECTOR(site_positive);
 
-  // Number of site x OTU combinations
   DATA_INTEGER(n_site_groups);
-
-  // Number of sample x OTU combinations
   DATA_INTEGER(n_sample_groups);
 
-  // Count distribution:
+  // ----------------------------------------------------------
+  // Count family
+  //
   // 0 = Poisson
   // 1 = NB2
   // 2 = ZIP
   // 3 = ZINB
+  // ----------------------------------------------------------
+
   DATA_INTEGER(family_code);
 
+  // ----------------------------------------------------------
   // Random-effect switches
+  // ----------------------------------------------------------
+
   DATA_INTEGER(use_occ_otu);
   DATA_INTEGER(use_cap_otu);
   DATA_INTEGER(use_abund_otu);
@@ -100,13 +101,11 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // FIXED-EFFECT PARAMETERS
+  // FIXED EFFECTS
   // ==========================================================
 
   PARAMETER_VECTOR(beta_occ);
-
   PARAMETER_VECTOR(beta_cap);
-
   PARAMETER_VECTOR(beta_abund);
 
 
@@ -132,7 +131,6 @@ Type objective_function<Type>::operator() ()
 
   PARAMETER(log_sd_sample);
   PARAMETER(log_sd_sample_otu);
-
 
   Type sd_occ_otu =
     exp(log_sd_occ_otu);
@@ -160,7 +158,7 @@ Type objective_function<Type>::operator() ()
   Type theta =
     exp(log_theta);
 
-  // Zero inflation
+  // ZIP / ZINB structural-zero probability
   PARAMETER(zi_intercept);
 
   Type pi_zi =
@@ -175,19 +173,23 @@ Type objective_function<Type>::operator() ()
   // NEGATIVE LOG-LIKELIHOOD
   // ==========================================================
 
-  Type nll = 0;
+  Type nll = Type(0);
 
 
   // ==========================================================
-  // RANDOM-EFFECT PRIORS
+  // RANDOM-EFFECT GAUSSIAN DENSITIES
   // ==========================================================
 
   if (use_occ_otu == 1)
   {
-    for (int m = 0; m < b_occ_otu.size(); m++)
+
+    for (int j = 0;
+         j < b_occ_otu.size();
+         j++)
     {
+
       nll -= dnorm(
-        b_occ_otu(m),
+        b_occ_otu(j),
         Type(0),
         sd_occ_otu,
         true
@@ -198,10 +200,14 @@ Type objective_function<Type>::operator() ()
 
   if (use_cap_otu == 1)
   {
-    for (int m = 0; m < b_cap_otu.size(); m++)
+
+    for (int j = 0;
+         j < b_cap_otu.size();
+         j++)
     {
+
       nll -= dnorm(
-        b_cap_otu(m),
+        b_cap_otu(j),
         Type(0),
         sd_cap_otu,
         true
@@ -212,10 +218,14 @@ Type objective_function<Type>::operator() ()
 
   if (use_abund_otu == 1)
   {
-    for (int m = 0; m < b_abund_otu.size(); m++)
+
+    for (int j = 0;
+         j < b_abund_otu.size();
+         j++)
     {
+
       nll -= dnorm(
-        b_abund_otu(m),
+        b_abund_otu(j),
         Type(0),
         sd_abund_otu,
         true
@@ -226,10 +236,14 @@ Type objective_function<Type>::operator() ()
 
   if (use_sample_re == 1)
   {
-    for (int s = 0; s < b_sample.size(); s++)
+
+    for (int j = 0;
+         j < b_sample.size();
+         j++)
     {
+
       nll -= dnorm(
-        b_sample(s),
+        b_sample(j),
         Type(0),
         sd_sample,
         true
@@ -240,10 +254,14 @@ Type objective_function<Type>::operator() ()
 
   if (use_sample_otu_re == 1)
   {
-    for (int q = 0; q < b_sample_otu.size(); q++)
+
+    for (int j = 0;
+         j < b_sample_otu.size();
+         j++)
     {
+
       nll -= dnorm(
-        b_sample_otu(q),
+        b_sample_otu(j),
         Type(0),
         sd_sample_otu,
         true
@@ -259,10 +277,14 @@ Type objective_function<Type>::operator() ()
   vector<Type> eta_occ =
     X_occ * beta_occ;
 
-  for (int g = 0; g < n_site_groups; g++)
+  if (use_occ_otu == 1)
   {
-    if (use_occ_otu == 1)
+
+    for (int g = 0;
+         g < n_site_groups;
+         g++)
     {
+
       eta_occ(g) +=
         b_occ_otu(
           occ_otu(g)
@@ -278,10 +300,14 @@ Type objective_function<Type>::operator() ()
   vector<Type> eta_cap =
     X_cap * beta_cap;
 
-  for (int s = 0; s < n_sample_groups; s++)
+  if (use_cap_otu == 1)
   {
-    if (use_cap_otu == 1)
+
+    for (int s = 0;
+         s < n_sample_groups;
+         s++)
     {
+
       eta_cap(s) +=
         b_cap_otu(
           sample_otu(s)
@@ -297,30 +323,38 @@ Type objective_function<Type>::operator() ()
   vector<Type> eta_abund =
     X_abund * beta_abund;
 
-  for (int r = 0; r < y.size(); r++)
+  for (int r = 0;
+       r < y.size();
+       r++)
   {
 
     eta_abund(r) +=
       offset_abund(r);
 
+
     if (use_abund_otu == 1)
     {
+
       eta_abund(r) +=
         b_abund_otu(
           row_otu(r)
         );
     }
 
+
     if (use_sample_re == 1)
     {
+
       eta_abund(r) +=
         b_sample(
           row_sample_id(r)
         );
     }
 
+
     if (use_sample_otu_re == 1)
     {
+
       eta_abund(r) +=
         b_sample_otu(
           row_sample_otu_re(r)
@@ -330,14 +364,17 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // COUNT LOG LIKELIHOOD
+  // READ-LEVEL COUNT LOG LIKELIHOOD
   // ==========================================================
 
   vector<Type> log_count(
     y.size()
   );
 
-  for (int r = 0; r < y.size(); r++)
+
+  for (int r = 0;
+       r < y.size();
+       r++)
   {
 
     Type mu =
@@ -345,7 +382,9 @@ Type objective_function<Type>::operator() ()
         eta_abund(r)
       );
 
-    Type lp;
+
+    Type lp =
+      Type(0);
 
 
     // --------------------------------------------------------
@@ -365,28 +404,32 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // NB2
+    // Negative Binomial 2
     //
-    // Var(Y) = mu + mu^2 / theta
+    // Var(Y) =
+    // mu + mu^2 / theta
     // --------------------------------------------------------
 
     else if (family_code == 1)
     {
 
+      Type variance =
+        mu +
+        mu * mu /
+        theta;
+
       lp =
         dnbinom2(
           y(r),
           mu,
-          mu +
-            mu * mu /
-            theta,
+          variance,
           true
         );
     }
 
 
     // --------------------------------------------------------
-    // ZIP
+    // Zero-inflated Poisson
     // --------------------------------------------------------
 
     else if (family_code == 2)
@@ -399,11 +442,13 @@ Type objective_function<Type>::operator() ()
           true
         );
 
+
       if (y(r) == Type(0))
       {
 
         lp =
           logspace_add(
+
             log(pi_zi),
 
             log(
@@ -411,8 +456,10 @@ Type objective_function<Type>::operator() ()
               pi_zi
             ) +
             log_count_component
+
           );
       }
+
       else
       {
 
@@ -427,27 +474,33 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // ZINB
+    // Zero-inflated NB2
     // --------------------------------------------------------
 
-    else
+    else if (family_code == 3)
     {
+
+      Type variance =
+        mu +
+        mu * mu /
+        theta;
+
 
       Type log_count_component =
         dnbinom2(
           y(r),
           mu,
-          mu +
-            mu * mu /
-            theta,
+          variance,
           true
         );
+
 
       if (y(r) == Type(0))
       {
 
         lp =
           logspace_add(
+
             log(pi_zi),
 
             log(
@@ -455,8 +508,10 @@ Type objective_function<Type>::operator() ()
               pi_zi
             ) +
             log_count_component
+
           );
       }
+
       else
       {
 
@@ -476,37 +531,50 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // SAMPLE-LEVEL LIKELIHOOD
+  // SAMPLE x OTU CONDITIONAL LIKELIHOOD
   //
-  // A is analytically marginalized here
+  // First:
+  //
+  //   sum_k log f(y_ijk | A = 1)
+  //
+  // Then marginalize A.
   // ==========================================================
 
-  vector<Type> log_sample(
+  vector<Type> log_sample_count(
     n_sample_groups
   );
 
-  log_sample.setZero();
+  log_sample_count.setZero();
 
 
-  // Sum replicate count likelihoods within sample x OTU
-  for (int r = 0; r < y.size(); r++)
+  for (int r = 0;
+       r < y.size();
+       r++)
   {
 
     int s =
       row_sample_group(r);
 
-    log_sample(s) +=
+    log_sample_count(s) +=
       log_count(r);
   }
 
 
-  for (int s = 0; s < n_sample_groups; s++)
+  vector<Type> log_sample(
+    n_sample_groups
+  );
+
+
+  for (int s = 0;
+       s < n_sample_groups;
+       s++)
   {
 
     Type log_p =
       log_invlogit(
         eta_cap(s)
       );
+
 
     Type log_1mp =
       log1m_invlogit(
@@ -515,9 +583,12 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // Positive biological sample
+    // At least one positive read
     //
-    // A must equal 1
+    // A = 1 is required.
+    //
+    // L =
+    // p * product_k f(y_k)
     // --------------------------------------------------------
 
     if (sample_positive(s) == 1)
@@ -525,16 +596,18 @@ Type objective_function<Type>::operator() ()
 
       log_sample(s) =
         log_p +
-        log_sample(s);
+        log_sample_count(s);
     }
 
 
     // --------------------------------------------------------
-    // All-zero biological sample
+    // Entire sample is zero
     //
-    // Marginalize:
+    // A is marginalized:
     //
-    // (1-p) + p P(Y=0 | A=1)
+    // L =
+    // (1-p) +
+    // p * product_k f(0)
     // --------------------------------------------------------
 
     else
@@ -542,48 +615,57 @@ Type objective_function<Type>::operator() ()
 
       log_sample(s) =
         logspace_add(
+
           log_1mp,
 
           log_p +
-          log_sample(s)
+          log_sample_count(s)
+
         );
     }
   }
 
 
   // ==========================================================
-  // SITE x OTU LIKELIHOOD
-  //
-  // Z is analytically marginalized here
+  // SITE x OTU CONDITIONAL LIKELIHOOD GIVEN Z = 1
   // ==========================================================
 
-  vector<Type> log_site(
+  vector<Type> log_site_conditional(
     n_site_groups
   );
 
-  log_site.setZero();
+  log_site_conditional.setZero();
 
 
-  for (int s = 0; s < n_sample_groups; s++)
+  for (int s = 0;
+       s < n_sample_groups;
+       s++)
   {
 
     int g =
       sample_site_group(s);
 
-    log_site(g) +=
+    log_site_conditional(g) +=
       log_sample(s);
   }
 
 
   // ==========================================================
-  // Marginalize occupancy Z
+  // OCCUPANCY MARGINALIZATION
   // ==========================================================
 
   vector<Type> psi(
     n_site_groups
   );
 
-  for (int g = 0; g < n_site_groups; g++)
+  vector<Type> log_site(
+    n_site_groups
+  );
+
+
+  for (int g = 0;
+       g < n_site_groups;
+       g++)
   {
 
     psi(g) =
@@ -601,6 +683,7 @@ Type objective_function<Type>::operator() ()
         eta_occ(g)
       );
 
+
     Type log_1mpsi =
       log1m_invlogit(
         eta_occ(g)
@@ -608,9 +691,12 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // Positive site x OTU
+    // Positive site history
     //
-    // Z must equal 1
+    // Z = 1 required:
+    //
+    // L =
+    // psi * L(data | Z=1)
     // --------------------------------------------------------
 
     if (site_positive(g) == 1)
@@ -618,16 +704,18 @@ Type objective_function<Type>::operator() ()
 
       log_site(g) =
         log_psi +
-        log_site(g);
+        log_site_conditional(g);
     }
 
 
     // --------------------------------------------------------
-    // Entire site x OTU history is zero
+    // Entire site history zero
     //
-    // Marginalize:
+    // Marginalize Z:
     //
-    // (1-psi) + psi P(all data = 0 | Z=1)
+    // L =
+    // (1-psi) +
+    // psi * L(all-zero data | Z=1)
     // --------------------------------------------------------
 
     else
@@ -635,10 +723,12 @@ Type objective_function<Type>::operator() ()
 
       log_site(g) =
         logspace_add(
+
           log_1mpsi,
 
           log_psi +
-          log_site(g)
+          log_site_conditional(g)
+
         );
     }
 
@@ -649,14 +739,17 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // Derived parameters
+  // DERIVED QUANTITIES
   // ==========================================================
 
   vector<Type> capture_prob(
     n_sample_groups
   );
 
-  for (int s = 0; s < n_sample_groups; s++)
+
+  for (int s = 0;
+       s < n_sample_groups;
+       s++)
   {
 
     capture_prob(s) =
@@ -674,7 +767,10 @@ Type objective_function<Type>::operator() ()
     y.size()
   );
 
-  for (int r = 0; r < y.size(); r++)
+
+  for (int r = 0;
+       r < y.size();
+       r++)
   {
 
     lambda(r) =
@@ -713,11 +809,18 @@ Type objective_function<Type>::operator() ()
   );
 
   REPORT(
+    log_sample
+  );
+
+  REPORT(
     log_site
   );
 
 
-  // Formal delta-method SEs from joint model
+  // ==========================================================
+  // DELTA-METHOD DERIVED-PARAMETER SEs
+  // ==========================================================
+
   ADREPORT(
     psi
   );

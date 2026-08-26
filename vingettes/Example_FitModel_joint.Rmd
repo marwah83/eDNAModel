@@ -11,4 +11,47 @@ library(glmmTMB)
 library(reshape2)
 library(TMB)
 
+data("physeq_new",package = "eDNAModel")
+
+physeq_one=physeq_new$`Marine invasive species Thessaloniki`
+
+meta <- as.data.frame(
+    phyloseq::sample_data(physeq_one)
+)
+
+meta$site_month <- interaction(
+    meta$Sampling.area.Name,
+    meta$Samplingmonth,
+    drop = TRUE,
+    sep = "_"
+)
+
+phyloseq::sample_data(physeq_one) <-
+    phyloseq::sample_data(meta)
+
+
+
+fit_all_re <- FitModel_joint(
+    phyloseq = physeq_one,
+    site_col = "site_month",
+    sample_col = "Name",
+    replicate_col = "Replicate",
+    otu_col = "OTU",
+    count_col = "y",
+    
+    occupancy_formula = ~ Samplingmonth,
+    capture_formula = ~ 1,
+    abundance_formula = ~ Samplingmonth + Replicate,
+    
+    abundance_family = "nbinom",
+    
+    random_occ_otu = TRUE,
+    random_capture_otu = TRUE,
+    random_abund_otu = TRUE,
+    random_sample = TRUE,
+    random_sample_otu = TRUE,
+    
+    DLL = "eDNAModel",
+    verbose = TRUE
+)
 

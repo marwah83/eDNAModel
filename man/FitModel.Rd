@@ -249,8 +249,22 @@ followed by transformation through the appropriate inverse-link function.
 \itemize{
   \item The method is an approximate stochastic latent-state procedure and
     does not maximize a single observed-data joint likelihood.
-  \item Rubin-style pooling is used as an approximation for uncertainty
-    propagation across stochastic iterations.
+  \item Fixed-effect uncertainty is summarized using a Rubin-inspired
+within- and between-iteration variance decomposition. Because the latent
+occupancy and capture states are generated within a dependent stochastic
+fitting algorithm rather than as independent proper multiple imputations,
+the usual theoretical guarantees of Rubin's multiple-imputation rules do
+not directly apply. Between-iteration variability may contain both
+uncertainty associated with the latent states and Monte Carlo variability
+introduced by the iterative algorithm. Consequently, confidence intervals
+should be regarded as approximate and their empirical coverage should be
+evaluated by simulation.
+\item author {Rubin, Donald B.},title = {Multiple Imputation for Nonresponse in Surveys}
+\item author  = {Meng, Xiao-Li},title   = {Multiple-Imputation Inferences with Uncongenial Sources of Input},
+\item This limitation may become more important for models containing
+complex random-effect structures, because uncertainty in latent states,
+random effects, and variance components is propagated through separate
+conditional GLMM fits rather than through a single marginal likelihood..
   \item Component-wise AIC values are diagnostic and are not equivalent to
     AIC from a single joint likelihood.
   \item Detection probabilities depend on the assumed abundance

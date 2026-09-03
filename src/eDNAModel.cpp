@@ -5,41 +5,32 @@
 // Numerically stable logistic helper functions
 // ============================================================
 //
-// TMB already provides logspace_add(a,b):
+// For a logistic probability
 //
-//     logspace_add(a,b)
-//     = log(exp(a) + exp(b))
+//     p = invlogit(x) = 1 / (1 + exp(-x))
 //
-// This is preferable to explicitly exponentiating probabilities
-// because likelihood terms can become extremely small.
+// we frequently need:
 //
-// We use these helper functions repeatedly for occupancy,
-// capture, and zero-inflation probabilities.
+//     log(p)
+//     log(1 - p)
+//
+// Computing p first and then taking log(p) or log(1-p) can
+// become numerically unstable when x is very large or very
+// negative.
+//
+// These functions calculate the quantities directly on the
+// log scale.
 // ============================================================
 
 
 template<class Type>
 Type log_invlogit(Type x)
 {
-  // ----------------------------------------------------------
-  // Computes:
+  // log(invlogit(x))
   //
-  //     log(invlogit(x))
+  // = -log(1 + exp(-x))
   //
-  // where:
-  //
-  //     invlogit(x)
-  //     =
-  //     1 / (1 + exp(-x))
-  //
-  // Therefore:
-  //
-  //     log(invlogit(x))
-  //     =
-  //     -log(1 + exp(-x))
-  //
-  // Using logspace_add makes this numerically stable.
-  // ----------------------------------------------------------
+  // logspace_add() provides a numerically stable evaluation.
 
   return -logspace_add(
     Type(0),
@@ -48,27 +39,12 @@ Type log_invlogit(Type x)
 }
 
 
-
 template<class Type>
 Type log1m_invlogit(Type x)
 {
-  // ----------------------------------------------------------
-  // Computes:
+  // log(1 - invlogit(x))
   //
-  //     log(1 - invlogit(x))
-  //
-  // Because:
-  //
-  //     1 - invlogit(x)
-  //     =
-  //     1 / (1 + exp(x))
-  //
-  // therefore:
-  //
-  //     log(1-p)
-  //     =
-  //     -log(1 + exp(x)).
-  // ----------------------------------------------------------
+  // = -log(1 + exp(x))
 
   return -logspace_add(
     Type(0),
@@ -82,58 +58,122 @@ Type log1m_invlogit(Type x)
 // Joint observed-data eDNA likelihood
 // ============================================================
 //
-// Hierarchy:
+// HIERARCHICAL MODEL
 //
 // ------------------------------------------------------------
-// OCCUPANCY LEVEL
+// LEVEL 1: SITE x OTU OCCUPANCY
+// ------------------------------------------------------------
 //
 //     Z_im ~ Bernoulli(psi_im)
 //
-// i = site
-// m = OTU
+// where:
 //
-// There is ONE occupancy state per site x OTU.
+//     i = site
+//     m = OTU
+//
+// There is ONE latent occupancy state for each site x OTU.
+//
+// The occupancy linear predictor is:
+//
+//     logit(psi_im)
+//       = X_occ beta_occ
+//         + b_occ_m
+//
+// when the OTU random effect is enabled.
 //
 // ------------------------------------------------------------
-// CAPTURE LEVEL
+// LEVEL 2: BIOLOGICAL SAMPLE x OTU CAPTURE
+// ------------------------------------------------------------
+//
+// Conditional on occupancy:
 //
 //     A_ijm | Z_im = 1
 //       ~ Bernoulli(p_ijm)
 //
-// j = biological sample
+// where:
+//
+//     j = biological sample.
+//
+// The capture linear predictor is:
+//
+//     logit(p_ijm)
+//       = X_cap beta_cap
+//         + b_cap_m
+//
+// when the OTU random effect is enabled.
 //
 // ------------------------------------------------------------
-// PCR / READ LEVEL
+// LEVEL 3: PCR / READ COUNTS
+// ------------------------------------------------------------
+//
+// Conditional on successful capture:
 //
 //     Y_ijkm | A_ijm = 1
 //       ~ Count(lambda_ijkm)
 //
-// k = PCR replicate
+// where:
 //
-// The count distribution may be:
+//     k = PCR replicate.
 //
-//     Poisson
-//     NB2
-//     ZIP
-//     ZINB
+// The abundance linear predictor is:
+//
+//     log(lambda_ijkm)
+//       = X_abund beta_abund
+//         + offset
+//         + b_abund_m
+//         + b_sample_j
+//         + b_sampleOTU_jm
+//
+// depending on which random effects are enabled.
+//
+// Supported distributions:
+//
+//     family_code = 0 : Poisson
+//     family_code = 1 : NB2
+//     family_code = 2 : ZIP
+//     family_code = 3 : ZINB
 //
 // ------------------------------------------------------------
+// ZERO-INFLATION MODEL
+// ------------------------------------------------------------
 //
-// IMPORTANT:
+// For ZIP/ZINB:
 //
-// Z and A are NOT sampled or optimized directly.
+//     logit(pi_m)
+//       = zi_intercept
+//         + b_zi_m
+//
+// where:
+//
+//     b_zi_m ~ Normal(0, sigma_zi^2)
+//
+// Therefore the structural-zero probability is allowed to
+// differ among OTUs.
+//
+// If use_zi_otu = 0:
+//
+//     logit(pi) = zi_intercept
+//
+// and all OTUs share the same structural-zero probability.
+//
+// ------------------------------------------------------------
+// MARGINALIZATION
+// ------------------------------------------------------------
+//
+// The discrete latent states Z and A are NOT optimized as
+// parameters.
 //
 // Instead:
 //
-//     A is analytically marginalized
+//     A is analytically marginalized at the sample x OTU level.
 //
-// and then:
+// Then:
 //
-//     Z is analytically marginalized.
+//     Z is analytically marginalized at the site x OTU level.
 //
-// Gaussian random effects are integrated by TMB using the
-// Laplace approximation when passed through the `random`
-// argument of MakeADFun().
+// Gaussian random effects are integrated by TMB through the
+// Laplace approximation when supplied in the `random` argument
+// of MakeADFun().
 // ============================================================
 
 
@@ -148,9 +188,10 @@ Type objective_function<Type>::operator() ()
 
   DATA_VECTOR(y);
 
-  // Observed sequencing counts.
+  // PCR/read-level observed counts.
   //
-  // Each y(r) is one PCR/read observation.
+  // y(r) is the count associated with observation row r.
+
 
 
   // ----------------------------------------------------------
@@ -162,20 +203,17 @@ Type objective_function<Type>::operator() ()
 
   // Occupancy design matrix.
   //
-  // One row per:
+  // IMPORTANT:
+  // One row per SITE x OTU combination.
   //
-  //     SITE x OTU
-  //
-  // NOT one row per PCR observation.
+  // Occupancy therefore does NOT live at the PCR/read level.
 
 
   DATA_MATRIX(X_cap);
 
   // Capture design matrix.
   //
-  // One row per:
-  //
-  //     BIOLOGICAL SAMPLE x OTU
+  // One row per BIOLOGICAL SAMPLE x OTU combination.
 
 
   DATA_MATRIX(X_abund);
@@ -185,6 +223,7 @@ Type objective_function<Type>::operator() ()
   // One row per PCR/read observation.
 
 
+
   // ----------------------------------------------------------
   // Abundance offset
   // ----------------------------------------------------------
@@ -192,11 +231,14 @@ Type objective_function<Type>::operator() ()
 
   DATA_VECTOR(offset_abund);
 
+  // Optional abundance offset.
+  //
   // For example:
   //
   //     log(total_reads)
   //
-  // representing sequencing depth.
+  // for sequencing-depth adjustment.
+
 
 
   // ----------------------------------------------------------
@@ -206,71 +248,61 @@ Type objective_function<Type>::operator() ()
 
   DATA_IVECTOR(occ_otu);
 
-  // For each SITE x OTU occupancy group g,
-  // gives the OTU index m.
+  // Maps SITE x OTU occupancy group g
+  // to OTU m.
   //
-  // Used by:
+  // Used for:
   //
   //     b_occ_otu(m)
 
 
   DATA_IVECTOR(sample_otu);
 
-  // For every SAMPLE x OTU group s,
-  // gives the OTU index m.
+  // Maps SAMPLE x OTU group s
+  // to OTU m.
   //
-  // Used by:
+  // Used for:
   //
   //     b_cap_otu(m)
 
 
   DATA_IVECTOR(row_sample_group);
 
-  // Maps:
-  //
-  //     PCR/read row r
-  //
-  // to:
-  //
-  //     SAMPLE x OTU group s.
+  // Maps PCR/read row r
+  // to SAMPLE x OTU group s.
 
 
   DATA_IVECTOR(sample_site_group);
 
-  // Maps:
+  // Maps SAMPLE x OTU group s
+  // to SITE x OTU group g.
   //
-  //     SAMPLE x OTU group s
-  //
-  // to:
-  //
-  //     SITE x OTU group g.
-  //
-  // This ensures multiple samples from a site share
-  // the same occupancy state.
+  // This is what makes all biological samples from the
+  // same site x OTU share the same occupancy state.
 
 
   DATA_IVECTOR(row_otu);
 
-  // Maps each PCR/read observation r to its OTU m.
+  // Maps PCR/read row r
+  // to OTU m.
   //
-  // Used for:
+  // Used by:
   //
-  //     abundance OTU random effects
-  //
-  // and now also:
-  //
-  //     zero-inflation OTU random effects.
+  //     b_abund_otu(m)
+  //     b_zi_otu(m)
 
 
   DATA_IVECTOR(row_sample_id);
 
-  // Maps every PCR/read observation to its biological sample.
+  // Maps PCR/read row r
+  // to biological sample j.
 
 
   DATA_IVECTOR(row_sample_otu_re);
 
-  // Maps every PCR/read observation to a unique
-  // sample x OTU random-effect level.
+  // Maps PCR/read row r
+  // to the sample x OTU random-effect level.
+
 
 
   // ----------------------------------------------------------
@@ -280,22 +312,27 @@ Type objective_function<Type>::operator() ()
 
   DATA_IVECTOR(sample_positive);
 
-  // sample_positive(s) = 1 if at least one PCR replicate
-  // for sample x OTU group s is positive.
+  // sample_positive(s) = 1 when at least one PCR replicate
+  // within sample x OTU group s has y > 0.
   //
-  // If positive:
+  // In that case:
   //
-  //     A_ijm MUST equal 1.
+  //     A_ijm = 1
+  //
+  // must hold.
 
 
   DATA_IVECTOR(site_positive);
 
-  // site_positive(g) = 1 if at least one observation anywhere
-  // inside site x OTU group g is positive.
+  // site_positive(g) = 1 when at least one count anywhere
+  // within site x OTU group g is positive.
   //
-  // If positive:
+  // In that case:
   //
-  //     Z_im MUST equal 1.
+  //     Z_im = 1
+  //
+  // must hold.
+
 
 
   // ----------------------------------------------------------
@@ -305,26 +342,29 @@ Type objective_function<Type>::operator() ()
 
   DATA_INTEGER(n_site_groups);
 
-  // Number of SITE x OTU combinations.
+  // Number of SITE x OTU groups.
 
 
   DATA_INTEGER(n_sample_groups);
 
-  // Number of SAMPLE x OTU combinations.
+  // Number of SAMPLE x OTU groups.
+
 
 
   // ----------------------------------------------------------
-  // Count family
+  // Abundance distribution
   // ----------------------------------------------------------
+
+
+  DATA_INTEGER(family_code);
+
+  // family_code:
   //
   // 0 = Poisson
   // 1 = NB2
   // 2 = ZIP
   // 3 = ZINB
-  // ----------------------------------------------------------
 
-
-  DATA_INTEGER(family_code);
 
 
   // ==========================================================
@@ -334,42 +374,56 @@ Type objective_function<Type>::operator() ()
 
   DATA_INTEGER(use_occ_otu);
 
-  // OTU random effect for occupancy.
+  // 1 = use OTU occupancy random intercept.
 
 
   DATA_INTEGER(use_cap_otu);
 
-  // OTU random effect for capture.
+  // 1 = use OTU capture random intercept.
 
 
   DATA_INTEGER(use_abund_otu);
 
-  // OTU random effect for abundance.
+  // 1 = use OTU abundance random intercept.
 
 
   DATA_INTEGER(use_sample_re);
 
-  // Biological-sample abundance random effect.
+  // 1 = use biological-sample abundance random intercept.
 
 
   DATA_INTEGER(use_sample_otu_re);
 
-  // Sample x OTU abundance random effect.
+  // 1 = use sample x OTU abundance random intercept.
 
 
   DATA_INTEGER(use_zi_otu);
 
-  // NEW:
+  // 1 = use OTU-specific zero-inflation random intercept.
   //
-  // OTU-specific random effect for ZIP/ZINB structural zeros.
-  //
-  // 1 = estimate taxon-specific PCR dropout heterogeneity.
-  // 0 = all OTUs share one zero-inflation probability.
+  // Relevant only for ZIP/ZINB.
 
 
 
   // ==========================================================
-  // 3. FIXED-EFFECT PARAMETERS
+  // 3. VALIDATE FAMILY CODE
+  // ==========================================================
+
+
+  if (
+    family_code < 0 ||
+    family_code > 3
+  )
+  {
+    error(
+      "family_code must be 0, 1, 2, or 3."
+    );
+  }
+
+
+
+  // ==========================================================
+  // 4. FIXED-EFFECT PARAMETERS
   // ==========================================================
 
 
@@ -390,58 +444,51 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 4. RANDOM EFFECTS
+  // 5. RANDOM-EFFECT VECTORS
   // ==========================================================
 
 
   PARAMETER_VECTOR(b_occ_otu);
 
-  // OTU-specific occupancy deviations.
+  // OTU-specific occupancy effects:
+  //
+  //     b_occ_m ~ N(0, sigma_occ^2)
 
 
   PARAMETER_VECTOR(b_cap_otu);
 
-  // OTU-specific capture deviations.
+  // OTU-specific capture effects:
+  //
+  //     b_cap_m ~ N(0, sigma_cap^2)
 
 
   PARAMETER_VECTOR(b_abund_otu);
 
-  // OTU-specific abundance deviations.
+  // OTU-specific abundance effects:
+  //
+  //     b_abund_m ~ N(0, sigma_abund^2)
 
 
   PARAMETER_VECTOR(b_sample);
 
-  // Biological-sample abundance random effects.
+  // Biological-sample abundance effects.
 
 
   PARAMETER_VECTOR(b_sample_otu);
 
-  // Sample x OTU abundance random effects.
+  // Sample x OTU abundance effects.
 
 
   PARAMETER_VECTOR(b_zi_otu);
 
-  // NEW:
+  // OTU-specific zero-inflation effects:
   //
-  // OTU-specific deviations in structural-zero probability.
-  //
-  // Mathematically:
-  //
-  //     b_zi_otu(m)
-  //       ~ Normal(0, sigma_zi^2)
-  //
-  // and:
-  //
-  //     logit(pi_m)
-  //       =
-  //       zi_intercept
-  //       +
-  //       b_zi_otu(m).
+  //     b_zi_m ~ N(0, sigma_zi^2)
 
 
 
   // ==========================================================
-  // 5. RANDOM-EFFECT STANDARD DEVIATIONS
+  // 6. RANDOM-EFFECT STANDARD DEVIATIONS
   // ==========================================================
 
 
@@ -457,11 +504,9 @@ Type objective_function<Type>::operator() ()
 
   PARAMETER(log_sd_zi_otu);
 
-  // NEW:
-  //
-  // log standard deviation of OTU-specific
-  // zero-inflation random effects.
 
+
+  // Transform log standard deviations to positive scale.
 
   Type sd_occ_otu =
     exp(
@@ -498,18 +543,18 @@ Type objective_function<Type>::operator() ()
       log_sd_zi_otu
     );
 
-  // exp() guarantees positive standard deviations.
-
 
 
   // ==========================================================
-  // 6. ABUNDANCE-DISTRIBUTION PARAMETERS
+  // 7. DISTRIBUTION PARAMETERS
   // ==========================================================
 
 
   PARAMETER(log_theta);
 
-  // Shared NB2 dispersion parameter.
+  // NB2 dispersion parameter.
+  //
+  // Currently ONE theta is shared across all OTUs.
 
 
   Type theta =
@@ -517,77 +562,99 @@ Type objective_function<Type>::operator() ()
       log_theta
     );
 
-  // One theta is currently shared across all OTUs:
+  // NB2 parameterization:
+  //
+  //     E(Y) = mu
   //
   //     Var(Y)
-  //       =
-  //       mu + mu^2 / theta.
+  //       = mu + mu^2 / theta
+
 
 
   PARAMETER(zi_intercept);
 
-  // Global zero-inflation intercept.
+  // Population-level zero-inflation intercept.
   //
-  // This now represents the population-average PCR dropout
-  // tendency across OTUs.
+  // For ZIP/ZINB:
   //
-  // OTUs can deviate from this through b_zi_otu.
+  //     logit(pi_m)
+  //       =
+  //       zi_intercept
+  //       +
+  //       b_zi_otu(m)
+  //
+  // when use_zi_otu = 1.
 
 
 
   // ==========================================================
-  // 7. NEGATIVE LOG-LIKELIHOOD
+  // 8. NEGATIVE LOG-LIKELIHOOD
   // ==========================================================
 
 
   Type nll =
     Type(0);
 
-  // TMB minimizes nll:
+
+
+  // ==========================================================
+  // 9. RANDOM-EFFECT DISTRIBUTIONS
+  // ==========================================================
   //
-  //     nll = -log L.
-
-
-
+  // All random-effect blocks are currently assumed independent.
+  //
+  // There are NO correlations between:
+  //
+  //   occupancy OTU effects
+  //   capture OTU effects
+  //   abundance OTU effects
+  //   zero-inflation OTU effects
+  //
+  // or the sample-level abundance effects.
   // ==========================================================
-  // 8. GAUSSIAN RANDOM-EFFECT DENSITIES
-  // ==========================================================
 
 
-  if (use_occ_otu == 1)
+  // ----------------------------------------------------------
+  // Occupancy OTU random effects
+  // ----------------------------------------------------------
+
+
+  if (
+    use_occ_otu == 1
+  )
   {
-
     for (
       int m = 0;
       m < b_occ_otu.size();
       m++
     )
     {
-
       nll -= dnorm(
         b_occ_otu(m),
         Type(0),
         sd_occ_otu,
         true
       );
-
-      // b_occ_otu(m)
-      // ~ N(0, sigma_occ^2).
     }
   }
 
 
 
-  if (use_cap_otu == 1)
-  {
+  // ----------------------------------------------------------
+  // Capture OTU random effects
+  // ----------------------------------------------------------
 
+
+  if (
+    use_cap_otu == 1
+  )
+  {
     for (
       int m = 0;
       m < b_cap_otu.size();
       m++
     )
     {
-
       nll -= dnorm(
         b_cap_otu(m),
         Type(0),
@@ -599,16 +666,21 @@ Type objective_function<Type>::operator() ()
 
 
 
-  if (use_abund_otu == 1)
-  {
+  // ----------------------------------------------------------
+  // Abundance OTU random effects
+  // ----------------------------------------------------------
 
+
+  if (
+    use_abund_otu == 1
+  )
+  {
     for (
       int m = 0;
       m < b_abund_otu.size();
       m++
     )
     {
-
       nll -= dnorm(
         b_abund_otu(m),
         Type(0),
@@ -620,16 +692,21 @@ Type objective_function<Type>::operator() ()
 
 
 
-  if (use_sample_re == 1)
-  {
+  // ----------------------------------------------------------
+  // Biological-sample abundance random effects
+  // ----------------------------------------------------------
 
+
+  if (
+    use_sample_re == 1
+  )
+  {
     for (
       int j = 0;
       j < b_sample.size();
       j++
     )
     {
-
       nll -= dnorm(
         b_sample(j),
         Type(0),
@@ -641,16 +718,21 @@ Type objective_function<Type>::operator() ()
 
 
 
-  if (use_sample_otu_re == 1)
-  {
+  // ----------------------------------------------------------
+  // Sample x OTU abundance random effects
+  // ----------------------------------------------------------
 
+
+  if (
+    use_sample_otu_re == 1
+  )
+  {
     for (
       int q = 0;
       q < b_sample_otu.size();
       q++
     )
     {
-
       nll -= dnorm(
         b_sample_otu(q),
         Type(0),
@@ -663,8 +745,14 @@ Type objective_function<Type>::operator() ()
 
 
   // ----------------------------------------------------------
-  // NEW: zero-inflation OTU random effects
+  // OTU-specific zero-inflation random effects
   // ----------------------------------------------------------
+  //
+  // These are included only for ZIP/ZINB.
+  //
+  //     b_zi_m ~ N(0, sigma_zi^2)
+  // ----------------------------------------------------------
+
 
   if (
     use_zi_otu == 1 &&
@@ -674,38 +762,25 @@ Type objective_function<Type>::operator() ()
     )
   )
   {
-
     for (
       int m = 0;
       m < b_zi_otu.size();
       m++
     )
     {
-
       nll -= dnorm(
         b_zi_otu(m),
         Type(0),
         sd_zi_otu,
         true
       );
-
-      // Assumption:
-      //
-      //     b_zi_m
-      //     ~ Normal(
-      //         0,
-      //         sigma_zi^2
-      //       )
-      //
-      // This allows each OTU to have a different
-      // PCR-level dropout probability.
     }
   }
 
 
 
   // ==========================================================
-  // 9. OCCUPANCY LINEAR PREDICTOR
+  // 10. OCCUPANCY LINEAR PREDICTOR
   // ==========================================================
 
 
@@ -713,42 +788,41 @@ Type objective_function<Type>::operator() ()
     X_occ *
     beta_occ;
 
-  // Fixed-effect component:
-  //
-  //     eta_occ_im
-  //       =
-  //       X_occ_im beta_occ.
 
-
-  if (use_occ_otu == 1)
+  if (
+    use_occ_otu == 1
+  )
   {
-
     for (
       int g = 0;
       g < n_site_groups;
       g++
     )
     {
-
       eta_occ(g) +=
         b_occ_otu(
           occ_otu(g)
         );
-
-      // Full occupancy model:
-      //
-      // logit(psi_im)
-      // =
-      // X_occ_im beta_occ
-      // +
-      // b_occ_m.
     }
   }
 
 
+  // Model:
+  //
+  //     logit(psi_im)
+  //
+  //       =
+  //
+  //     X_occ_im beta_occ
+  //
+  //       +
+  //
+  //     b_occ_m
+
+
 
   // ==========================================================
-  // 10. CAPTURE LINEAR PREDICTOR
+  // 11. CAPTURE LINEAR PREDICTOR
   // ==========================================================
 
 
@@ -757,33 +831,40 @@ Type objective_function<Type>::operator() ()
     beta_cap;
 
 
-  if (use_cap_otu == 1)
+  if (
+    use_cap_otu == 1
+  )
   {
-
     for (
       int s = 0;
       s < n_sample_groups;
       s++
     )
     {
-
       eta_cap(s) +=
         b_cap_otu(
           sample_otu(s)
         );
-
-      // logit(p_ijm)
-      // =
-      // X_cap beta_cap
-      // +
-      // b_cap_m.
     }
   }
 
 
+  // Model:
+  //
+  //     logit(p_ijm)
+  //
+  //       =
+  //
+  //     X_cap_ijm beta_cap
+  //
+  //       +
+  //
+  //     b_cap_m
+
+
 
   // ==========================================================
-  // 11. ABUNDANCE LINEAR PREDICTOR
+  // 12. ABUNDANCE LINEAR PREDICTOR
   // ==========================================================
 
 
@@ -800,7 +881,7 @@ Type objective_function<Type>::operator() ()
   {
 
     // --------------------------------------------------------
-    // Offset
+    // Sequencing-depth or other abundance offset
     // --------------------------------------------------------
 
     eta_abund(r) +=
@@ -808,12 +889,13 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // OTU abundance random effect
+    // OTU abundance effect
     // --------------------------------------------------------
 
-    if (use_abund_otu == 1)
+    if (
+      use_abund_otu == 1
+    )
     {
-
       eta_abund(r) +=
         b_abund_otu(
           row_otu(r)
@@ -822,12 +904,13 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // Sample abundance random effect
+    // Biological-sample abundance effect
     // --------------------------------------------------------
 
-    if (use_sample_re == 1)
+    if (
+      use_sample_re == 1
+    )
     {
-
       eta_abund(r) +=
         b_sample(
           row_sample_id(r)
@@ -836,12 +919,13 @@ Type objective_function<Type>::operator() ()
 
 
     // --------------------------------------------------------
-    // Sample x OTU abundance random effect
+    // Sample x OTU abundance effect
     // --------------------------------------------------------
 
-    if (use_sample_otu_re == 1)
+    if (
+      use_sample_otu_re == 1
+    )
     {
-
       eta_abund(r) +=
         b_sample_otu(
           row_sample_otu_re(r)
@@ -852,24 +936,38 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 12. ZERO-INFLATION LINEAR PREDICTOR
+  // 13. ZERO-INFLATION LINEAR PREDICTOR BY OTU
   // ==========================================================
   //
-  // NEW MODEL:
+  // This vector is mainly useful for reporting.
   //
-  //     logit(pi_m)
+  // For OTU m:
+  //
+  //     eta_zi_m
+  //
   //       =
-  //       zi_intercept
-  //       +
-  //       b_zi_otu(m)
   //
-  // where:
+  //     zi_intercept
+  //
+  //       +
   //
   //     b_zi_otu(m)
-  //       ~ N(0, sigma_zi^2).
   //
-  // We construct one pi per OTU.
+  // and:
+  //
+  //     pi_m = invlogit(eta_zi_m)
+  //
+  // When random_zi_otu is disabled:
+  //
+  //     eta_zi_m = zi_intercept
+  //
+  // for every OTU.
   // ==========================================================
+
+
+  vector<Type> eta_zi_otu(
+    b_zi_otu.size()
+  );
 
 
   vector<Type> pi_zi_otu(
@@ -884,7 +982,7 @@ Type objective_function<Type>::operator() ()
   )
   {
 
-    Type eta_zi =
+    eta_zi_otu(m) =
       zi_intercept;
 
 
@@ -896,30 +994,31 @@ Type objective_function<Type>::operator() ()
       )
     )
     {
-
-      eta_zi +=
+      eta_zi_otu(m) +=
         b_zi_otu(m);
     }
 
+
+    // Probability is calculated here for reporting.
+    //
+    // The likelihood below does NOT use log(pi_zi_otu)
+    // directly. Instead it calculates log(pi) from eta_zi
+    // using the numerically stable helper functions.
 
     pi_zi_otu(m) =
       Type(1) /
       (
         Type(1) +
         exp(
-          -eta_zi
+          -eta_zi_otu(m)
         )
       );
-
-    // pi_zi_otu(m)
-    //
-    // is the OTU-specific structural-zero probability.
   }
 
 
 
   // ==========================================================
-  // 13. READ-LEVEL COUNT LOG LIKELIHOOD
+  // 14. PCR / READ-LEVEL COUNT LOG-LIKELIHOOD
   // ==========================================================
 
 
@@ -936,56 +1035,106 @@ Type objective_function<Type>::operator() ()
   {
 
     // --------------------------------------------------------
-    // Mean abundance
+    // Expected count
     // --------------------------------------------------------
+    //
+    // Log link:
+    //
+    //     lambda_ijkm
+    //       =
+    //       exp(eta_abund_ijkm)
+    // --------------------------------------------------------
+
 
     Type mu =
       exp(
         eta_abund(r)
       );
 
-    // Because abundance uses a log link:
-    //
-    //     lambda_ijkm
-    //       =
-    //       exp(eta_abund_ijkm).
-
 
     Type lp =
       Type(0);
 
 
+
     // --------------------------------------------------------
-    // Get OTU-specific zero-inflation probability
+    // Zero-inflation linear predictor for this observation
+    // --------------------------------------------------------
+    //
+    // All observations belonging to OTU m share the same
+    // zero-inflation random intercept b_zi_m.
     // --------------------------------------------------------
 
-    Type pi_zi =
-      pi_zi_otu(
-        row_otu(r)
+
+    Type eta_zi =
+      zi_intercept;
+
+
+    if (
+      use_zi_otu == 1 &&
+      (
+        family_code == 2 ||
+        family_code == 3
+      )
+    {
+      eta_zi +=
+        b_zi_otu(
+          row_otu(r)
+        );
+    }
+
+
+
+    // --------------------------------------------------------
+    // Numerically stable log probabilities
+    // --------------------------------------------------------
+    //
+    //     log_pi
+    //       = log(pi_m)
+    //
+    //     log_1m_pi
+    //       = log(1 - pi_m)
+    //
+    // These are preferable to:
+    //
+    //     log(pi)
+    //     log(1-pi)
+    //
+    // after explicitly constructing pi.
+    // --------------------------------------------------------
+
+
+    Type log_pi =
+      log_invlogit(
+        eta_zi
       );
 
-    // Each observation uses the dropout probability
-    // corresponding to its OTU.
+
+    Type log_1m_pi =
+      log1m_invlogit(
+        eta_zi
+      );
 
 
 
     // ========================================================
     // POISSON
     // ========================================================
+    //
+    //     Y ~ Poisson(mu)
+    // ========================================================
+
 
     if (
       family_code == 0
     )
     {
-
       lp =
         dpois(
           y(r),
           mu,
           true
         );
-
-      // log P(Y=y | mu).
     }
 
 
@@ -993,6 +1142,14 @@ Type objective_function<Type>::operator() ()
     // ========================================================
     // NEGATIVE BINOMIAL 2
     // ========================================================
+    //
+    //     E(Y) = mu
+    //
+    //     Var(Y)
+    //       =
+    //       mu + mu^2/theta
+    // ========================================================
+
 
     else if (
       family_code == 1
@@ -1013,14 +1170,6 @@ Type objective_function<Type>::operator() ()
           variance,
           true
         );
-
-      // NB2:
-      //
-      // E(Y) = mu
-      //
-      // Var(Y)
-      // =
-      // mu + mu^2/theta.
     }
 
 
@@ -1028,6 +1177,29 @@ Type objective_function<Type>::operator() ()
     // ========================================================
     // ZERO-INFLATED POISSON
     // ========================================================
+    //
+    // For Y = 0:
+    //
+    //     P(Y=0)
+    //
+    //       =
+    //
+    //     pi_m
+    //
+    //       +
+    //
+    //     (1-pi_m) P_Pois(Y=0 | mu)
+    //
+    //
+    // For Y > 0:
+    //
+    //     P(Y=y)
+    //
+    //       =
+    //
+    //     (1-pi_m) P_Pois(Y=y | mu)
+    // ========================================================
+
 
     else if (
       family_code == 2
@@ -1042,64 +1214,28 @@ Type objective_function<Type>::operator() ()
         );
 
 
-      // ------------------------------------------------------
-      // Observed zero
-      // ------------------------------------------------------
-
       if (
-        y(r) ==
-        Type(0)
+        y(r) == Type(0)
       )
       {
 
         lp =
           logspace_add(
 
-            log(
-              pi_zi
-            ),
+            log_pi,
 
-            log(
-              Type(1) -
-              pi_zi
-            ) +
+            log_1m_pi +
             log_count_component
 
           );
-
-        // For y = 0:
-        //
-        // P(Y=0)
-        //
-        // =
-        //
-        // pi_m
-        //
-        // +
-        //
-        // (1-pi_m)
-        // P_Poisson(Y=0 | mu).
-        //
-        // pi_m is now OTU-specific.
       }
-
-
-      // ------------------------------------------------------
-      // Positive observation
-      // ------------------------------------------------------
 
       else
       {
 
         lp =
-          log(
-            Type(1) -
-            pi_zi
-          ) +
+          log_1m_pi +
           log_count_component;
-
-        // A positive count cannot originate from the
-        // structural-zero component.
       }
     }
 
@@ -1108,6 +1244,31 @@ Type objective_function<Type>::operator() ()
     // ========================================================
     // ZERO-INFLATED NEGATIVE BINOMIAL 2
     // ========================================================
+    //
+    // For Y = 0:
+    //
+    //     P(Y=0)
+    //
+    //       =
+    //
+    //     pi_m
+    //
+    //       +
+    //
+    //     (1-pi_m)
+    //     P_NB(Y=0 | mu, theta)
+    //
+    //
+    // For Y > 0:
+    //
+    //     P(Y=y)
+    //
+    //       =
+    //
+    //     (1-pi_m)
+    //     P_NB(Y=y | mu, theta)
+    // ========================================================
+
 
     else if (
       family_code == 3
@@ -1131,57 +1292,33 @@ Type objective_function<Type>::operator() ()
 
 
       if (
-        y(r) ==
-        Type(0)
+        y(r) == Type(0)
       )
       {
 
         lp =
           logspace_add(
 
-            log(
-              pi_zi
-            ),
+            log_pi,
 
-            log(
-              Type(1) -
-              pi_zi
-            ) +
+            log_1m_pi +
             log_count_component
 
           );
-
-        // ZINB zero:
-        //
-        // P(Y=0)
-        //
-        // =
-        //
-        // pi_m
-        //
-        // +
-        //
-        // (1-pi_m)
-        // P_NB(Y=0 | mu, theta).
       }
-
 
       else
       {
 
         lp =
-          log(
-            Type(1) -
-            pi_zi
-          ) +
+          log_1m_pi +
           log_count_component;
       }
     }
 
 
-    // --------------------------------------------------------
-    // Store observation-level count log likelihood
-    // --------------------------------------------------------
+
+    // Store PCR/read-level conditional log likelihood.
 
     log_count(r) =
       lp;
@@ -1190,26 +1327,32 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 14. SAMPLE x OTU CONDITIONAL COUNT LIKELIHOOD
+  // 15. COMBINE PCR REPLICATES WITHIN SAMPLE x OTU
   // ==========================================================
   //
-  // First combine PCR replicates conditional on A = 1:
+  // Conditional on successful capture:
+  //
+  //     A_ijm = 1
+  //
+  // the PCR/read observations are conditionally independent.
+  //
+  // Therefore:
   //
   //     L_count_ijm
   //
-  //     =
+  //       =
   //
   //     product_k
   //     f(y_ijkm | A_ijm = 1)
   //
-  // On log scale:
+  //
+  // On the log scale:
   //
   //     log L_count_ijm
   //
-  //     =
+  //       =
   //
-  //     sum_k
-  //     log f(y_ijkm).
+  //     sum_k log f(y_ijkm | A_ijm = 1)
   // ==========================================================
 
 
@@ -1239,7 +1382,14 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 15. CAPTURE MARGINALIZATION
+  // 16. ANALYTICALLY MARGINALIZE CAPTURE STATE A
+  // ==========================================================
+  //
+  // Capture lives at:
+  //
+  //     biological sample x OTU
+  //
+  // NOT at the PCR/read level.
   // ==========================================================
 
 
@@ -1267,25 +1417,29 @@ Type objective_function<Type>::operator() ()
       );
 
 
+
     // --------------------------------------------------------
-    // Positive biological sample
+    // CASE 1:
+    // At least one positive PCR replicate
     // --------------------------------------------------------
     //
-    // If at least one PCR observation is positive:
+    // If any y_ijkm > 0:
     //
     //     A_ijm = 1
     //
-    // must hold.
+    // necessarily.
     //
     // Therefore:
     //
-    // L_ijm
+    //     L_ijm
     //
-    // =
+    //       =
     //
-    // p_ijm
-    // *
-    // product_k f(y_ijkm).
+    //     p_ijm
+    //
+    //       *
+    //
+    //     product_k f(y_ijkm)
     // --------------------------------------------------------
 
 
@@ -1300,38 +1454,44 @@ Type objective_function<Type>::operator() ()
     }
 
 
+
     // --------------------------------------------------------
-    // Entire biological sample is zero
+    // CASE 2:
+    // All PCR replicates are zero
     // --------------------------------------------------------
     //
-    // There are TWO possibilities:
+    // Two latent explanations are possible.
     //
-    // 1. Capture failed:
+    // A = 0:
     //
-    //        A = 0
+    //     capture failed
     //
-    //        probability = 1-p
+    //     probability = 1-p
     //
-    // 2. Capture succeeded:
+    // OR
     //
-    //        A = 1
+    // A = 1:
     //
-    //    but all PCR observations are zero.
+    //     capture succeeded
+    //
+    //     but all PCR/read observations happened to be zero.
+    //
     //
     // Therefore:
     //
-    // L_ijm
+    //     L_ijm
     //
-    // =
+    //       =
     //
-    // (1-p_ijm)
+    //     (1-p_ijm)
     //
-    // +
+    //       +
     //
-    // p_ijm
-    // product_k f(0).
+    //     p_ijm
+    //     product_k f(0)
     //
-    // f(0) already contains any ZIP/ZINB structural-zero
+    //
+    // For ZIP/ZINB, f(0) already includes the structural-zero
     // probability pi_m.
     // --------------------------------------------------------
 
@@ -1354,17 +1514,29 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 16. SITE x OTU CONDITIONAL LIKELIHOOD GIVEN Z = 1
+  // 17. COMBINE BIOLOGICAL SAMPLES WITHIN SITE x OTU
   // ==========================================================
   //
-  // Combine all biological sample likelihoods belonging
-  // to the same site x OTU:
+  // Conditional on:
+  //
+  //     Z_im = 1
+  //
+  // the sample likelihood is:
   //
   //     L(data_im | Z_im=1)
   //
-  //     =
+  //       =
   //
-  //     product_j L_ijm.
+  //     product_j L_ijm
+  //
+  //
+  // On the log scale:
+  //
+  //     log L(data_im | Z_im=1)
+  //
+  //       =
+  //
+  //     sum_j log L_ijm
   // ==========================================================
 
 
@@ -1394,7 +1566,14 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 17. OCCUPANCY MARGINALIZATION
+  // 18. ANALYTICALLY MARGINALIZE OCCUPANCY STATE Z
+  // ==========================================================
+  //
+  // Occupancy lives at:
+  //
+  //     SITE x OTU
+  //
+  // This is the critical hierarchical distinction.
   // ==========================================================
 
 
@@ -1415,9 +1594,7 @@ Type objective_function<Type>::operator() ()
   )
   {
 
-    // --------------------------------------------------------
-    // Occupancy probability
-    // --------------------------------------------------------
+    // Occupancy probability for this site x OTU.
 
     psi(g) =
       Type(1) /
@@ -1441,27 +1618,29 @@ Type objective_function<Type>::operator() ()
       );
 
 
+
     // --------------------------------------------------------
-    // Positive site x OTU history
+    // CASE 1:
+    // At least one positive observation at site x OTU
     // --------------------------------------------------------
     //
-    // If any observation is positive:
+    // If anything is positive:
     //
     //     Z_im = 1
     //
-    // is required.
+    // necessarily.
     //
     // Therefore:
     //
-    // L_im
+    //     L_im
     //
-    // =
+    //       =
     //
-    // psi_im
+    //     psi_im
     //
-    // *
+    //       *
     //
-    // L(data_im | Z_im=1).
+    //     L(data_im | Z_im=1)
     // --------------------------------------------------------
 
 
@@ -1476,36 +1655,41 @@ Type objective_function<Type>::operator() ()
     }
 
 
+
     // --------------------------------------------------------
+    // CASE 2:
     // Entire site x OTU history is zero
     // --------------------------------------------------------
     //
-    // Two explanations are possible:
+    // Two possibilities:
     //
-    // 1. Species absent:
+    // Z = 0:
     //
-    //        Z_im = 0
+    //     species absent
     //
-    //        probability = 1-psi
+    //     probability = 1-psi
     //
-    // 2. Species present:
+    // OR
     //
-    //        Z_im = 1
+    // Z = 1:
     //
-    //    but all biological samples/PCR reads are zero.
+    //     species present
+    //
+    //     but all samples/PCR observations are zero.
+    //
     //
     // Therefore:
     //
-    // L_im
+    //     L_im
     //
-    // =
+    //       =
     //
-    // (1-psi_im)
+    //     (1-psi_im)
     //
-    // +
+    //       +
     //
-    // psi_im
-    // L(all-zero data | Z_im=1).
+    //     psi_im
+    //     L(all-zero data | Z_im=1)
     // --------------------------------------------------------
 
 
@@ -1524,9 +1708,8 @@ Type objective_function<Type>::operator() ()
     }
 
 
-    // --------------------------------------------------------
-    // Add site x OTU contribution to total NLL
-    // --------------------------------------------------------
+    // Add this SITE x OTU contribution to total
+    // negative log likelihood.
 
     nll -=
       log_site(g);
@@ -1535,7 +1718,7 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 18. DERIVED QUANTITIES
+  // 19. DERIVED CAPTURE PROBABILITIES
   // ==========================================================
 
 
@@ -1559,11 +1742,13 @@ Type objective_function<Type>::operator() ()
           -eta_cap(s)
         )
       );
-
-    // p_ijm =
-    // invlogit(eta_cap_ijm).
   }
 
+
+
+  // ==========================================================
+  // 20. DERIVED ABUNDANCE
+  // ==========================================================
 
 
   vector<Type> lambda(
@@ -1582,15 +1767,12 @@ Type objective_function<Type>::operator() ()
       exp(
         eta_abund(r)
       );
-
-    // lambda_ijkm =
-    // exp(eta_abund_ijkm).
   }
 
 
 
   // ==========================================================
-  // 19. REPORT RESULTS TO R
+  // 21. REPORT MODEL QUANTITIES TO R
   // ==========================================================
 
 
@@ -1606,6 +1788,11 @@ Type objective_function<Type>::operator() ()
 
   REPORT(
     eta_abund
+  );
+
+
+  REPORT(
+    eta_zi_otu
   );
 
 
@@ -1628,14 +1815,6 @@ Type objective_function<Type>::operator() ()
     pi_zi_otu
   );
 
-  // NEW:
-  //
-  // Returns estimated structural-zero probability for every OTU.
-  //
-  // Example in R:
-  //
-  //     fit$report$pi_zi_otu
-
 
   REPORT(
     log_sample
@@ -1649,7 +1828,12 @@ Type objective_function<Type>::operator() ()
 
 
   // ==========================================================
-  // 20. DELTA-METHOD DERIVED-PARAMETER STANDARD ERRORS
+  // 22. ADREPORT
+  // ==========================================================
+  //
+  // ADREPORT allows TMB/sdreport to calculate approximate
+  // standard errors for transformed/derived quantities using
+  // automatic differentiation and the delta method.
   // ==========================================================
 
 
@@ -1657,28 +1841,30 @@ Type objective_function<Type>::operator() ()
     psi
   );
 
-  // Approximate SEs for occupancy probabilities.
-
 
   ADREPORT(
     capture_prob
   );
 
-  // Approximate SEs for capture probabilities.
 
-
-  ADREPORT(
-    pi_zi_otu
-  );
-
-  // NEW:
+  // Only scientifically meaningful for ZIP/ZINB.
   //
-  // Approximate SEs for OTU-specific zero-inflation
-  // probabilities using TMB automatic differentiation.
+  // The R wrapper maps the ZI parameters out for Poisson/NB.
+
+  if (
+    family_code == 2 ||
+    family_code == 3
+  )
+  {
+    ADREPORT(
+      pi_zi_otu
+    );
+  }
+
 
 
   // ==========================================================
-  // Return negative log likelihood
+  // 23. RETURN NEGATIVE LOG-LIKELIHOOD
   // ==========================================================
 
 

@@ -23,6 +23,7 @@ FitModel_joint(
   random_abund_otu = TRUE,
   random_sample = TRUE,
   random_sample_otu = FALSE,
+  random_zi_otu = TRUE,
   DLL = "eDNAModel",
   verbose = TRUE
 )

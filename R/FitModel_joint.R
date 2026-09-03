@@ -284,6 +284,11 @@ FitModel_joint <- function(
     random_sample = TRUE,
     random_sample_otu = FALSE,
 
+    # NEW:
+    # OTU-specific random intercept for ZIP/ZINB
+    # structural-zero probability.
+    random_zi_otu = TRUE,
+
     DLL = "eDNAModel",
 
     verbose = TRUE
@@ -295,6 +300,27 @@ FitModel_joint <- function(
 
     abundance_family <-
         match.arg(abundance_family)
+
+
+    # ------------------------------------------------------------
+    # random_zi_otu only makes sense for ZIP/ZINB
+    # ------------------------------------------------------------
+
+    if (
+        random_zi_otu &&
+        !abundance_family %in% c("zip", "zinb")
+    ) {
+
+        if (verbose) {
+            message(
+                "random_zi_otu is ignored because abundance_family = '",
+                abundance_family,
+                "'."
+            )
+        }
+
+        random_zi_otu <- FALSE
+    }
 
 
     # ============================================================
@@ -340,13 +366,11 @@ FitModel_joint <- function(
         )
     }
 
-
     missing_cols <-
         setdiff(
             required,
             names(dat)
         )
-
 
     if (length(missing_cols) > 0) {
 
@@ -384,7 +408,6 @@ FitModel_joint <- function(
             dat[[count_col]]
         )
 
-
     if (!is.null(replicate_col)) {
 
         dat[[replicate_col]] <-
@@ -395,6 +418,7 @@ FitModel_joint <- function(
 
 
     # Remove missing/non-finite counts
+
     dat <- dat[
         !is.na(dat[[count_col]]) &
             is.finite(dat[[count_col]]),
@@ -422,19 +446,22 @@ FitModel_joint <- function(
     # ZIP/ZINB introduce a structural-zero process at the
     # PCR/read level.
     #
-    # The hierarchy is:
+    # Hierarchy:
     #
     #   Z_im
     #       -> A_ijm
     #           -> Y_ijkm
     #
     # A_ijm already provides a sample-level zero-generating
-    # process. With only one PCR observation per biological
-    # sample, sample-level capture failure and read-level
-    # structural zero inflation cannot be cleanly separated.
+    # process.
     #
-    # Therefore ZIP/ZINB are allowed only when PCR replication
-    # is explicitly present.
+    # Therefore, without repeated PCR observations within a
+    # biological sample, the capture-zero process and the
+    # read-level zero-inflation process cannot be cleanly
+    # separated.
+    #
+    # ZIP/ZINB are therefore allowed only when explicit
+    # PCR replication is present.
     # ============================================================
 
     replication_summary <- NULL
@@ -494,7 +521,7 @@ FitModel_joint <- function(
         # Count distinct PCR replicates within each biological
         # sample.
         #
-        # We first use distinct() because long-format data contain
+        # distinct() is used because long-format data contain
         # one row per OTU as well as replicate.
         # --------------------------------------------------------
 
@@ -650,6 +677,17 @@ FitModel_joint <- function(
     # 6. Explicit factor indices
     # ============================================================
 
+    # Recreate factors AFTER filtering.
+    #
+    # This is important because all OTU-indexed random effects:
+    #
+    #   b_occ_otu
+    #   b_cap_otu
+    #   b_abund_otu
+    #   b_zi_otu
+    #
+    # must use exactly the same OTU indexing.
+
     dat$.site <-
         factor(
             dat[[site_col]]
@@ -669,7 +707,7 @@ FitModel_joint <- function(
     # ------------------------------------------------------------
     # SITE x OTU
     #
-    # This is the OCCUPANCY level.
+    # Occupancy level
     # ------------------------------------------------------------
 
     dat$.site_otu <-
@@ -684,10 +722,7 @@ FitModel_joint <- function(
     # ------------------------------------------------------------
     # SITE x SAMPLE x OTU
     #
-    # This is the CAPTURE level.
-    #
-    # Site is explicitly included so that samples with the same
-    # name at different sites cannot accidentally be combined.
+    # Capture level
     # ------------------------------------------------------------
 
     dat$.sample_otu <-
@@ -745,7 +780,6 @@ FitModel_joint <- function(
         all.vars(
             capture_formula
         )
-
 
     cap_vars <-
         intersect(
@@ -823,7 +857,6 @@ FitModel_joint <- function(
             occupancy_formula
         )
 
-
     occ_vars <-
         intersect(
             occ_vars,
@@ -868,8 +901,6 @@ FitModel_joint <- function(
     # 11. Design matrices
     # ============================================================
     #
-    # IMPORTANT:
-    #
     # X_occ:
     #   one row per SITE x OTU
     #
@@ -879,8 +910,8 @@ FitModel_joint <- function(
     # X_abund:
     #   one row per PCR/read observation
     #
-    # Thus the three processes live at different hierarchical
-    # levels.
+    # Therefore the three ecological/observation processes live
+    # at their appropriate hierarchical levels.
     # ============================================================
 
     X_occ <-
@@ -889,13 +920,11 @@ FitModel_joint <- function(
             data = site_df
         )
 
-
     X_cap <-
         stats::model.matrix(
             capture_formula,
             data = sample_df
         )
-
 
     X_abund <-
         stats::model.matrix(
@@ -964,7 +993,6 @@ FitModel_joint <- function(
             dat$.site_otu
         )
 
-
     sample_group_levels <-
         levels(
             dat$.sample_otu
@@ -976,6 +1004,7 @@ FitModel_joint <- function(
     # ============================================================
 
     # PCR/read row -> SAMPLE x OTU group
+
     row_sample_group <-
         match(
             as.character(
@@ -987,6 +1016,7 @@ FitModel_joint <- function(
 
 
     # SAMPLE x OTU -> SITE x OTU
+
     sample_site_group <-
         match(
             as.character(
@@ -998,6 +1028,7 @@ FitModel_joint <- function(
 
 
     # SITE x OTU -> OTU
+
     occ_otu <-
         as.integer(
             site_df$.otu
@@ -1006,6 +1037,7 @@ FitModel_joint <- function(
 
 
     # SAMPLE x OTU -> OTU
+
     sample_otu <-
         as.integer(
             sample_df$.otu
@@ -1014,6 +1046,13 @@ FitModel_joint <- function(
 
 
     # PCR/read row -> OTU
+    #
+    # IMPORTANT:
+    # This same index is now used by:
+    #
+    #   b_abund_otu
+    #   b_zi_otu
+
     row_otu <-
         as.integer(
             dat$.otu
@@ -1022,6 +1061,7 @@ FitModel_joint <- function(
 
 
     # PCR/read row -> biological sample
+
     row_sample_id <-
         as.integer(
             dat$.sample
@@ -1030,6 +1070,7 @@ FitModel_joint <- function(
 
 
     # One random-effect level per sample x OTU
+
     row_sample_otu_re <-
         row_sample_group
 
@@ -1108,7 +1149,30 @@ FitModel_joint <- function(
 
 
     # ============================================================
-    # 17. TMB data list
+    # 17. Dimensions
+    # ============================================================
+    #
+    # Calculate these BEFORE constructing data_tmb/parameters.
+    # ============================================================
+
+    n_otu <-
+        nlevels(
+            dat$.otu
+        )
+
+    n_sample <-
+        nlevels(
+            dat$.sample
+        )
+
+    n_sample_otu <-
+        nrow(
+            sample_df
+        )
+
+
+    # ============================================================
+    # 18. TMB data list
     # ============================================================
 
     data_tmb <- list(
@@ -1213,30 +1277,20 @@ FitModel_joint <- function(
         use_sample_otu_re =
             as.integer(
                 random_sample_otu
+            ),
+
+        # --------------------------------------------------------
+        # NEW
+        # --------------------------------------------------------
+        #
+        # Tell C++ whether the OTU-specific zero-inflation
+        # random intercept is enabled.
+
+        use_zi_otu =
+            as.integer(
+                random_zi_otu
             )
     )
-
-
-    # ============================================================
-    # 18. Dimensions
-    # ============================================================
-
-    n_otu <-
-        nlevels(
-            dat$.otu
-        )
-
-
-    n_sample <-
-        nlevels(
-            dat$.sample
-        )
-
-
-    n_sample_otu <-
-        nrow(
-            sample_df
-        )
 
 
     # ============================================================
@@ -1247,7 +1301,6 @@ FitModel_joint <- function(
         mean(
             site_df$site_positive
         )
-
 
     site_positive_rate <-
         pmin(
@@ -1263,7 +1316,6 @@ FitModel_joint <- function(
         mean(
             sample_df$sample_positive
         )
-
 
     sample_positive_rate <-
         pmin(
@@ -1403,6 +1455,10 @@ FitModel_joint <- function(
 
     parameters <- list(
 
+        # --------------------------------------------------------
+        # Fixed effects
+        # --------------------------------------------------------
+
         beta_occ =
             beta_occ_start,
 
@@ -1411,6 +1467,11 @@ FitModel_joint <- function(
 
         beta_abund =
             beta_abund_start,
+
+
+        # --------------------------------------------------------
+        # OTU random effects
+        # --------------------------------------------------------
 
         b_occ_otu =
             rep(
@@ -1430,6 +1491,23 @@ FitModel_joint <- function(
                 n_otu
             ),
 
+        # NEW:
+        #
+        # OTU-specific zero-inflation deviations:
+        #
+        #   b_zi_m ~ N(0, sigma_zi^2)
+
+        b_zi_otu =
+            rep(
+                0,
+                n_otu
+            ),
+
+
+        # --------------------------------------------------------
+        # Sample-level abundance random effects
+        # --------------------------------------------------------
+
         b_sample =
             rep(
                 0,
@@ -1442,6 +1520,11 @@ FitModel_joint <- function(
                 n_sample_otu
             ),
 
+
+        # --------------------------------------------------------
+        # Log standard deviations
+        # --------------------------------------------------------
+
         log_sd_occ_otu =
             log(0.5),
 
@@ -1451,17 +1534,49 @@ FitModel_joint <- function(
         log_sd_abund_otu =
             log(0.5),
 
+        # NEW:
+        #
+        # sigma_zi =
+        # exp(log_sd_zi_otu)
+
+        log_sd_zi_otu =
+            log(0.5),
+
         log_sd_sample =
             log(0.5),
 
         log_sd_sample_otu =
             log(0.5),
 
-        # One shared NB2 dispersion parameter
+
+        # --------------------------------------------------------
+        # NB2 dispersion
+        # --------------------------------------------------------
+
+        # Currently one shared dispersion parameter across OTUs.
+
         log_theta =
             log(10),
 
-        # One shared ZIP/ZINB zero-inflation probability
+
+        # --------------------------------------------------------
+        # Zero-inflation population intercept
+        # --------------------------------------------------------
+        #
+        # With random_zi_otu = TRUE:
+        #
+        #   logit(pi_m)
+        #       =
+        #       zi_intercept
+        #       +
+        #       b_zi_otu[m]
+        #
+        # With random_zi_otu = FALSE:
+        #
+        #   logit(pi)
+        #       =
+        #       zi_intercept
+
         zi_intercept =
             stats::qlogis(
                 0.05
@@ -1572,8 +1687,30 @@ FitModel_joint <- function(
 
 
     # ------------------------------------------------------------
-    # Poisson:
-    # no NB dispersion and no zero inflation
+    # NEW:
+    # OTU-specific zero-inflation random effect OFF
+    # ------------------------------------------------------------
+
+    if (!random_zi_otu) {
+
+        map$b_zi_otu <-
+            factor(
+                rep(
+                    NA,
+                    n_otu
+                )
+            )
+
+        map$log_sd_zi_otu <-
+            factor(NA)
+    }
+
+
+    # ------------------------------------------------------------
+    # Poisson
+    #
+    # No NB dispersion.
+    # No zero inflation.
     # ------------------------------------------------------------
 
     if (
@@ -1586,13 +1723,25 @@ FitModel_joint <- function(
 
         map$zi_intercept <-
             factor(NA)
+
+        map$b_zi_otu <-
+            factor(
+                rep(
+                    NA,
+                    n_otu
+                )
+            )
+
+        map$log_sd_zi_otu <-
+            factor(NA)
     }
 
 
     # ------------------------------------------------------------
-    # NB:
-    # theta estimated,
-    # zero inflation removed
+    # Negative binomial
+    #
+    # theta estimated.
+    # No zero inflation.
     # ------------------------------------------------------------
 
     if (
@@ -1602,13 +1751,33 @@ FitModel_joint <- function(
 
         map$zi_intercept <-
             factor(NA)
+
+        map$b_zi_otu <-
+            factor(
+                rep(
+                    NA,
+                    n_otu
+                )
+            )
+
+        map$log_sd_zi_otu <-
+            factor(NA)
     }
 
 
     # ------------------------------------------------------------
-    # ZIP:
-    # zero inflation estimated,
-    # NB theta removed
+    # ZIP
+    #
+    # Zero inflation estimated.
+    # NB theta removed.
+    #
+    # If random_zi_otu = TRUE:
+    #
+    #   zi_intercept
+    #   b_zi_otu
+    #   log_sd_zi_otu
+    #
+    # are active.
     # ------------------------------------------------------------
 
     if (
@@ -1622,9 +1791,17 @@ FitModel_joint <- function(
 
 
     # ------------------------------------------------------------
-    # ZINB:
+    # ZINB
     #
-    # Both log_theta and zi_intercept remain estimated.
+    # log_theta remains estimated.
+    # zi_intercept remains estimated.
+    #
+    # If random_zi_otu = TRUE:
+    #
+    #   b_zi_otu
+    #   log_sd_zi_otu
+    #
+    # also remain active.
     # ------------------------------------------------------------
 
 
@@ -1682,6 +1859,22 @@ FitModel_joint <- function(
             c(
                 random_effects,
                 "b_sample_otu"
+            )
+    }
+
+
+    # ------------------------------------------------------------
+    # NEW:
+    # Integrate OTU-specific zero-inflation effects using
+    # the TMB Laplace approximation.
+    # ------------------------------------------------------------
+
+    if (random_zi_otu) {
+
+        random_effects <-
+            c(
+                random_effects,
+                "b_zi_otu"
             )
     }
 
@@ -1747,6 +1940,7 @@ FitModel_joint <- function(
             }
         )
 
+
         if (
             abundance_family %in%
             c(
@@ -1761,6 +1955,7 @@ FitModel_joint <- function(
             )
         }
 
+
         if (
             abundance_family %in%
             c(
@@ -1769,10 +1964,21 @@ FitModel_joint <- function(
             )
         ) {
 
-            message(
-                "Zero-inflation structure: ",
-                "one shared pi across OTUs/read observations."
-            )
+            if (random_zi_otu) {
+
+                message(
+                    "Zero-inflation structure: ",
+                    "shared population intercept + ",
+                    "OTU-specific Gaussian random intercept."
+                )
+
+            } else {
+
+                message(
+                    "Zero-inflation structure: ",
+                    "one shared pi across OTUs/read observations."
+                )
+            }
         }
     }
 
@@ -1968,10 +2174,6 @@ FitModel_joint <- function(
     # ============================================================
     # 28. Standard errors from marginal likelihood
     # ============================================================
-    #
-    # Calling obj$fn(opt$par) places the random effects at their
-    # final conditional mode for the fitted outer parameters.
-    # ============================================================
 
     invisible(
         obj$fn(
@@ -2153,7 +2355,39 @@ FitModel_joint <- function(
 
 
     # ============================================================
-    # 33. Return
+    # 33. Zero-inflation description
+    # ============================================================
+
+    zero_inflation_structure <-
+        if (
+            abundance_family %in%
+            c(
+                "zip",
+                "zinb"
+            )
+        ) {
+
+            if (random_zi_otu) {
+
+                paste(
+                    "read-level structural-zero probability with",
+                    "a shared population-level intercept and",
+                    "OTU-specific Gaussian random intercepts"
+                )
+
+            } else {
+
+                "single shared read-level structural-zero probability"
+            }
+
+        } else {
+
+            NULL
+        }
+
+
+    # ============================================================
+    # 34. Return
     # ============================================================
 
     list(
@@ -2206,6 +2440,9 @@ FitModel_joint <- function(
         random_effects =
             random_effects,
 
+        random_zi_otu =
+            random_zi_otu,
+
         formulas = list(
 
             occupancy =
@@ -2238,20 +2475,7 @@ FitModel_joint <- function(
             },
 
         zero_inflation_structure =
-            if (
-                abundance_family %in%
-                c(
-                    "zip",
-                    "zinb"
-                )
-            ) {
-
-                "single shared read-level structural-zero probability"
-
-            } else {
-
-                NULL
-            },
+            zero_inflation_structure,
 
         convergence = list(
 
@@ -2290,12 +2514,26 @@ FitModel_joint <- function(
                     "zinb"
                 )
             ) {
+
                 paste(
                     "ZIP/ZINB requires at least two PCR replicates",
                     "per biological sample to distinguish read-level",
-                    "zero inflation from sample-level capture failure."
+                    "zero inflation from sample-level capture failure.",
+                    if (random_zi_otu) {
+                        paste(
+                            "The zero-inflation probability contains",
+                            "an OTU-specific Gaussian random intercept."
+                        )
+                    } else {
+                        paste(
+                            "The zero-inflation probability is shared",
+                            "across OTUs."
+                        )
+                    }
                 )
+
             } else {
+
                 ""
             }
         )

@@ -426,7 +426,7 @@ FitModel_joint <- function(
     # FALSE is deliberately the default for report covariance.
     # ----------------------------------------------------------
     get_report_covariance = FALSE,
-    get_joint_precision = FALSE,
+    get_joint_precision = TRUE,
 
     # ----------------------------------------------------------
     # Heuristic parameter diagnostics

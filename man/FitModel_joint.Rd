@@ -24,260 +24,402 @@ FitModel_joint(
   random_sample = TRUE,
   random_sample_otu = FALSE,
   random_zi_otu = TRUE,
+  gradient_tol = 0.001,
+  gradient_marginal_factor = 2,
+  max_restarts = 2L,
+  iter_max = 5000L,
+  eval_max = 10000L,
+  rel_tol = 1e-10,
+  stall_objective_tol = 1e-08,
+  stall_gradient_tol = 1e-08,
+  n_gradient_report = 2L,
+  get_report_covariance = FALSE,
+  get_joint_precision = TRUE,
+  log_sd_warning_threshold = -5,
+  se_estimate_ratio_threshold = 10,
+  estimate_zero_tol = 1e-06,
   DLL = "eDNAModel",
   verbose = TRUE
 )
 }
 \arguments{
-\item{phyloseq}{A \code{phyloseq} object containing an OTU/count table
-and corresponding sample metadata.}
+\item{phyloseq}{A \code{phyloseq} object containing the OTU count table and
+associated sample metadata.}
 
-\item{site_col}{Character string giving the column in
-\code{sample_data(phyloseq)} defining the ecological site or
-site--time occupancy unit.}
+\item{site_col}{Character string giving the sample-data column identifying
+sampling sites.}
 
-\item{sample_col}{Character string giving the biological-sample identifier.
-Default is \code{"Name"}.}
+\item{sample_col}{Character string giving the column identifying biological
+samples. Default is \code{"Name"}.}
 
-\item{replicate_col}{Optional character string giving the technical or PCR
-replicate identifier. Default is \code{NULL}.}
+\item{replicate_col}{Optional character string identifying technical or PCR
+replicates. Default is \code{NULL}.}
 
-\item{otu_col}{Character string giving the OTU/taxon identifier used in the
-long-format model data. Default is \code{"OTU"}.}
+\item{otu_col}{Character string identifying the OTU column in the long-format
+data. Default is \code{"OTU"}.}
 
-\item{count_col}{Character string giving the observed sequencing-read count
+\item{count_col}{Character string identifying the observed read-count
 column. Default is \code{"y"}.}
 
-\item{occupancy_formula}{One-sided formula specifying fixed effects in the
+\item{occupancy_formula}{A model formula specifying fixed effects for the
 occupancy component. Default is \code{~ 1}.}
 
-\item{capture_formula}{One-sided formula specifying fixed effects in the
-biological-sample capture component. Default is \code{~ 1}.}
+\item{capture_formula}{A model formula specifying fixed effects for the
+capture/detection component. Default is \code{~ 1}.}
 
-\item{abundance_formula}{One-sided formula specifying fixed effects in the
-sequencing-read abundance component. Default is \code{~ 1}.}
+\item{abundance_formula}{A model formula specifying fixed effects for the
+abundance component. Default is \code{~ 1}.}
 
-\item{abundance_offset}{Optional character string naming a positive variable
-to be included as a log-offset in the abundance linear predictor.
-Default is \code{NULL}.}
+\item{abundance_offset}{Optional character string identifying a positive
+abundance-exposure variable. The logarithm of this variable is included
+as an offset. Default is \code{NULL}.}
 
-\item{abundance_family}{Character string specifying the conditional
-read-count distribution. One of \code{"poisson"}, \code{"nbinom"},
-\code{"zip"}, or \code{"zinb"}.}
+\item{abundance_family}{Character string specifying the abundance
+distribution. One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, or
+\code{"zinb"}.}
 
 \item{min_species_sum}{Minimum total read count required for an OTU to be
-retained in the analysis. Default is \code{10}.}
+retained. Default is 10.}
 
-\item{min_detection_replicates}{Minimum number of positive replicate-level
-observations required for an OTU to be retained. Default is \code{1}.}
+\item{min_detection_replicates}{Minimum number of positive observations
+required for an OTU to be retained. Default is 1.}
 
-\item{random_occ_otu}{Logical. If \code{TRUE}, include an OTU-specific
-Gaussian random intercept in the occupancy model.}
+\item{random_occ_otu}{Logical. Include an OTU-level random intercept in the
+occupancy model. Default is \code{TRUE}.}
 
-\item{random_capture_otu}{Logical. If \code{TRUE}, include an OTU-specific
-Gaussian random intercept in the capture model.}
+\item{random_capture_otu}{Logical. Include an OTU-level random intercept in
+the capture model. Default is \code{TRUE}.}
 
-\item{random_abund_otu}{Logical. If \code{TRUE}, include an OTU-specific
-Gaussian random intercept in the abundance model.}
+\item{random_abund_otu}{Logical. Include an OTU-level random intercept in the
+abundance model. Default is \code{TRUE}.}
 
-\item{random_sample}{Logical. If \code{TRUE}, include a biological-sample
-Gaussian random intercept in the abundance model.}
+\item{random_sample}{Logical. Include a biological-sample random intercept
+in the abundance model. Default is \code{TRUE}.}
 
-\item{random_sample_otu}{Logical. If \code{TRUE}, include a sample-by-OTU
-Gaussian random effect in the abundance model.}
+\item{random_sample_otu}{Logical. Include a sample-by-OTU random intercept
+in the abundance model. Default is \code{FALSE}.}
 
-\item{DLL}{Character string specifying the TMB dynamic library containing
-the joint likelihood template. For the installed \pkg{eDNAModel} package,
-this should normally be \code{"eDNAModel"}.}
+\item{random_zi_otu}{Logical. Include an OTU-level random intercept in the
+zero-inflation model. This option is used only for ZIP and ZINB models.
+Default is \code{TRUE}.}
 
-\item{verbose}{Logical. If \code{TRUE}, print model dimensions,
-optimization progress, convergence information, and post-fit calculations.}
+\item{gradient_tol}{Positive numeric value specifying the maximum acceptable
+absolute component of the final outer gradient for strict numerical
+convergence. Default is \code{1e-3}.}
+
+\item{gradient_marginal_factor}{Numeric value greater than 1 defining the
+optional user-facing marginal-gradient region. This affects diagnostic
+labels only and does not change the strict convergence criterion.
+Default is 2.}
+
+\item{max_restarts}{Non-negative integer giving the maximum number of
+automatic optimizer restarts. Default is 2.}
+
+\item{iter_max}{Maximum number of \code{nlminb()} iterations per
+optimization pass. Default is 5000.}
+
+\item{eval_max}{Maximum number of objective evaluations per optimization
+pass. Default is 10000.}
+
+\item{rel_tol}{Relative convergence tolerance supplied to \code{nlminb()}.
+Default is \code{1e-10}.}
+
+\item{stall_objective_tol}{Tolerance used to identify negligible changes in
+the objective between consecutive optimization passes.}
+
+\item{stall_gradient_tol}{Tolerance used to identify negligible changes in
+the maximum absolute gradient between consecutive optimization passes.}
+
+\item{n_gradient_report}{Number of parameters with the largest absolute
+gradients to report when the gradient criterion is not satisfied.
+Default is 2.}
+
+\item{get_report_covariance}{Logical. Passed to
+\code{TMB::sdreport(getReportCovariance = ...)}. The default is
+\code{FALSE} to reduce memory use for large OTU datasets.}
+
+\item{get_joint_precision}{Logical. Request the joint precision matrix from
+\code{TMB::sdreport()} when random effects are present. Default is
+\code{TRUE}. This may also increase computational and memory requirements
+for large models.}
+
+\item{log_sd_warning_threshold}{Numeric threshold used to flag very small
+estimated random-effect standard deviations on the log-SD scale. This is
+a heuristic diagnostic only. Default is -5.}
+
+\item{se_estimate_ratio_threshold}{Numeric threshold used to flag fixed
+parameters whose standard error is large relative to the absolute
+estimate. This is a heuristic diagnostic and does not determine
+convergence. Default is 10.}
+
+\item{estimate_zero_tol}{Positive numeric tolerance below which an estimate
+is treated as effectively zero when computing SE-to-estimate ratios.
+Default is \code{1e-6}.}
+
+\item{DLL}{Character string giving the name of the compiled TMB dynamic
+library. Default is \code{"eDNAModel"}.}
+
+\item{verbose}{Logical. If \code{TRUE}, print fitting progress and numerical
+diagnostics. Default is \code{TRUE}.}
 }
 \value{
-A list containing:
+A list containing the fitted optimizer object, TMB object, \code{sdreport}
+results, parameter summaries, processed model data, and numerical
+diagnostics. Important components include:
 
 \describe{
-  \item{\code{fit}}{The \code{nlminb} optimization result.}
+  \item{\code{fit}}{The final \code{nlminb()} optimization result.}
   \item{\code{tmb_object}}{The fitted TMB objective object.}
-  \item{\code{sdreport}}{The \code{TMB::sdreport} object containing
-    likelihood-based standard errors.}
-  \item{\code{report}}{Derived quantities reported by the C++ TMB model.}
-  \item{\code{fixed_effects}}{Estimated fixed parameters and standard errors.}
-  \item{\code{derived}}{Delta-method summaries for reported quantities such
-    as occupancy and capture probabilities.}
-  \item{\code{site_data}}{Site-by-OTU model data.}
-  \item{\code{sample_data}}{Biological-sample-by-OTU model data.}
-  \item{\code{long_df}}{Long-format count data used for fitting.}
-  \item{\code{otu_stats}}{OTU filtering statistics.}
-  \item{\code{retained_otus}}{Names of OTUs retained after filtering.}
-  \item{\code{random_effects}}{Names of Gaussian random effects integrated
-    using the Laplace approximation.}
-  \item{\code{formulas}}{Occupancy, capture, and abundance formulas.}
-  \item{\code{abundance_family}}{Conditional count distribution used.}
-  \item{\code{convergence}}{Optimizer convergence information and
-    standard-error diagnostics.}
+  \item{\code{sdreport}}{The \code{TMB::sdreport()} object, when successful.}
+  \item{\code{fixed_effects}}{Estimates and standard errors for fixed
+    parameters.}
+  \item{\code{derived}}{Reported/derived parameter summaries.}
+  \item{\code{convergence}}{Detailed optimizer, gradient, Hessian,
+    standard-error, restart, and overall numerical-convergence diagnostics.}
+  \item{\code{diagnostics}}{User-facing diagnostic table and heuristic
+    parameter warnings.}
+  \item{\code{sdreport_settings}}{Settings used when calling
+    \code{TMB::sdreport()}.}
 }
 }
 \description{
-Fits a joint hierarchical model for environmental DNA (eDNA) data that
-separates ecological occupancy, biological-sample capture, and sequencing
-read abundance. The discrete latent occupancy and capture states are
-analytically marginalized from the observed-data likelihood, while optional
-Gaussian random effects are integrated using the Laplace approximation
-implemented in \pkg{TMB}.
+Fits a joint hierarchical model for environmental DNA (eDNA) metabarcoding
+count data using Template Model Builder (TMB). The model represents the
+observation process through linked occupancy, capture/detection, and
+sequencing-abundance components.
 
-The model contains three linked components:
+The model can be fitted with Poisson, negative-binomial, zero-inflated
+Poisson (ZIP), or zero-inflated negative-binomial (ZINB) abundance
+distributions. OTU-level random effects can be included separately in the
+occupancy, capture, abundance, and zero-inflation components. Additional
+sample and sample-by-OTU random effects can also be included.
 
-\deqn{
-Z_{im} \sim \mathrm{Bernoulli}(\psi_{im}),
-}
-
-\deqn{
-\mathrm{logit}(\psi_{im})
-=
-\mathbf{x}^{(\psi)\top}_{i}\boldsymbol{\beta}_{\psi}
-+
-b^{(\psi)}_{m},
-}
-
-\deqn{
-A_{ijm}\mid Z_{im}=1
-\sim
-\mathrm{Bernoulli}(p_{ijm}),
-}
-
-\deqn{
-\mathrm{logit}(p_{ijm})
-=
-\mathbf{x}^{(p)\top}_{ij}\boldsymbol{\beta}_{p}
-+
-b^{(p)}_{m},
-}
-
-and
-
-\deqn{
-\log(\lambda_{ijkm})
-=
-\mathbf{x}^{(\lambda)\top}_{ijk}
-\boldsymbol{\beta}_{\lambda}
-+
-b^{(\lambda)}_{m}
-+
-u_j
-+
-v_{jm}
-+
-o_{ijk}.
-}
-
-Here, \eqn{i} indexes sites or site--time units, \eqn{j} biological
-samples, \eqn{k} technical replicates, and \eqn{m} OTUs or taxa.
+Latent occupancy and biological-sample capture states are analytically
+marginalized in the observed-data likelihood. Enabled Gaussian random
+effects are integrated using the Laplace approximation implemented in TMB.
 }
 \details{
-The observed-data likelihood is obtained by analytically summing over the
-latent biological-sample capture state and latent site-level occupancy state.
-Consequently, these binary latent variables are not imputed during model
-fitting.
+The hierarchical model contains three principal ecological/observation
+components.
 
-For an all-zero biological sample, the contribution conditional on site
-occupancy is
+**Occupancy model**
 
-\deqn{
-(1-p_{ijm})
-+
-p_{ijm}
-\prod_k f(0;\lambda_{ijkm}),
-}
-
-whereas a biological sample containing at least one positive read has
-likelihood
+For site \eqn{i} and OTU \eqn{k}, occupancy probability is modeled as
 
 \deqn{
-p_{ijm}
-\prod_k
-f(Y_{ijkm};\lambda_{ijkm}).
-}
-
-At the site--OTU level, if the complete observation history is zero,
-
-\deqn{
-(1-\psi_{im})
-+
-\psi_{im}
-\prod_j L_{ijm}^{(1)}
-}
-
-is used. If any read count is positive, occupancy is necessarily present and
-the contribution is
-
-\deqn{
-\psi_{im}
-\prod_j L_{ijm}^{(1)}.
-}
-
-Enabled Gaussian random effects are integrated from the likelihood using
-TMB's Laplace approximation. Fixed-effect and variance-component uncertainty
-is obtained from the Hessian of the marginal likelihood through
-\code{TMB::sdreport()}.
-
-The negative-binomial model uses the NB2 parameterization
-
-\deqn{
-\mathrm{Var}(Y)
+\mathrm{logit}(\psi_{ik})
 =
-\mu + \frac{\mu^2}{\theta}.
+X^{(\psi)}_{ik}\beta_{\psi}
++
+b^{(\psi)}_k,
 }
 
-For ZIP and ZINB models, the parameter \eqn{\pi} represents an additional
-structural-zero probability conditional on biological-sample capture.
+where \eqn{X^{(\psi)}} is the occupancy design matrix,
+\eqn{\beta_{\psi}} contains fixed effects, and
+\eqn{b^{(\psi)}_k} is an optional OTU-level random intercept.
+
+**Capture/detection model**
+
+Conditional on occupancy, the probability that OTU \eqn{k} is captured in
+biological sample \eqn{j} is modeled as
+
+\deqn{
+\mathrm{logit}(p_{jk})
+=
+X^{(p)}_{jk}\beta_p
++
+b^{(p)}_k.
 }
+
+**Abundance model**
+
+Conditional on capture, expected read abundance is modeled as
+
+\deqn{
+\log(\lambda_{rjk})
+=
+X^{(\lambda)}_{rjk}\beta_{\lambda}
++
+b^{(\lambda)}_k
++
+b^{(s)}_j
++
+b^{(s \times k)}_{jk}
++
+o_{rjk},
+}
+
+where \eqn{o_{rjk}} is an optional log-scale abundance offset.
+
+For ZIP and ZINB models, additional structural zeros are represented using
+a zero-inflation probability
+
+\deqn{
+\mathrm{logit}(\pi_k)
+=
+\alpha_{\pi}
++
+b^{(\pi)}_k,
+}
+
+where \eqn{\alpha_{\pi}} is the population-level zero-inflation intercept
+and \eqn{b^{(\pi)}_k} is an optional OTU-level random effect. This allows
+structural-zero probabilities to vary among OTUs rather than assuming a
+common dropout probability for all taxa.
+}
+\note{
+The convergence diagnostics assess numerical optimization and local
+curvature of the Laplace-approximated objective. They do not, by
+themselves, establish the accuracy of the Laplace approximation.
+Simulation-based parameter-recovery and coverage studies are recommended
+when evaluating approximation accuracy, particularly for sparse and highly
+discrete eDNA datasets.
+}
+\section{Numerical convergence}{
+
+
+Numerical convergence is assessed using several complementary diagnostics
+rather than relying solely on the optimizer return code.
+
+A fit is classified as strictly numerically converged only when all of the
+following conditions are satisfied:
+
+\itemize{
+  \item \code{nlminb()} returns convergence code 0;
+  \item all components of the final outer TMB gradient are finite;
+  \item the maximum absolute outer gradient is no greater than
+        \code{gradient_tol};
+  \item \code{TMB::sdreport()} completes successfully;
+  \item the Hessian is positive definite according to
+        \code{sdreport()$pdHess}; and
+  \item all standard errors returned for the fixed parameter vector are
+        finite.
+}
+
+The default gradient tolerance is \eqn{10^{-3}}. The gradient criterion is
+
+\deqn{
+\max_j
+\left|
+\frac{\partial \tilde{\ell}(\theta)}
+     {\partial \theta_j}
+\right|
+\leq
+\mathrm{gradient\_tol},
+}
+
+where \eqn{\tilde{\ell}(\theta)} denotes the TMB objective after Laplace
+approximation over enabled random effects.
+
+If the optimizer returns convergence code 0 but the gradient remains above
+the specified tolerance, the fit is not classified as strictly numerically
+converged. The function can automatically restart optimization from the
+previous solution. Restarts terminate when the convergence criteria are
+satisfied, the maximum number of restarts is reached, or changes in the
+objective and gradient indicate that optimization has stalled.
+
+For user-facing diagnostics, gradient results may additionally be labelled
+\code{"PASS"}, \code{"MARGINAL"}, or \code{"FAIL"}. The
+\code{"MARGINAL"} classification is descriptive only and does not override
+the strict gradient convergence criterion.
+}
+
+\section{Hessian diagnostic}{
+
+
+Positive definiteness of the Hessian is assessed using the
+\code{pdHess} diagnostic returned by \code{TMB::sdreport()}. A
+non-positive-definite Hessian may indicate a flat likelihood direction,
+weak or non-identification of one or more parameters, a saddle point, or
+other numerical difficulties.
+
+This diagnostic evaluates positive definiteness rather than merely positive
+semidefiniteness. It is considered jointly with the optimizer status and
+gradient diagnostic; \code{pdHess = TRUE} alone is not interpreted as
+evidence of convergence.
+}
+
+\section{Standard-error diagnostic}{
+
+
+Fixed-parameter standard errors are obtained from
+\code{summary(sdreport_object, "fixed")}. They pass the finite-standard-error
+diagnostic only when every returned standard error satisfies
+\code{is.finite()}. Consequently, \code{NA}, \code{NaN}, \code{Inf}, and
+\code{-Inf} standard errors cause this diagnostic to fail.
+
+This is a numerical sanity check and does not imply that finite standard
+errors are necessarily small or scientifically informative. Large but
+finite standard errors are handled separately as heuristic parameter
+warnings.
+}
+
+\section{Heuristic parameter diagnostics}{
+
+
+In addition to the formal numerical convergence criteria, the function can
+flag potentially problematic parameter estimates. These diagnostics are
+intended to assist interpretation and do not by themselves cause a fit to
+be classified as non-converged.
+
+Two heuristic checks are currently used:
+
+\itemize{
+  \item estimated log-standard-deviation parameters below
+        \code{log_sd_warning_threshold}, which may indicate a variance
+        component close to zero; and
+  \item unusually large standard errors relative to the absolute parameter
+        estimate, based on \code{se_estimate_ratio_threshold}.
+}
+
+These thresholds are diagnostic guidelines rather than universal
+statistical criteria and should be interpreted in the context of the fitted
+model and data.
+}
+
+\section{Memory use and sdreport}{
+
+
+For large eDNA OTU matrices, covariance calculations performed by
+\code{TMB::sdreport()} can require substantial memory. Therefore,
+\code{get_report_covariance = FALSE} is the default.
+
+Users requiring the covariance matrix of reported quantities can explicitly
+set \code{get_report_covariance = TRUE}. This option may substantially
+increase memory requirements and should be used with care for large
+datasets.
+}
+
 \examples{
 \dontrun{
-data("physeq_new", package = "eDNAModel")
 
-physeq_one <-
-  physeq_new[["Marine Invasive species Trondheim"]]
-
-meta <- as.data.frame(
-  phyloseq::sample_data(physeq_one)
+fit_zinb <- FitModel_joint(
+    phyloseq = ps,
+    site_col = "Sampling.area.Name",
+    sample_col = "Name",
+    replicate_col = "Replicate",
+    otu_col = "OTU",
+    count_col = "y",
+    occupancy_formula = ~ 1,
+    capture_formula = ~ 1,
+    abundance_formula = ~ 1,
+    abundance_family = "zinb",
+    random_occ_otu = TRUE,
+    random_capture_otu = TRUE,
+    random_abund_otu = TRUE,
+    random_zi_otu = TRUE,
+    random_sample = TRUE,
+    random_sample_otu = FALSE,
+    gradient_tol = 1e-3,
+    get_report_covariance = FALSE,
+    verbose = TRUE
 )
 
-meta$site_month <- interaction(
-  meta$Sampling.area.Name,
-  meta$Samplingmonth,
-  drop = TRUE,
-  sep = "_"
-)
-
-phyloseq::sample_data(physeq_one) <-
-  phyloseq::sample_data(meta)
-
-fit <- FitModel_joint(
-  phyloseq = physeq_one,
-  site_col = "site_month",
-  sample_col = "Name",
-  replicate_col = "Replicate",
-  otu_col = "OTU",
-  count_col = "y",
-  occupancy_formula = ~ Samplingmonth,
-  capture_formula = ~ 1,
-  abundance_formula = ~ Samplingmonth + Replicate,
-  abundance_family = "zinb",
-  random_occ_otu = TRUE,
-  random_capture_otu = TRUE,
-  random_abund_otu = TRUE,
-  random_sample = TRUE,
-  random_sample_otu = TRUE
-)
-
-fit$convergence
-fit$fixed_effects
+fit_zinb$fixed_effects
+fit_zinb$convergence$converged
+fit_zinb$convergence$max_abs_gradient
+fit_zinb$convergence$pd_hessian
+fit_zinb$diagnostics$table
 }
 
-}
-\references{
-Kristensen, K., Nielsen, A., Berg, C. W., Skaug, H., and Bell, B. M.
-(2016). TMB: Automatic differentiation and Laplace approximation.
-\emph{Journal of Statistical Software}, 70(5), 1--21.
 }

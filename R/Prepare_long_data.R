@@ -76,7 +76,7 @@ prepare_long_data <- function(physeq_obj,
                               nested_cols = NULL) {
   
     
-    sample_meta <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+    sample_meta <- as.data.frame(phyloseq::sample_data(physeq_obj), stringsAsFactors = FALSE)
     # -------------------------------
     # Extract metadata
     # -------------------------------
@@ -95,18 +95,18 @@ prepare_long_data <- function(physeq_obj,
         stop("Some nested_cols not found in sample_data.")
       }
       
-      sample_data(physeq_obj)$SampleRep <-
+      phyloseq::sample_data(physeq_obj)$SampleRep <-
         do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
       
     } else {
-      sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
+      phyloseq::sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
       
     }
     
     # -------------------------------
     # Metadata
     # -------------------------------
-    meta_df <- as.data.frame(sample_data(physeq_obj), stringsAsFactors = FALSE)
+    meta_df <- as.data.frame(phyloseq::sample_data(physeq_obj), stringsAsFactors = FALSE)
     meta_df$SampleRep <- rownames(meta_df)
     
     

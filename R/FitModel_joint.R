@@ -85,6 +85,7 @@
 #' structural-zero probabilities to vary among OTUs rather than assuming a
 #' common dropout probability for all taxa.
 #'
+#'
 #' @section Numerical convergence:
 #'
 #' Numerical convergence is assessed using several complementary diagnostics
@@ -105,7 +106,8 @@
 #'         finite.
 #' }
 #'
-#' The default gradient tolerance is \eqn{10^{-3}}. The gradient criterion is
+#' The default strict gradient tolerance is \eqn{10^{-3}}. The gradient
+#' criterion is
 #'
 #' \deqn{
 #' \max_j
@@ -120,17 +122,66 @@
 #' where \eqn{\tilde{\ell}(\theta)} denotes the TMB objective after Laplace
 #' approximation over enabled random effects.
 #'
-#' If the optimizer returns convergence code 0 but the gradient remains above
-#' the specified tolerance, the fit is not classified as strictly numerically
-#' converged. The function can automatically restart optimization from the
-#' previous solution. Restarts terminate when the convergence criteria are
-#' satisfied, the maximum number of restarts is reached, or changes in the
-#' objective and gradient indicate that optimization has stalled.
+#' Because the outer TMB gradient can exhibit small numerical fluctuations near
+#' an otherwise stable optimum, the function distinguishes strict convergence
+#' from a user-facing marginal-gradient region. With the defaults,
+#' \code{gradient_tol = 1e-3} and \code{gradient_marginal_factor = 5},
+#' gradient diagnostics are classified as:
 #'
-#' For user-facing diagnostics, gradient results may additionally be labelled
-#' \code{"PASS"}, \code{"MARGINAL"}, or \code{"FAIL"}. The
-#' \code{"MARGINAL"} classification is descriptive only and does not override
-#' the strict gradient convergence criterion.
+#' \itemize{
+#'   \item \code{"PASS"} when
+#'         \eqn{\max |\nabla\tilde{\ell}| \le 0.001};
+#'   \item \code{"MARGINAL"} when
+#'         \eqn{0.001 < \max |\nabla\tilde{\ell}| \le 0.005}; and
+#'   \item \code{"FAIL"} when
+#'         \eqn{\max |\nabla\tilde{\ell}| > 0.005}.
+#' }
+#'
+#' The marginal classification does not redefine the strict mathematical
+#' gradient criterion. Instead, it distinguishes small residual gradients near
+#' an otherwise numerically stable optimum from more substantial optimization
+#' problems. A fit with optimizer code 0, successful \code{sdreport()},
+#' positive-definite Hessian, finite fixed-parameter standard errors, and a
+#' marginal gradient is therefore reported as \code{"MARGINAL"} rather than
+#' automatically being labelled a numerical failure.
+#'
+#'
+#' @section Optimization restarts and solution selection:
+#'
+#' If the strict optimizer/gradient criteria are not met after the first
+#' optimization pass, the function can restart \code{nlminb()} from the
+#' current solution up to \code{max_restarts} times.
+#'
+#' Restarted optimizations can return essentially identical likelihood values
+#' while their evaluated outer gradients fluctuate slightly because of
+#' numerical noise in the Laplace-approximated objective. Consequently, the
+#' function does not automatically retain the final optimization pass.
+#'
+#' After all required passes have been completed, the minimum objective value
+#' is identified. Optimization passes whose objective values differ from this
+#' minimum by no more than
+#'
+#' \deqn{
+#' \mathrm{objective\_rel\_tol}
+#' \times
+#' \max(1, |\tilde{\ell}_a|, |\tilde{\ell}_b|)
+#' }
+#'
+#' are treated as effectively equivalent likelihood solutions. Among these
+#' equivalent solutions, the pass with the smallest finite maximum absolute
+#' outer gradient is retained.
+#'
+#' This prevents a later restart with an effectively identical likelihood but
+#' a slightly larger numerical gradient from replacing an otherwise better
+#' solution.
+#'
+#' Restarting may terminate early when consecutive optimization passes have
+#' effectively equivalent objective values and the improvement in maximum
+#' absolute gradient is no greater than \code{gradient_improvement_tol}.
+#' This provides a practical stall criterion for cases in which repeated
+#' optimization reaches the same likelihood while the gradient fluctuates
+#' numerically.
+#'
 #'
 #' @section Hessian diagnostic:
 #'
@@ -145,6 +196,7 @@
 #' gradient diagnostic; \code{pdHess = TRUE} alone is not interpreted as
 #' evidence of convergence.
 #'
+#'
 #' @section Standard-error diagnostic:
 #'
 #' Fixed-parameter standard errors are obtained from
@@ -157,6 +209,7 @@
 #' errors are necessarily small or scientifically informative. Large but
 #' finite standard errors are handled separately as heuristic parameter
 #' warnings.
+#'
 #'
 #' @section Heuristic parameter diagnostics:
 #'
@@ -179,16 +232,37 @@
 #' statistical criteria and should be interpreted in the context of the fitted
 #' model and data.
 #'
+#'
 #' @section Memory use and sdreport:
 #'
-#' For large eDNA OTU matrices, covariance calculations performed by
-#' \code{TMB::sdreport()} can require substantial memory. Therefore,
-#' \code{get_report_covariance = FALSE} is the default.
+#' For large eDNA OTU matrices, covariance and joint-precision calculations
+#' performed by \code{TMB::sdreport()} can require substantial memory.
+#' Therefore, both \code{get_report_covariance = FALSE} and
+#' \code{get_joint_precision = FALSE} are memory-efficient defaults.
 #'
 #' Users requiring the covariance matrix of reported quantities can explicitly
-#' set \code{get_report_covariance = TRUE}. This option may substantially
-#' increase memory requirements and should be used with care for large
-#' datasets.
+#' set \code{get_report_covariance = TRUE}. Users requiring the joint precision
+#' matrix of fixed and random effects can set
+#' \code{get_joint_precision = TRUE}. Either option may substantially increase
+#' memory requirements and computation time for large models.
+#'
+#'
+#' @section Verbose output:
+#'
+#' Package-level progress messages and the internal TMB optimizer trace are
+#' controlled separately.
+#'
+#' Setting \code{verbose = TRUE} prints useful eDNAModel progress information,
+#' including optimization-pass summaries, selected-pass information,
+#' \code{sdreport()} progress, and final numerical diagnostics.
+#'
+#' The lower-level TMB optimization trace (for example, repeated
+#' \code{iter:} and \code{mgc:} messages) is controlled by
+#' \code{tmb_verbose}. Its default is \code{FALSE}, preventing potentially
+#' thousands of TMB inner-optimizer messages from being printed during normal
+#' use. Advanced users can set \code{tmb_verbose = TRUE} when detailed TMB
+#' tracing is required.
+#'
 #'
 #' @param phyloseq A \code{phyloseq} object containing the OTU count table and
 #'   associated sample metadata.
@@ -251,16 +325,19 @@
 #'   Default is \code{TRUE}.
 #'
 #' @param gradient_tol Positive numeric value specifying the maximum acceptable
-#'   absolute component of the final outer gradient for strict numerical
+#'   absolute component of the final outer TMB gradient for strict numerical
 #'   convergence. Default is \code{1e-3}.
 #'
 #' @param gradient_marginal_factor Numeric value greater than 1 defining the
-#'   optional user-facing marginal-gradient region. This affects diagnostic
-#'   labels only and does not change the strict convergence criterion.
-#'   Default is 2.
+#'   user-facing marginal-gradient region as
+#'   \code{gradient_marginal_factor * gradient_tol}. The default is 5, giving
+#'   a marginal upper limit of 0.005 when \code{gradient_tol = 0.001}.
+#'   This diagnostic classification does not alter the strict gradient
+#'   convergence criterion.
 #'
 #' @param max_restarts Non-negative integer giving the maximum number of
-#'   automatic optimizer restarts. Default is 2.
+#'   automatic optimizer restarts after the initial optimization pass.
+#'   Default is 2.
 #'
 #' @param iter_max Maximum number of \code{nlminb()} iterations per
 #'   optimization pass. Default is 5000.
@@ -271,14 +348,20 @@
 #' @param rel_tol Relative convergence tolerance supplied to \code{nlminb()}.
 #'   Default is \code{1e-10}.
 #'
-#' @param stall_objective_tol Tolerance used to identify negligible changes in
-#'   the objective between consecutive optimization passes.
+#' @param objective_rel_tol Relative tolerance used to determine whether
+#'   objective values from different optimization passes are effectively
+#'   equivalent. Two objective values \eqn{f_a} and \eqn{f_b} are treated as
+#'   equivalent when
+#'   \code{abs(f_a - f_b) <= objective_rel_tol *
+#'   max(1, abs(f_a), abs(f_b))}. Default is \code{1e-8}.
 #'
-#' @param stall_gradient_tol Tolerance used to identify negligible changes in
-#'   the maximum absolute gradient between consecutive optimization passes.
+#' @param gradient_improvement_tol Non-negative numeric value specifying the
+#'   minimum reduction in maximum absolute gradient considered a meaningful
+#'   improvement between effectively equivalent optimization passes.
+#'   Default is \code{1e-4}.
 #'
 #' @param n_gradient_report Number of parameters with the largest absolute
-#'   gradients to report when the gradient criterion is not satisfied.
+#'   gradients to report when the strict gradient criterion is not satisfied.
 #'   Default is 2.
 #'
 #' @param get_report_covariance Logical. Passed to
@@ -286,9 +369,9 @@
 #'   \code{FALSE} to reduce memory use for large OTU datasets.
 #'
 #' @param get_joint_precision Logical. Request the joint precision matrix from
-#'   \code{TMB::sdreport()} when random effects are present. Default is
-#'   \code{TRUE}. This may also increase computational and memory requirements
-#'   for large models.
+#'   \code{TMB::sdreport()} when random effects are present. The default is
+#'   \code{FALSE} to reduce memory use and computation time. Set to
+#'   \code{TRUE} only when the joint precision matrix is required.
 #'
 #' @param log_sd_warning_threshold Numeric threshold used to flag very small
 #'   estimated random-effect standard deviations on the log-SD scale. This is
@@ -306,68 +389,152 @@
 #' @param DLL Character string giving the name of the compiled TMB dynamic
 #'   library. Default is \code{"eDNAModel"}.
 #'
-#' @param verbose Logical. If \code{TRUE}, print fitting progress and numerical
+#' @param verbose Logical. If \code{TRUE}, print package-level fitting progress,
+#'   optimization-pass summaries, \code{sdreport()} progress, and numerical
 #'   diagnostics. Default is \code{TRUE}.
 #'
+#' @param tmb_verbose Logical. If \code{TRUE}, allow the internal TMB
+#'   optimization trace to be printed. Default is \code{FALSE}. This is
+#'   separate from \code{verbose} so normal package progress can be displayed
+#'   without printing thousands of TMB inner-optimization messages.
+#'
+#'
 #' @return
-#' A list containing the fitted optimizer object, TMB object, \code{sdreport}
-#' results, parameter summaries, processed model data, and numerical
-#' diagnostics. Important components include:
+#' A list containing the fitted optimizer object, TMB objective,
+#' \code{sdreport} results, parameter summaries, processed model data, and
+#' numerical diagnostics. Important components include:
 #'
 #' \describe{
-#'   \item{\code{fit}}{The final \code{nlminb()} optimization result.}
-#'   \item{\code{tmb_object}}{The fitted TMB objective object.}
-#'   \item{\code{sdreport}}{The \code{TMB::sdreport()} object, when successful.}
-#'   \item{\code{fixed_effects}}{Estimates and standard errors for fixed
-#'     parameters.}
-#'   \item{\code{derived}}{Reported/derived parameter summaries.}
-#'   \item{\code{convergence}}{Detailed optimizer, gradient, Hessian,
-#'     standard-error, restart, and overall numerical-convergence diagnostics.}
-#'   \item{\code{diagnostics}}{User-facing diagnostic table and heuristic
-#'     parameter warnings.}
-#'   \item{\code{sdreport_settings}}{Settings used when calling
-#'     \code{TMB::sdreport()}.}
+#'
+#'   \item{\code{fit}}{
+#'     The selected \code{nlminb()} optimization result.
+#'   }
+#'
+#'   \item{\code{tmb_object}}{
+#'     The fitted TMB objective object.
+#'   }
+#'
+#'   \item{\code{sdreport}}{
+#'     The \code{TMB::sdreport()} object, when successful.
+#'   }
+#'
+#'   \item{\code{fixed_effects}}{
+#'     Estimates and standard errors for the fixed parameter vector.
+#'   }
+#'
+#'   \item{\code{derived}}{
+#'     Reported or derived parameter summaries.
+#'   }
+#'
+#'   \item{\code{convergence}}{
+#'     Detailed optimizer, gradient, Hessian, standard-error, restart,
+#'     selected-pass, and overall numerical-convergence diagnostics.
+#'   }
+#'
+#'   \item{\code{diagnostics}}{
+#'     User-facing diagnostic table and heuristic parameter warnings.
+#'   }
+#'
+#'   \item{\code{sdreport_settings}}{
+#'     Settings used when calling \code{TMB::sdreport()}.
+#'   }
 #' }
+#'
 #'
 #' @note
 #' The convergence diagnostics assess numerical optimization and local
-#' curvature of the Laplace-approximated objective. They do not, by
-#' themselves, establish the accuracy of the Laplace approximation.
+#' curvature of the Laplace-approximated objective. They do not, by themselves,
+#' establish the accuracy of the Laplace approximation or the biological
+#' adequacy of the fitted model.
+#'
+#' A \code{"MARGINAL"} gradient classification should be interpreted together
+#' with objective stability across optimization passes, optimizer status,
+#' Hessian positive definiteness, and standard-error diagnostics. It is
+#' intended to distinguish small residual numerical gradients from clear
+#' optimization failures rather than to redefine the strict gradient
+#' convergence criterion.
+#'
 #' Simulation-based parameter-recovery and coverage studies are recommended
 #' when evaluating approximation accuracy, particularly for sparse and highly
 #' discrete eDNA datasets.
+#'
 #'
 #' @examples
 #' \dontrun{
 #'
 #' fit_zinb <- FitModel_joint(
+#'
 #'     phyloseq = ps,
+#'
 #'     site_col = "Sampling.area.Name",
 #'     sample_col = "Name",
 #'     replicate_col = "Replicate",
+#'
 #'     otu_col = "OTU",
 #'     count_col = "y",
+#'
 #'     occupancy_formula = ~ 1,
 #'     capture_formula = ~ 1,
 #'     abundance_formula = ~ 1,
+#'
 #'     abundance_family = "zinb",
+#'
 #'     random_occ_otu = TRUE,
 #'     random_capture_otu = TRUE,
 #'     random_abund_otu = TRUE,
 #'     random_zi_otu = TRUE,
+#'
 #'     random_sample = TRUE,
 #'     random_sample_otu = FALSE,
+#'
 #'     gradient_tol = 1e-3,
+#'     gradient_marginal_factor = 5,
+#'
+#'     max_restarts = 2,
+#'
+#'     objective_rel_tol = 1e-8,
+#'     gradient_improvement_tol = 1e-4,
+#'
 #'     get_report_covariance = FALSE,
-#'     verbose = TRUE
+#'     get_joint_precision = FALSE,
+#'
+#'     verbose = TRUE,
+#'     tmb_verbose = FALSE
 #' )
 #'
+#'
+#' # Parameter estimates
 #' fit_zinb$fixed_effects
-#' fit_zinb$convergence$converged
+#'
+#' # Overall convergence classification
+#' fit_zinb$convergence$overall_status
+#'
+#' # Strict convergence
+#' fit_zinb$convergence$strict_convergence
+#'
+#' # Acceptable PASS/MARGINAL convergence
+#' fit_zinb$convergence$acceptable_convergence
+#'
+#' # Maximum absolute outer gradient
 #' fit_zinb$convergence$max_abs_gradient
+#'
+#' # Gradient classification
+#' fit_zinb$convergence$gradient_status
+#'
+#' # Hessian diagnostic
 #' fit_zinb$convergence$pd_hessian
+#'
+#' # Standard-error diagnostic
+#' fit_zinb$convergence$finite_standard_errors
+#'
+#' # Optimization passes and selected pass
+#' fit_zinb$convergence$n_optimization_passes
+#' fit_zinb$convergence$selected_pass
+#'
+#' # Complete user-facing diagnostic table
 #' fit_zinb$diagnostics$table
 #' }
+#'
 #'
 #' @importFrom TMB MakeADFun sdreport
 #' @importFrom stats model.matrix nlminb qlogis

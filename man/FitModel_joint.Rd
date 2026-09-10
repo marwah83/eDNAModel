@@ -25,13 +25,13 @@ FitModel_joint(
   random_sample_otu = FALSE,
   random_zi_otu = TRUE,
   gradient_tol = 0.001,
-  gradient_marginal_factor = 2,
+  gradient_marginal_factor = 5,
   max_restarts = 2L,
   iter_max = 5000L,
   eval_max = 10000L,
   rel_tol = 1e-10,
-  stall_objective_tol = 1e-08,
-  stall_gradient_tol = 1e-08,
+  objective_rel_tol = 1e-08,
+  gradient_improvement_tol = 1e-04,
   n_gradient_report = 2L,
   get_report_covariance = FALSE,
   get_joint_precision = TRUE,
@@ -124,12 +124,6 @@ pass. Default is 10000.}
 \item{rel_tol}{Relative convergence tolerance supplied to \code{nlminb()}.
 Default is \code{1e-10}.}
 
-\item{stall_objective_tol}{Tolerance used to identify negligible changes in
-the objective between consecutive optimization passes.}
-
-\item{stall_gradient_tol}{Tolerance used to identify negligible changes in
-the maximum absolute gradient between consecutive optimization passes.}
-
 \item{n_gradient_report}{Number of parameters with the largest absolute
 gradients to report when the gradient criterion is not satisfied.
 Default is 2.}
@@ -161,6 +155,12 @@ library. Default is \code{"eDNAModel"}.}
 
 \item{verbose}{Logical. If \code{TRUE}, print fitting progress and numerical
 diagnostics. Default is \code{TRUE}.}
+
+\item{stall_objective_tol}{Tolerance used to identify negligible changes in
+the objective between consecutive optimization passes.}
+
+\item{stall_gradient_tol}{Tolerance used to identify negligible changes in
+the maximum absolute gradient between consecutive optimization passes.}
 }
 \value{
 A list containing the fitted optimizer object, TMB object, \code{sdreport}

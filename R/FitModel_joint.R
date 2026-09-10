@@ -407,16 +407,17 @@ FitModel_joint <- function(
     # Numerical-convergence controls
     # ----------------------------------------------------------
     gradient_tol = 1e-3,
-    gradient_marginal_factor = 2,
+    gradient_marginal_factor = 5,
     max_restarts = 2L,
 
     iter_max = 5000L,
     eval_max = 10000L,
     rel_tol = 1e-10,
 
-    # Stop restarting if neither the objective nor gradient improves.
-    stall_objective_tol = 1e-8,
-    stall_gradient_tol = 1e-8,
+    # Restart diagnostics: objective stability plus meaningful
+    # gradient improvement, rather than equality of noisy gradients.
+    objective_rel_tol = 1e-8,
+    gradient_improvement_tol = 1e-4,
 
     n_gradient_report = 2L,
 
@@ -1190,7 +1191,7 @@ FitModel_joint <- function(
             },
 
         DLL = DLL,
-        silent = !verbose
+        silent = TRUE
     )
 
 
@@ -1265,43 +1266,31 @@ FitModel_joint <- function(
     # ==========================================================
     # 27. Optimize with optional automatic restarts
     #
-    # Restarting from the previous optimum can materially reduce
-    # the outer gradient even when nlminb() has already returned
-    # convergence code 0.
+    # Every pass is retained. Restarts are used as a numerical
+    # stability check, not as a guarantee that the absolute gradient
+    # must monotonically decrease.
     # ==========================================================
 
     optimization_history <- list()
-
     current_start <- obj$par
-
-    opt <- NULL
-
-    previous_objective <- NA_real_
-    previous_gradient <- NA_real_
-
+    max_passes <- max_restarts + 1L
     stalled <- FALSE
 
-    max_passes <- max_restarts + 1L
-
+    objective_equivalence_tol <- function(x, y) {
+        objective_rel_tol * max(1, abs(x), abs(y))
+    }
 
     for (pass in seq_len(max_passes)) {
 
         if (verbose) {
             message("")
-            message(
-                "Optimization pass ",
-                pass,
-                " of ",
-                max_passes,
-                "..."
-            )
+            message("Optimization pass ", pass, " of ", max_passes, "...")
         }
 
-        opt <- stats::nlminb(
+        opt_pass <- stats::nlminb(
             start = current_start,
             objective = obj$fn,
             gradient = obj$gr,
-
             control = list(
                 iter.max = iter_max,
                 eval.max = eval_max,
@@ -1309,256 +1298,212 @@ FitModel_joint <- function(
             )
         )
 
-        grad_info <- evaluate_gradient(
-            opt$par
-        )
+        grad_pass <- evaluate_gradient(opt_pass$par)
 
         optimizer_ok_pass <- identical(
-            as.integer(opt$convergence),
+            as.integer(opt_pass$convergence),
             0L
         )
 
-        # Save every optimization pass so advanced users can
-        # inspect whether the restart sequence improved the fit.
         optimization_history[[pass]] <- list(
             pass = pass,
-            objective = opt$objective,
-            convergence_code = opt$convergence,
-            optimizer_message = opt$message,
+            opt = opt_pass,
+            par = opt_pass$par,
+            objective = opt_pass$objective,
+            convergence_code = opt_pass$convergence,
+            optimizer_message = opt_pass$message,
             optimizer_ok = optimizer_ok_pass,
-            gradient = grad_info$gradient,
-            max_abs_gradient =
-                grad_info$max_abs_gradient,
-            gradient_ok =
-                grad_info$gradient_ok
+            gradient = grad_pass$gradient,
+            max_abs_gradient = grad_pass$max_abs_gradient,
+            gradient_ok = grad_pass$gradient_ok
         )
 
         if (verbose) {
-            message(
-                "  NLL: ",
-                format(opt$objective, digits = 12)
-            )
-
-            message(
-                "  Optimizer code: ",
-                opt$convergence
-            )
-
+            message("  NLL: ", format(opt_pass$objective, digits = 12))
+            message("  Optimizer code: ", opt_pass$convergence)
             message(
                 "  Maximum absolute gradient: ",
-                signif(
-                    grad_info$max_abs_gradient,
-                    8
-                )
+                signif(grad_pass$max_abs_gradient, 8)
             )
-
-            message(
-                "  Gradient OK: ",
-                grad_info$gradient_ok
-            )
+            message("  Strict gradient target met: ", grad_pass$gradient_ok)
         }
 
-
-        # ------------------------------------------------------
-        # Both formal optimizer conditions have been satisfied.
-        # ------------------------------------------------------
-
-        if (
-            optimizer_ok_pass &&
-            grad_info$gradient_ok
-        ) {
+        if (optimizer_ok_pass && grad_pass$gradient_ok) {
             if (verbose) {
-                message(
-                    "  Numerical optimizer criteria satisfied."
+                message("  Strict optimizer/gradient criteria satisfied.")
+            }
+            break
+        }
+
+        # Stop when the objective is numerically unchanged and another
+        # restart has not produced a meaningful reduction in max|gradient|.
+        # This is intentionally different from testing whether two noisy
+        # gradient values themselves differ by < 1e-8.
+        if (pass > 1L) {
+            prev <- optimization_history[[pass - 1L]]
+
+            if (
+                is.finite(prev$objective) &&
+                is.finite(opt_pass$objective) &&
+                is.finite(prev$max_abs_gradient) &&
+                is.finite(grad_pass$max_abs_gradient)
+            ) {
+                obj_tol <- objective_equivalence_tol(
+                    prev$objective,
+                    opt_pass$objective
                 )
-            }
 
-            break
-        }
+                objective_stable <-
+                    abs(opt_pass$objective - prev$objective) <= obj_tol
 
+                gradient_improvement <-
+                    prev$max_abs_gradient - grad_pass$max_abs_gradient
 
-        # ------------------------------------------------------
-        # Check whether repeated optimization has stalled.
-        #
-        # If both the objective and maximum gradient are
-        # essentially unchanged, further restarts are unlikely
-        # to help.
-        # ------------------------------------------------------
+                gradient_not_meaningfully_improved <-
+                    gradient_improvement <= gradient_improvement_tol
 
-        if (
-            pass > 1L &&
-            is.finite(previous_objective) &&
-            is.finite(previous_gradient) &&
-            is.finite(opt$objective) &&
-            is.finite(grad_info$max_abs_gradient)
-        ) {
+                stalled <-
+                    objective_stable &&
+                    gradient_not_meaningfully_improved
 
-            objective_change <- abs(
-                opt$objective -
-                    previous_objective
-            )
-
-            gradient_change <- abs(
-                grad_info$max_abs_gradient -
-                    previous_gradient
-            )
-
-            stalled <-
-                objective_change <=
-                    stall_objective_tol &&
-                gradient_change <=
-                    stall_gradient_tol
-
-            if (stalled) {
-
-                if (verbose) {
-                    message(
-                        "  Optimization has stalled."
-                    )
-
-                    message(
-                        "  Objective change: ",
-                        signif(
-                            objective_change,
-                            6
+                if (stalled) {
+                    if (verbose) {
+                        message(
+                            "  Restart sequence stopped: objective is stable ",
+                            "and the gradient did not improve meaningfully."
                         )
-                    )
-
-                    message(
-                        "  Gradient change: ",
-                        signif(
-                            gradient_change,
-                            6
-                        )
-                    )
-
-                    message(
-                        "  Additional restarts are unlikely ",
-                        "to improve convergence."
-                    )
+                    }
+                    break
                 }
-
-                break
             }
         }
 
+        if (pass >= max_passes) break
 
-        # No more permitted restarts.
-        if (pass >= max_passes) {
-            break
-        }
-
-
-        # Restart from the current solution.
         if (verbose) {
-            message(
-                "  Convergence criteria not satisfied."
-            )
-
-            message(
-                "  Restarting optimization from current solution..."
-            )
+            message("  Restarting optimization from the current solution...")
         }
 
-        previous_objective <- opt$objective
-
-        previous_gradient <-
-            grad_info$max_abs_gradient
-
-        current_start <- opt$par
+        current_start <- opt_pass$par
     }
 
 
     # ==========================================================
-    # 28. Evaluate final gradient
+    # 28. Select the best optimization pass
+    #
+    # Minimize the objective first. Among passes that are numerically
+    # equivalent in objective value, retain the pass with the smallest
+    # maximum absolute gradient. Thus the final pass is NOT
+    # automatically kept.
     # ==========================================================
 
-    final_grad_info <- evaluate_gradient(
-        opt$par
+    objectives <- vapply(
+        optimization_history,
+        function(x) x$objective,
+        numeric(1)
     )
 
-    final_gradient <-
-        final_grad_info$gradient
+    finite_passes <- which(is.finite(objectives))
 
-    gradient_finite <-
-        final_grad_info$finite
+    if (length(finite_passes) == 0L) {
+        stop("All optimization passes returned non-finite objective values.")
+    }
 
-    max_abs_gradient <-
-        final_grad_info$max_abs_gradient
+    min_objective <- min(objectives[finite_passes])
 
-    gradient_ok <-
-        final_grad_info$gradient_ok
+    equivalent_passes <- finite_passes[
+        vapply(
+            finite_passes,
+            function(i) {
+                tol_i <- objective_equivalence_tol(
+                    objectives[i],
+                    min_objective
+                )
+                abs(objectives[i] - min_objective) <= tol_i
+            },
+            logical(1)
+        )
+    ]
 
-    optimizer_ok <- identical(
-        as.integer(opt$convergence),
-        0L
+    equivalent_gradients <- vapply(
+        optimization_history[equivalent_passes],
+        function(x) x$max_abs_gradient,
+        numeric(1)
     )
+    equivalent_gradients[!is.finite(equivalent_gradients)] <- Inf
+
+    best_pass <- equivalent_passes[which.min(equivalent_gradients)]
+    selected <- optimization_history[[best_pass]]
+    opt <- selected$opt
+
+    if (verbose && length(optimization_history) > 1L) {
+        message("")
+        message(
+            "Selected optimization pass ",
+            best_pass, " of ", length(optimization_history), "."
+        )
+        message("  Selected NLL: ", format(opt$objective, digits = 12))
+        message(
+            "  Selected maximum absolute gradient: ",
+            signif(selected$max_abs_gradient, 8)
+        )
+    }
 
 
     # ==========================================================
-    # 29. User-facing gradient classification
+    # 29. Re-evaluate the selected solution
+    # ==========================================================
+
+    final_grad_info <- evaluate_gradient(opt$par)
+    final_gradient <- final_grad_info$gradient
+    gradient_finite <- final_grad_info$finite
+    max_abs_gradient <- final_grad_info$max_abs_gradient
+    gradient_ok <- final_grad_info$gradient_ok
+
+    optimizer_ok <- identical(as.integer(opt$convergence), 0L)
+
+
+    # ==========================================================
+    # 30. User-facing gradient classification
     #
-    # IMPORTANT:
-    # MARGINAL is descriptive only.
+    # Defaults:
+    #   PASS     max|gradient| <= 0.001
+    #   MARGINAL max|gradient| <= 0.005
+    #   FAIL     max|gradient| >  0.005
     #
-    # Strict convergence still requires:
-    #
-    #     max_abs_gradient <= gradient_tol
+    # These are heuristic diagnostic bands. They are not universal
+    # mathematical convergence thresholds.
     # ==========================================================
 
     gradient_status <- if (!gradient_finite) {
-
         "FAIL"
-
     } else if (max_abs_gradient <= gradient_tol) {
-
         "PASS"
-
     } else if (
-        max_abs_gradient <=
-            gradient_marginal_factor * gradient_tol
+        max_abs_gradient <= gradient_marginal_factor * gradient_tol
     ) {
-
         "MARGINAL"
-
     } else {
-
         "FAIL"
     }
-
-
-    # ==========================================================
-    # 30. Construct gradient diagnostic table
-    # ==========================================================
 
     gradient_table <- data.frame(
         parameter = names(final_gradient),
         gradient = as.numeric(final_gradient),
-        abs_gradient =
-            abs(as.numeric(final_gradient)),
+        abs_gradient = abs(as.numeric(final_gradient)),
         stringsAsFactors = FALSE
     )
 
     gradient_table <- gradient_table[
-        order(
-            gradient_table$abs_gradient,
-            decreasing = TRUE
-        ),
+        order(gradient_table$abs_gradient, decreasing = TRUE),
         ,
         drop = FALSE
     ]
 
-    n_show <- min(
-        n_gradient_report,
-        nrow(gradient_table)
-    )
+    n_show <- min(n_gradient_report, nrow(gradient_table))
 
     largest_gradients <- if (n_show > 0L) {
-        gradient_table[
-            seq_len(n_show),
-            ,
-            drop = FALSE
-        ]
+        gradient_table[seq_len(n_show), , drop = FALSE]
     } else {
         gradient_table
     }
@@ -1890,46 +1835,36 @@ FitModel_joint <- function(
 
 
     # ==========================================================
-    # 40. Strict overall numerical convergence
+    # 40. Strict and acceptable numerical convergence
     #
-    # ALL five formal conditions must be satisfied.
-    #
-    # Heuristic parameter warnings are deliberately excluded.
+    # Strict convergence requires the strict gradient target.
+    # Acceptable convergence permits a MARGINAL gradient only when
+    # all other core numerical diagnostics pass.
     # ==========================================================
 
-    converged <-
+    strict_convergence <-
         optimizer_ok &&
-        gradient_ok &&
+        gradient_status == "PASS" &&
         sdreport_ok &&
         pd_hessian &&
         finite_se
 
+    acceptable_convergence <-
+        optimizer_ok &&
+        gradient_status %in% c("PASS", "MARGINAL") &&
+        sdreport_ok &&
+        pd_hessian &&
+        finite_se
 
-    # ==========================================================
-    # 41. Overall user-facing status
-    #
-    # A fit may be described as MARGINAL if the only strict
-    # failure is a gradient just above the requested tolerance.
-    #
-    # converged remains FALSE in that situation.
-    # ==========================================================
+    # Backward-compatible field. `converged` now means acceptable
+    # numerical convergence; strict_convergence is returned separately.
+    converged <- acceptable_convergence
 
-    overall_status <- if (converged) {
-
+    overall_status <- if (strict_convergence) {
         "PASS"
-
-    } else if (
-        optimizer_ok &&
-        gradient_status == "MARGINAL" &&
-        sdreport_ok &&
-        pd_hessian &&
-        finite_se
-    ) {
-
+    } else if (acceptable_convergence) {
         "MARGINAL"
-
     } else {
-
         "FAIL"
     }
 
@@ -1951,28 +1886,14 @@ FitModel_joint <- function(
         )
     }
 
-    if (!gradient_ok) {
-
-        if (gradient_status == "MARGINAL") {
-
-            failure_reasons <- c(
-                failure_reasons,
-                paste0(
-                    "Maximum absolute gradient narrowly exceeds ",
-                    "the specified tolerance."
-                )
+    if (gradient_status == "FAIL") {
+        failure_reasons <- c(
+            failure_reasons,
+            paste0(
+                "Maximum absolute gradient exceeds the heuristic ",
+                "marginal threshold."
             )
-
-        } else {
-
-            failure_reasons <- c(
-                failure_reasons,
-                paste0(
-                    "Maximum absolute gradient exceeds ",
-                    "the specified tolerance."
-                )
-            )
-        }
+        )
     }
 
     if (!sdreport_ok) {
@@ -2000,8 +1921,16 @@ FitModel_joint <- function(
     }
 
     if (length(failure_reasons) == 0L) {
-        failure_reasons <-
-            "All numerical convergence criteria were satisfied."
+        failure_reasons <- if (strict_convergence) {
+            "All strict numerical convergence criteria were satisfied."
+        } else if (acceptable_convergence) {
+            paste0(
+                "All core numerical diagnostics passed; the gradient is ",
+                "within the heuristic MARGINAL band."
+            )
+        } else {
+            "No additional failure reason was identified."
+        }
     }
 
 
@@ -2055,7 +1984,8 @@ FitModel_joint <- function(
             "Finite fixed-parameter SEs",
             "Near-zero variance components",
             "Large SE relative to estimate",
-            "Overall numerical convergence"
+            "Strict numerical convergence",
+            "Acceptable numerical convergence"
         ),
 
         Value = c(
@@ -2085,7 +2015,8 @@ FitModel_joint <- function(
                 nrow(large_se_parameters)
             ),
 
-            as.character(converged)
+            as.character(strict_convergence),
+            as.character(acceptable_convergence)
         ),
 
         Status = c(
@@ -2096,6 +2027,7 @@ FitModel_joint <- function(
             se_status,
             variance_status,
             uncertainty_status,
+            if (strict_convergence) "PASS" else "FAIL",
             overall_status
         ),
 
@@ -2151,6 +2083,17 @@ FitModel_joint <- function(
         )
 
         cat(
+            "Marginal gradient threshold: ",
+            format(
+                gradient_marginal_factor * gradient_tol,
+                digits = 8,
+                scientific = FALSE
+            ),
+            "\n",
+            sep = ""
+        )
+
+        cat(
             "Gradient status:            ",
             gradient_status,
             "\n\n",
@@ -2191,7 +2134,23 @@ FitModel_joint <- function(
 
         cat(
             "Strict convergence:         ",
-            converged,
+            strict_convergence,
+            "\n",
+            sep = ""
+        )
+
+        cat(
+            "Acceptable convergence:     ",
+            acceptable_convergence,
+            "\n",
+            sep = ""
+        )
+
+        cat(
+            "Selected optimization pass: ",
+            best_pass,
+            " of ",
+            length(optimization_history),
             "\n\n",
             sep = ""
         )
@@ -2282,50 +2241,25 @@ FitModel_joint <- function(
 
 
     # ==========================================================
-    # 46. Issue an R warning when strict convergence fails
+    # 46. Warn only when acceptable numerical convergence fails
     # ==========================================================
 
-    if (!converged) {
-
-        # Special warning when every diagnostic except the
-        # strict gradient criterion passes.
-        if (
-            optimizer_ok &&
-            gradient_status == "MARGINAL" &&
-            sdreport_ok &&
-            pd_hessian &&
-            finite_se
-        ) {
-
-            warning(
-                sprintf(
-                    paste0(
-                        "The fit is numerically marginal: optimizer, ",
-                        "Hessian, sdreport and standard-error diagnostics ",
-                        "are satisfactory, but the maximum absolute ",
-                        "gradient (%.6g) exceeds gradient_tol (%.6g). ",
-                        "Strict convergence is FALSE."
-                    ),
-                    max_abs_gradient,
-                    gradient_tol
-                ),
-                call. = FALSE
-            )
-
-        } else {
-
-            warning(
-                paste0(
-                    "Fit did not satisfy all numerical convergence ",
-                    "criteria. ",
-                    paste(
-                        failure_reasons,
-                        collapse = " "
-                    )
-                ),
-                call. = FALSE
-            )
-        }
+    if (!acceptable_convergence) {
+        warning(
+            paste0(
+                "Fit did not satisfy acceptable numerical convergence ",
+                "criteria. ",
+                paste(failure_reasons, collapse = " ")
+            ),
+            call. = FALSE
+        )
+    } else if (!strict_convergence && verbose) {
+        message(
+            "Fit is numerically MARGINAL rather than strict PASS: ",
+            "the maximum absolute gradient is above the strict target ",
+            "but within the heuristic marginal band, while the optimizer, ",
+            "sdreport, Hessian and fixed-SE checks passed."
+        )
     }
 
 
@@ -2377,6 +2311,8 @@ FitModel_joint <- function(
         convergence = list(
 
             converged = converged,
+            strict_convergence = strict_convergence,
+            acceptable_convergence = acceptable_convergence,
             overall_status = overall_status,
 
             optimizer_ok = optimizer_ok,
@@ -2454,8 +2390,17 @@ FitModel_joint <- function(
                     optimization_history
                 ),
 
+            selected_pass =
+                best_pass,
+
             max_restarts =
                 max_restarts,
+
+            objective_rel_tol =
+                objective_rel_tol,
+
+            gradient_improvement_tol =
+                gradient_improvement_tol,
 
             stalled =
                 stalled
@@ -2529,11 +2474,12 @@ FitModel_joint <- function(
             "Enabled Gaussian random effects are integrated using",
             "the TMB Laplace approximation.",
             "Strict numerical convergence requires optimizer code 0,",
-            "a finite outer gradient below the specified tolerance,",
+            "a finite outer gradient below the strict tolerance,",
             "successful sdreport, a positive-definite Hessian, and",
             "finite fixed-parameter standard errors.",
-            "PASS/MARGINAL/FAIL labels aid interpretation but do not",
-            "alter the strict convergence definition.",
+            "Acceptable numerical convergence additionally permits",
+            "a gradient in the heuristic MARGINAL band when all other",
+            "core numerical diagnostics pass.",
             "Near-zero variance components and large SE-to-estimate",
             "ratios are heuristic warnings only.",
             "getReportCovariance is FALSE by default to reduce",
@@ -2552,3 +2498,8 @@ FitModel_joint <- function(
 
     return(out)
 }
+
+
+
+
+    

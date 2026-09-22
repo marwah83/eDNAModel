@@ -1,0 +1,561 @@
+---
+title: "Joint Occupancy, Capture, and Abundance Models with eDNAModel"
+author: "Marwah Soliman, Bert van der Veen "
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Joint Occupancy, Capture, and Abundance Models with eDNAModel}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+
+# Joint Occupancy, Capture, and Abundance Models with eDNAModel
+
+*A practical vignette for `FitModel_joint()`*
+
+eDNAModel R package
+This vignette introduces the hierarchical model implemented by FitModel_joint(), explains the required sampling structure, demonstrates common model specifications, and describes parameter interpretation and numerical diagnostics.
+ 
+1. Introduction
+Environmental DNA (eDNA) metabarcoding data are naturally hierarchical. A species may be present at a site but fail to enter a collected biological sample, and DNA from a captured species may subsequently generate a variable number of sequencing reads. Consequently, zeros in an eDNA count table can arise through several different ecological and observation processes.
+The FitModel_joint() function in eDNAModel provides a joint hierarchical framework for modelling three components of this process:
+•	Occupancy - whether an OTU is present at a site.
+•	Capture - whether the OTU is represented in a biological sample, conditional on occupancy.
+•	Abundance - the observed sequencing count, conditional on the hierarchical observation process.
+The function fits these components jointly using Template Model Builder (TMB). Latent occupancy and biological-sample capture states are analytically marginalized, while enabled Gaussian random effects are integrated using the Laplace approximation.
+
+2. Statistical model
+Consider OTU k, site i, biological sample j, and sequencing observation r. The model separates site-level occurrence from biological capture and from the conditional sequencing-count process.
+
+2.1 Occupancy
+Let Z_ik ∈ {0,1} denote the latent occupancy state of OTU k at site i.
+Z_ik ~ Bernoulli(ψ_ik)
+logit(ψ_ik) = x_ik^(occ)ᵀ β_occ + b_k^(occ)
+Here, ψ_ik is the probability that OTU k occupies site i, x_ik^(occ) contains occupancy covariates, and b_k^(occ) is an optional OTU-level random effect.
+
+2.2 Capture
+Conditional on occupancy, let A_ijk ∈ {0,1} represent whether OTU k is captured in biological sample j.
+A_ijk | Z_ik = 1 ~ Bernoulli(p_ijk)
+logit(p_ijk) = x_ijk^(cap)ᵀ β_cap + b_k^(cap)
+The capture component separates site-level occurrence from the probability that an occupied OTU is represented in a particular biological sample.
+
+2.3 Abundance
+The sequencing count is represented through a log-linear predictor:
+log(λ_rjk) = x_rjk^(abund)ᵀ β_abund + b_k^(abund) + b_j^(sample) + b_jk^(sample:OTU) + o_rjk
+The term o_rjk is an optional abundance offset. Depending on the selected family, the conditional count distribution can be Poisson, negative binomial, zero-inflated Poisson (ZIP), or zero-inflated negative binomial (ZINB).
+
+3. Data hierarchy
+Correct specification of the sampling hierarchy is essential. A typical eDNA experiment contains sites, biological samples nested within sites, and optional technical or sequencing replicates.
+Site
+├── Biological sample 1
+│   ├── Technical replicate 1
+│   ├── Technical replicate 2
+│   └── Technical replicate 3
+├── Biological sample 2
+│   ├── Technical replicate 1
+│   ├── Technical replicate 2
+│   └── Technical replicate 3
+└── Biological sample 3
+    ├── Technical replicate 1
+    ├── Technical replicate 2
+    └── Technical replicate 3
+
+The corresponding FitModel_joint() arguments are:
+•	site_col: column identifying the occupancy unit.
+•	sample_col: column identifying the biological sample.
+•	replicate_col: optional column identifying technical or sequencing replicates.
+•	otu_col: OTU identifier in the internally prepared long data.
+•	count_col: observed sequencing count.
+
+fit <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate"
+)
+The choice of site_col is scientifically important because it defines the level at which the latent occupancy state is estimated. For example, if occupancy represents presence at a location during a particular sampling month, a location-by-month identifier may be appropriate.
+
+4. Preparing a phyloseq object
+FitModel_joint() accepts a phyloseq object containing an OTU count table and sample metadata. A minimal structure can be inspected as follows:
+library(phyloseq)
+
+ps
+
+sample_variables(ps)
+sample_data(ps)[1:6, ]
+otu_table(ps)[1:6, 1:6]
+
+Before fitting a model, verify that:
+•	Counts are non-negative.
+•	Sample identifiers are unique and correctly nested.
+•	The site variable represents the intended occupancy unit.
+•	Biological samples are correctly identified.
+•	Technical replicates are correctly identified when present.
+•	Model covariates do not contain unintended missing values.
+
+5. Fitting a basic joint model
+The simplest model contains intercepts for all three processes.
+library(eDNAModel)
+
+fit <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  occupancy_formula = ~ 1,
+  capture_formula = ~ 1,
+  abundance_formula = ~ 1,
+
+  abundance_family = "poisson"
+)
+
+This model estimates an overall occupancy probability, capture probability, and expected sequencing abundance while allowing the default OTU-level random effects and sample-level abundance random effect.
+
+6. Fixed-effect interpretation
+The estimated fixed parameters can be examined using:
+fit$fixed_effects
+For an intercept-only occupancy model:
+beta_occ <- fit$fixed_effects |>
+  dplyr::filter(parameter == "beta_occ") |>
+  dplyr::pull(Estimate)
+
+psi <- plogis(beta_occ)
+psi
+
+The inverse-logit transformation converts the occupancy intercept to the probability scale.
+For capture:
+
+beta_cap <- fit$fixed_effects |>
+  dplyr::filter(parameter == "beta_cap") |>
+  dplyr::pull(Estimate)
+
+p_capture <- plogis(beta_cap)
+p_capture
+For abundance:
+beta_abund <- fit$fixed_effects |>
+  dplyr::filter(parameter == "beta_abund") |>
+  dplyr::pull(Estimate)
+
+lambda <- exp(beta_abund)
+lambda
+
+The exponential transformation gives the expected count corresponding to the abundance intercept, conditional on the model structure.
+
+7. Adding covariates
+Different predictors can be assigned to different stages of the hierarchical process.
+fit_cov <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+    occupancy_formula = ~ Samplingmonth,
+    capture_formula = ~ 1,
+    abundance_formula = ~ Samplingmonth + Replicate,
+
+  abundance_family = "nbinom"
+)
+This specification addresses three distinct questions:
+•	Do temperature and salinity explain variation in site occupancy?
+•	Does filtered water volume affect the probability of capturing an OTU?
+•	Does sequencing depth explain variation in observed read abundance?
+Covariates should be assigned according to the biological or observation process they are expected to influence rather than placing every available variable in every component.
+
+8. Abundance families
+The conditional abundance distribution is controlled by abundance_family. Four families are supported.
+
+8.1 Poisson
+
+fit_pois <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "poisson"
+)
+The Poisson model is the simplest count model and assumes that conditional variance is tied to the conditional mean.
+
+8.2 Negative binomial
+
+fit_nb <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "nbinom"
+)
+
+The negative-binomial family introduces an additional dispersion parameter and is useful when conditional count variability exceeds that accommodated by the Poisson distribution.
+
+8.3 Zero-inflated Poisson and ZINB
+
+fit_zip <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "zip"
+)
+
+fit_zinb <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "zinb"
+)
+
+ZIP and ZINB introduce an additional zero-inflation component. They should not be selected simply because the raw OTU table contains many zeros: occupancy and capture already provide mechanisms that generate zeros. A zero-inflated count distribution is most useful when additional zero inflation remains in the conditional abundance process.
+9. Random effects
+FitModel_joint() provides the following built-in Gaussian random-effect controls:
+
+random_occ_otu
+random_capture_otu
+random_abund_otu
+random_sample
+random_sample_otu
+random_zi_otu
+
+The default model includes OTU-level heterogeneity in occupancy, capture, and abundance, together with a sample-level abundance random effect. random_zi_otu is relevant only for ZIP or ZINB models.
+
+fit_re <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  random_occ_otu = TRUE,
+  random_capture_otu = TRUE,
+  random_abund_otu = TRUE,
+
+  random_sample = TRUE,
+  random_sample_otu = FALSE,
+
+  abundance_family = "nbinom"
+)
+
+Random-effect standard deviations are represented internally on the log-SD scale. For example, log_sd_occ_otu = -0.69 corresponds to an SD of exp(-0.69), approximately 0.50.
+
+10. OTU filtering
+Rare OTUs can be removed before fitting using:
+min_species_sum = 10
+min_detection_replicates = 1
+fit <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  min_species_sum = 10,
+  min_detection_replicates = 2
+)
+min_species_sum controls the minimum total count required for an OTU to be retained, while min_detection_replicates controls the minimum number of positive observations.
+
+length(fit$retained_otus)
+fit$retained_otus
+fit$otu_stats
+
+Filtering choices should be reported because they determine which taxa contribute to model estimation.
+
+11. Abundance offsets
+An exposure variable can be incorporated into the abundance component using abundance_offset.
+fit_offset <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  abundance_formula = ~ Temperature,
+  abundance_offset = "SequencingDepth",
+
+  abundance_family = "nbinom"
+)
+The supplied variable represents the exposure itself. FitModel_joint() transforms the exposure to the log scale internally.
+
+12. Numerical convergence
+
+Numerical convergence should always be evaluated before interpreting parameter estimates.
+fit$convergence$overall_status
+fit$convergence$max_abs_gradient
+fit$convergence$pd_hessian
+fit$convergence$finite_fixed_parameter_standard_errors
+fit$convergence$optimizer_code
+
+The current implementation classifies the maximum absolute gradient using the following default thresholds:
+
+Status	Default gradient criterion
+PASS	max|gradient| ≤ 0.001
+MARGINAL	0.001 < max|gradient| ≤ 0.005
+FAIL	max|gradient| > 0.005 or non-finite
+
+These thresholds are numerical diagnostics rather than universal statistical criteria.
+
+12.1 Strict and acceptable convergence
+Strict convergence requires all of the following:
+•	Optimizer convergence code 0.
+•	A finite outer gradient satisfying the strict gradient tolerance.
+•	Successful TMB::sdreport().
+•	A positive-definite Hessian.
+•	Finite fixed-parameter standard errors.
+
+fit$convergence$strict_convergence
+fit$convergence$acceptable_convergence
+fit$convergence$overall_status
+
+A model can receive an overall status of MARGINAL when the optimizer, sdreport, Hessian, and fixed-parameter standard-error diagnostics all pass but the gradient lies within the predefined marginal band. A MARGINAL fit should not automatically be treated as a failed model.
+
+12.2 Automatic optimization restarts
+The function can automatically restart optimization from the current solution when the strict gradient criterion has not yet been achieved. With max_restarts = 2L, at most three optimization passes are used.
+
+fit$convergence$n_optimization_passes
+fit$convergence$selected_pass
+fit$convergence$optimization_history
+fit$convergence$largest_gradients
+
+The largest-gradient table can help identify which fixed parameters are responsible for a marginal or failed gradient diagnostic.
+
+13. Additional parameter diagnostics
+The function also reports heuristic warnings for potentially weakly identified parameters.
+fit$diagnostics$table
+
+fit$diagnostics$near_zero_sd
+fit$diagnostics$large_se_parameters
+
+A near-zero random-effect variance may indicate that the corresponding source of heterogeneity is weakly supported by the data. Large standard errors relative to parameter estimates may indicate substantial uncertainty or weak identification. These are warnings rather than formal convergence failures.
+
+14. Memory considerations for large eDNA datasets
+Joint community models can become large because the likelihood contains observations across sites, biological samples, technical replicates, and OTUs. For large datasets, expensive covariance calculations can be disabled.
+
+fit_large <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  get_report_covariance = FALSE,
+  get_joint_precision = FALSE
+)
+
+get_report_covariance = FALSE is the default because the covariance matrix of all reported quantities can become extremely large in OTU-rich datasets. Setting get_joint_precision = FALSE can further reduce memory requirements when the joint precision matrix is not required.
+
+15. Examining fitted-model output
+FitModel_joint() returns an object of class eDNAModel_joint.
+class(fit)
+Important components include:
+fit$fixed_effects
+fit$derived
+
+fit$site_data
+fit$sample_data
+fit$long_df
+
+fit$otu_stats
+fit$retained_otus
+
+fit$formulas
+fit$abundance_family
+
+fit$convergence
+fit$diagnostics
+fit$random_effects
+Approximate 95% Wald confidence intervals can be constructed as:
+results <- fit$fixed_effects |>
+  dplyr::mutate(
+    lower = Estimate - 1.96 * `Std. Error`,
+    upper = Estimate + 1.96 * `Std. Error`
+  )
+
+results
+These intervals should be interpreted only after checking the numerical diagnostics.
+
+16. Interpreting zeros in eDNA data
+A key motivation for the joint framework is that a zero count does not necessarily imply ecological absence. A zero may occur because:
+•	The OTU is genuinely absent from the site.
+•	The OTU is present but is not captured in the biological sample.
+•	The OTU passes the occupancy and capture stages but the conditional count process produces a zero.
+•	For ZIP or ZINB models, an additional zero arises from the zero-inflation component.
+The hierarchical model attempts to separate these mechanisms statistically. This distinction is especially important in metabarcoding studies, where imperfect capture and heterogeneous sequencing counts can otherwise be confounded with ecological occurrence.
+
+17. Choosing among Poisson, NB, ZIP, and ZINB
+The four abundance families represent different assumptions about the conditional count process. A useful strategy is to begin with a parsimonious family and introduce additional complexity only when it is scientifically and statistically justified.
+
+fit_poisson <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "poisson"
+)
+
+fit_nb <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "nbinom"
+)
+
+fit_zinb <- FitModel_joint(
+  phyloseq = ps,
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+  abundance_family = "zinb"
+)
+Model complexity should not be judged from the overall proportion of zeros alone. In this framework, occupancy and capture already generate zeros before the conditional abundance distribution is considered.
+
+18. Recommended modelling workflow
+1. Verify the sampling hierarchy.
+2. Inspect the count distribution and sparsity.
+3. Define biologically meaningful occupancy, capture, and abundance covariates.
+4. Choose an initial count family.
+5. Fit the model.
+6. Inspect numerical convergence.
+7. Inspect parameter uncertainty and random-effect variances.
+8. Compare scientifically motivated alternative model specifications.
+9. Evaluate model adequacy using simulation or external validation where appropriate.
+10. Report both parameter estimates and numerical diagnostics.
+18.1 Complete example
+
+fit <- FitModel_joint(
+  phyloseq = ps,
+
+  site_col = "site_month",
+  sample_col = "Name",
+  replicate_col = "Replicate",
+
+  occupancy_formula = ~ Samplingmonth,
+  capture_formula = ~ 1,
+  abundance_formula = ~ Samplingmonth + Replicate,
+
+  abundance_family = "nbinom",
+
+  random_occ_otu = TRUE,
+  random_capture_otu = TRUE,
+  random_abund_otu = TRUE,
+  random_sample = TRUE,
+  random_sample_otu = FALSE,
+
+  min_species_sum = 10,
+  min_detection_replicates = 2,
+
+  get_report_covariance = FALSE,
+  get_joint_precision = FALSE,
+
+  verbose = TRUE
+)
+
+# Parameter estimates
+fit$fixed_effects
+
+# Overall numerical status
+fit$convergence$overall_status
+
+# Maximum absolute gradient
+fit$convergence$max_abs_gradient
+
+# Hessian
+fit$convergence$pd_hessian
+
+# Additional diagnostics
+fit$diagnostics$table
+
+19. Reproducibility and reporting
+
+For reproducible analyses, report at least:
+•	The definition of the occupancy unit.
+•	The biological-sample and technical-replicate hierarchy.
+•	The occupancy, capture, and abundance formulas.
+•	The abundance family.
+•	OTU-filtering thresholds.
+•	Enabled random effects.
+•	Optimizer and gradient settings when changed from defaults.
+•	The final convergence status.
+•	The maximum absolute gradient.
+•	Whether the Hessian was positive definite.
+•	Whether fixed-parameter standard errors were finite.
+
+The fitted object stores the model formulas, abundance family, retained OTUs, random-effect specification, convergence diagnostics, and relevant sdreport settings, allowing these details to be recovered after fitting.
+
+20. Summary
+
+FitModel_joint() provides a hierarchical framework for community-level eDNA count data in which ecological occurrence, biological capture, and sequencing abundance are modelled as distinct components of a joint likelihood.
+
+The framework is particularly useful when:
+•	Species detection is imperfect.
+•	Several biological samples are collected within occupancy units.
+•	Technical or sequencing replicates are available.
+•	Read abundance is overdispersed.
+•	OTUs differ substantially in occupancy, capture, or abundance.
+•	Additional conditional zero inflation may be present.
+•	Community-level inference requires borrowing information across OTUs.
+
+Careful specification of the sampling hierarchy and systematic evaluation of numerical convergence are essential for reliable inference.
+
+library(phyloseq)
+library(Matrix)
+library(eDNAModel)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pheatmap)
+library(tibble)
+library(gllvm)
+library(glmmTMB)
+library(reshape2)
+library(TMB)
+
+data("physeq_new",package = "eDNAModel")
+
+ps=physeq_new$`Marine invasive species Thessaloniki`
+
+meta <- as.data.frame(
+    phyloseq::sample_data(ps)
+)
+
+meta$site_month <- interaction(
+    meta$Sampling.area.Name,
+    meta$Samplingmonth,
+    drop = TRUE,
+    sep = "_"
+)
+
+phyloseq::sample_data(ps) <-
+    phyloseq::sample_data(meta)
+
+fit_zinb <- FitModel_joint(
+    phyloseq = ps,
+    
+    site_col = "site_month",
+    sample_col = "Name",
+    replicate_col = "Replicate",
+    
+    occupancy_formula = ~ 1,
+    capture_formula = ~ 1,
+    abundance_formula = ~ 1,
+    
+    abundance_family = "zinb",
+    
+    gradient_tol = 1e-3,
+    gradient_marginal_factor = 5,
+    
+    max_restarts = 2,
+    
+    get_report_covariance = FALSE,
+    get_joint_precision = FALSE,
+    
+    verbose = TRUE,
+    
+    # Change this to TRUE only when you actually
+    # want every TMB iter/mgc line:
+    tmb_verbose = FALSE
+)
+
+

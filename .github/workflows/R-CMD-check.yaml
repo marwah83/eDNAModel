@@ -18,11 +18,12 @@ jobs:
           - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
 
     env:
-      R_KEEP_PKG_SOURCE: yes        
+      R_KEEP_PKG_SOURCE: yes
 
     steps:
+
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Pandoc
         uses: r-lib/actions/setup-pandoc@v2
@@ -34,15 +35,37 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
+      # ========================================================
+      # Linux system dependencies
+      # ========================================================
+
       - name: Install system dependencies (Linux only)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -y && sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev libglu1-mesa-dev
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libcurl4-openssl-dev \
+            libxml2-dev \
+            libssl-dev \
+            libglu1-mesa-dev
+
+      # ========================================================
+      # macOS system dependencies
+      # ========================================================
 
       - name: Install system dependencies (macOS only)
         if: runner.os == 'macOS'
         run: |
           brew install --cask xquartz
-          brew install pkg-config proj@9 gdal
+          brew install pkg-config proj@9 gdal libomp
+
+          echo "LDFLAGS=-L$(brew --prefix libomp)/lib" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-I$(brew --prefix libomp)/include" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$(brew --prefix libomp)/lib:${DYLD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      # ========================================================
+      # R dependencies
+      # ========================================================
 
       - name: Install R package dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
@@ -52,17 +75,58 @@ jobs:
             rcmdcheck
             BiocManager
 
+      # ========================================================
+      # Bioconductor
+      # ========================================================
+
       - name: Install Bioconductor packages
         run: |
           if (!requireNamespace("phyloseq", quietly = TRUE)) {
-            BiocManager::install("phyloseq", ask = FALSE, update = TRUE)
+            BiocManager::install(
+              "phyloseq",
+              ask = FALSE,
+              update = TRUE
+            )
           }
         shell: Rscript {0}
 
+      # ========================================================
+      # Test TMB before checking eDNAModel
+      # ========================================================
+
+      - name: Test TMB installation
+        run: |
+          cat("R version:\n")
+          print(R.version.string)
+
+          cat("\nTMB version:\n")
+          print(packageVersion("TMB"))
+
+          cat("\nTMB path:\n")
+          print(find.package("TMB"))
+
+          cat("\nLoading TMB:\n")
+          library(TMB)
+
+          cat("\nTMB loaded successfully.\n")
+        shell: Rscript {0}
+
+      # ========================================================
+      # R CMD check
+      # ========================================================
+
       - name: Run R CMD check
         run: |
-          rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "warning", check_dir = "check")
+          rcmdcheck::rcmdcheck(
+            args = "--no-manual",
+            error_on = "warning",
+            check_dir = "check"
+          )
         shell: Rscript {0}
+
+      # ========================================================
+      # Diagnostics
+      # ========================================================
 
       - name: Show testthat output (if any)
         if: always()
@@ -70,7 +134,12 @@ jobs:
           find check -name 'testthat.Rout*' -exec cat '{}' \; || true
         shell: bash
 
+      # ========================================================
+      # Upload check results
+      # ========================================================
+
       - name: Upload check results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: R-CMD-check-results-${{ matrix.config.os }}-${{ matrix.config.r }}-${{ github.run_id }}
@@ -78,4 +147,4 @@ jobs:
           if-no-files-found: ignore
           compression-level: 6
           overwrite: false
-
+          

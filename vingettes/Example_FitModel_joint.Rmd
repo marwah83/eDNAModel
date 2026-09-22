@@ -1,3 +1,21 @@
+---
+title: "Joint Occupancy, Capture, and Abundance Models with eDNAModel"
+author: "Marwah Soliman"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Joint Occupancy, Capture, and Abundance Models with eDNAModel}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+
 library(phyloseq)
 library(Matrix)
 library(eDNAModel)

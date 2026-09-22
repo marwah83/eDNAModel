@@ -1,6 +1,8 @@
 name: R-CMD-check
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
   R-CMD-check:
@@ -22,11 +24,25 @@ jobs:
 
     steps:
 
+      # ========================================================
+      # 1. Checkout repository
+      # ========================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # ========================================================
+      # 2. Set up Pandoc
+      # ========================================================
+
       - name: Set up Pandoc
         uses: r-lib/actions/setup-pandoc@v2
+
+
+      # ========================================================
+      # 3. Set up R
+      # ========================================================
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
@@ -35,36 +51,36 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
+
       # ========================================================
-      # Linux system dependencies
+      # 4. Linux system dependencies
       # ========================================================
 
       - name: Install system dependencies (Linux only)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -y
+
           sudo apt-get install -y \
             libcurl4-openssl-dev \
             libxml2-dev \
             libssl-dev \
             libglu1-mesa-dev
 
+
       # ========================================================
-      # macOS system dependencies
+      # 5. macOS system dependencies
       # ========================================================
 
       - name: Install system dependencies (macOS only)
         if: runner.os == 'macOS'
         run: |
           brew install --cask xquartz
-          brew install pkg-config proj@9 gdal libomp
+          brew install pkg-config proj@9 gdal
 
-          echo "LDFLAGS=-L$(brew --prefix libomp)/lib" >> "$GITHUB_ENV"
-          echo "CPPFLAGS=-I$(brew --prefix libomp)/include" >> "$GITHUB_ENV"
-          echo "DYLD_LIBRARY_PATH=$(brew --prefix libomp)/lib:${DYLD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
       # ========================================================
-      # R dependencies
+      # 6. Install R package dependencies
       # ========================================================
 
       - name: Install R package dependencies
@@ -75,23 +91,95 @@ jobs:
             rcmdcheck
             BiocManager
 
+
       # ========================================================
-      # Bioconductor
+      # 7. Reinstall TMB from source on macOS
+      #
+      # The binary/cached TMB installation can fail on the
+      # macOS ARM64 runner with:
+      #
+      # ___kmpc_for_static_fini
+      #
+      # Rebuilding TMB against the current R/toolchain avoids
+      # using an incompatible cached TMB shared library.
+      # ========================================================
+
+      - name: Reinstall TMB from source on macOS
+        if: runner.os == 'macOS'
+        run: |
+          cat("Reinstalling TMB from source...\n")
+
+          if ("TMB" %in% rownames(installed.packages())) {
+            remove.packages("TMB")
+          }
+
+          install.packages(
+            "TMB",
+            repos = "https://cloud.r-project.org",
+            type = "source"
+          )
+
+          cat("\nTMB version:\n")
+          print(packageVersion("TMB"))
+
+          cat("\nTMB installation path:\n")
+          print(find.package("TMB"))
+
+          cat("\nTesting TMB namespace...\n")
+          library(TMB)
+
+          cat("\nTMB loaded successfully.\n")
+        shell: Rscript {0}
+
+
+      # ========================================================
+      # 8. Install phyloseq / Bioconductor dependencies
       # ========================================================
 
       - name: Install Bioconductor packages
         run: |
+          if (!requireNamespace("BiocManager", quietly = TRUE)) {
+            install.packages(
+              "BiocManager",
+              repos = "https://cloud.r-project.org"
+            )
+          }
+
           if (!requireNamespace("phyloseq", quietly = TRUE)) {
             BiocManager::install(
               "phyloseq",
               ask = FALSE,
-              update = TRUE
+              update = FALSE
             )
           }
         shell: Rscript {0}
 
+
       # ========================================================
-      # Test TMB before checking eDNAModel
+      # 9. Diagnostic information
+      # ========================================================
+
+      - name: Show R session information
+        run: |
+          cat("R version:\n")
+          print(R.version.string)
+
+          cat("\nPlatform:\n")
+          print(R.version$platform)
+
+          cat("\nLibrary paths:\n")
+          print(.libPaths())
+
+          cat("\nSession information:\n")
+          print(sessionInfo())
+        shell: Rscript {0}
+
+
+      # ========================================================
+      # 10. Explicitly test TMB
+      #
+      # If this fails, the problem is with TMB/toolchain rather
+      # than eDNAModel.
       # ========================================================
 
       - name: Test TMB installation
@@ -105,14 +193,15 @@ jobs:
           cat("\nTMB path:\n")
           print(find.package("TMB"))
 
-          cat("\nLoading TMB:\n")
+          cat("\nLoading TMB...\n")
           library(TMB)
 
           cat("\nTMB loaded successfully.\n")
         shell: Rscript {0}
 
+
       # ========================================================
-      # R CMD check
+      # 11. Run R CMD check
       # ========================================================
 
       - name: Run R CMD check
@@ -124,18 +213,42 @@ jobs:
           )
         shell: Rscript {0}
 
+
       # ========================================================
-      # Diagnostics
+      # 12. Show testthat output if tests fail
       # ========================================================
 
-      - name: Show testthat output (if any)
+      - name: Show testthat output
         if: always()
         run: |
           find check -name 'testthat.Rout*' -exec cat '{}' \; || true
         shell: bash
 
+
       # ========================================================
-      # Upload check results
+      # 13. Show installation log if installation fails
+      # ========================================================
+
+      - name: Show installation log
+        if: always()
+        run: |
+          find check -name '00install.out' -exec cat '{}' \; || true
+        shell: bash
+
+
+      # ========================================================
+      # 14. Show R CMD check log
+      # ========================================================
+
+      - name: Show R CMD check log
+        if: always()
+        run: |
+          find check -name '00check.log' -exec cat '{}' \; || true
+        shell: bash
+
+
+      # ========================================================
+      # 15. Upload check results
       # ========================================================
 
       - name: Upload check results

@@ -93,33 +93,37 @@ jobs:
 
 
       # ========================================================
-      # 7. Reinstall TMB from source on macOS
+      # 7. Rebuild compiled statistical-model packages on macOS
       #
-      # The binary/cached TMB installation can fail on the
-      # macOS ARM64 runner with:
+      # Cached/prebuilt versions of TMB, gllvm and glmmTMB may
+      # have incompatible OpenMP linkage on macOS ARM64.
       #
-      # ___kmpc_for_static_fini
-      #
-      # Rebuilding TMB against the current R/toolchain avoids
-      # using an incompatible cached TMB shared library.
+      # Reinstall these packages from source using the current
+      # R/compiler environment before checking eDNAModel.
       # ========================================================
 
-      - name: Reinstall TMB and gllvm from source on macOS
+      - name: Reinstall TMB, gllvm and glmmTMB from source on macOS
         if: runner.os == 'macOS'
         run: |
-          cat("Removing cached TMB and gllvm installations...\n")
+          cat("Removing cached compiled model packages...\n")
 
           pkgs <- rownames(installed.packages())
 
-          if ("gllvm" %in% pkgs) {
-            remove.packages("gllvm")
+          for (pkg in c("glmmTMB", "gllvm", "TMB")) {
+            if (pkg %in% pkgs) {
+              cat("Removing", pkg, "\n")
+              remove.packages(pkg)
+            }
           }
 
-          if ("TMB" %in% pkgs) {
-            remove.packages("TMB")
-          }
 
-          cat("\nInstalling TMB from source...\n")
+          # ----------------------------------------------------
+          # TMB
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("Installing TMB from source\n")
+          cat("========================================\n")
 
           install.packages(
             "TMB",
@@ -128,6 +132,7 @@ jobs:
           )
 
           cat("\nTesting TMB...\n")
+
           library(TMB)
 
           cat(
@@ -136,10 +141,22 @@ jobs:
             "\n"
           )
 
+          cat(
+            "TMB path:",
+            find.package("TMB"),
+            "\n"
+          )
+
           cat("TMB loaded successfully.\n")
 
 
-          cat("\nInstalling gllvm from source...\n")
+          # ----------------------------------------------------
+          # gllvm
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("Installing gllvm from source\n")
+          cat("========================================\n")
 
           install.packages(
             "gllvm",
@@ -148,6 +165,7 @@ jobs:
           )
 
           cat("\nTesting gllvm...\n")
+
           library(gllvm)
 
           cat(
@@ -156,7 +174,47 @@ jobs:
             "\n"
           )
 
+          cat(
+            "gllvm path:",
+            find.package("gllvm"),
+            "\n"
+          )
+
           cat("gllvm loaded successfully.\n")
+
+
+          # ----------------------------------------------------
+          # glmmTMB
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("Installing glmmTMB from source\n")
+          cat("========================================\n")
+
+          install.packages(
+            "glmmTMB",
+            repos = "https://cloud.r-project.org",
+            type = "source"
+          )
+
+          cat("\nTesting glmmTMB...\n")
+
+          library(glmmTMB)
+
+          cat(
+            "glmmTMB version:",
+            as.character(packageVersion("glmmTMB")),
+            "\n"
+          )
+
+          cat(
+            "glmmTMB path:",
+            find.package("glmmTMB"),
+            "\n"
+          )
+
+          cat("glmmTMB loaded successfully.\n")
+
         shell: Rscript {0}
 
 
@@ -180,63 +238,119 @@ jobs:
               update = FALSE
             )
           }
+
         shell: Rscript {0}
 
 
       # ========================================================
-      # 9. Diagnostic information
+      # 9. Show diagnostic information
       # ========================================================
 
       - name: Show R session information
         run: |
-          cat("R version:\n")
+          cat("========================================\n")
+          cat("R version\n")
+          cat("========================================\n")
+
           print(R.version.string)
 
-          cat("\nPlatform:\n")
+          cat("\n========================================\n")
+          cat("Platform\n")
+          cat("========================================\n")
+
           print(R.version$platform)
 
-          cat("\nLibrary paths:\n")
+          cat("\n========================================\n")
+          cat("Library paths\n")
+          cat("========================================\n")
+
           print(.libPaths())
 
-          cat("\nSession information:\n")
+          cat("\n========================================\n")
+          cat("Session information\n")
+          cat("========================================\n")
+
           print(sessionInfo())
+
         shell: Rscript {0}
 
 
       # ========================================================
-      # 10. Explicitly test TMB
+      # 10. Explicitly test compiled modeling dependencies
       #
-      # If this fails, the problem is with TMB/toolchain rather
-      # than eDNAModel.
+      # This test is deliberately performed before R CMD check.
+      # If one of these packages cannot load, the failure is in
+      # the compiled dependency/toolchain rather than eDNAModel.
       # ========================================================
 
-      - name: Test TMB and gllvm installation
+      - name: Test TMB, gllvm and glmmTMB
         run: |
           cat("R version:\n")
           print(R.version.string)
 
-          cat("\nTMB version:\n")
+
+          # ----------------------------------------------------
+          # TMB
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("TMB\n")
+          cat("========================================\n")
+
+          cat("Version:\n")
           print(packageVersion("TMB"))
 
-          cat("\nTMB path:\n")
+          cat("Path:\n")
           print(find.package("TMB"))
 
-          cat("\nLoading TMB...\n")
+          cat("Loading TMB...\n")
+
           library(TMB)
 
-          cat("\nTMB loaded successfully.\n")
+          cat("TMB loaded successfully.\n")
 
 
-          cat("\ngllvm version:\n")
+          # ----------------------------------------------------
+          # gllvm
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("gllvm\n")
+          cat("========================================\n")
+
+          cat("Version:\n")
           print(packageVersion("gllvm"))
 
-          cat("\ngllvm path:\n")
+          cat("Path:\n")
           print(find.package("gllvm"))
 
-          cat("\nLoading gllvm...\n")
+          cat("Loading gllvm...\n")
+
           library(gllvm)
 
-          cat("\ngllvm loaded successfully.\n")
+          cat("gllvm loaded successfully.\n")
+
+
+          # ----------------------------------------------------
+          # glmmTMB
+          # ----------------------------------------------------
+
+          cat("\n========================================\n")
+          cat("glmmTMB\n")
+          cat("========================================\n")
+
+          cat("Version:\n")
+          print(packageVersion("glmmTMB"))
+
+          cat("Path:\n")
+          print(find.package("glmmTMB"))
+
+          cat("Loading glmmTMB...\n")
+
+          library(glmmTMB)
+
+          cat("glmmTMB loaded successfully.\n")
+
         shell: Rscript {0}
 
 
@@ -255,7 +369,7 @@ jobs:
 
 
       # ========================================================
-      # 12. Show testthat output if tests fail
+      # 12. Show testthat output
       # ========================================================
 
       - name: Show testthat output
@@ -266,7 +380,7 @@ jobs:
 
 
       # ========================================================
-      # 13. Show installation log if installation fails
+      # 13. Show package installation log
       # ========================================================
 
       - name: Show installation log
@@ -288,7 +402,7 @@ jobs:
 
 
       # ========================================================
-      # 15. Upload check results
+      # 15. Upload R CMD check results
       # ========================================================
 
       - name: Upload check results
@@ -300,3 +414,4 @@ jobs:
           if-no-files-found: ignore
           compression-level: 6
           overwrite: false
+          

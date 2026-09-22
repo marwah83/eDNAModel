@@ -17,8 +17,9 @@ knitr::opts_chunk$set(
 )
 ```
 
-Joint Occupancy, Capture, and Abundance Models with eDNAModel
-A practical vignette for FitModel_joint()
+# Joint Occupancy, Capture, and Abundance Models with eDNAModel
+
+*A practical vignette for `FitModel_joint()`*
 
 eDNAModel R package
 This vignette introduces the hierarchical model implemented by FitModel_joint(), explains the required sampling structure, demonstrates common model specifications, and describes parameter interpretation and numerical diagnostics.

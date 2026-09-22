@@ -1,7 +1,12 @@
 ---
 title: "Joint Occupancy, Capture, and Abundance Models with eDNAModel"
-author: "Marwah Soliman, Bert van der Veen "
-output: rmarkdown::html_vignette
+author: "Marwah Soliman, Bert van der Veen"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true
 vignette: >
   %\VignetteIndexEntry{Joint Occupancy, Capture, and Abundance Models with eDNAModel}
   %\VignetteEngine{knitr::rmarkdown}

@@ -16,65 +16,6 @@ knitr::opts_chunk$set(
   fig.height = 5
 )
 
-library(phyloseq)
-library(Matrix)
-library(eDNAModel)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(pheatmap)
-library(tibble)
-library(gllvm)
-library(glmmTMB)
-library(reshape2)
-library(TMB)
-
-data("physeq_new",package = "eDNAModel")
-
-ps=physeq_new$`Marine invasive species Thessaloniki`
-
-meta <- as.data.frame(
-    phyloseq::sample_data(ps)
-)
-
-meta$site_month <- interaction(
-    meta$Sampling.area.Name,
-    meta$Samplingmonth,
-    drop = TRUE,
-    sep = "_"
-)
-
-phyloseq::sample_data(ps) <-
-    phyloseq::sample_data(meta)
-
-fit_zinb <- FitModel_joint(
-    phyloseq = ps,
-    
-    site_col = "site_month",
-    sample_col = "Name",
-    replicate_col = "Replicate",
-    
-    occupancy_formula = ~ 1,
-    capture_formula = ~ 1,
-    abundance_formula = ~ 1,
-    
-    abundance_family = "zinb",
-    
-    gradient_tol = 1e-3,
-    gradient_marginal_factor = 5,
-    
-    max_restarts = 2,
-    
-    get_report_covariance = FALSE,
-    get_joint_precision = FALSE,
-    
-    verbose = TRUE,
-    
-    # Change this to TRUE only when you actually
-    # want every TMB iter/mgc line:
-    tmb_verbose = FALSE
-)
-
 Joint Occupancy, Capture, and Abundance Models with eDNAModel
 A practical vignette for FitModel_joint()
 
@@ -562,4 +503,64 @@ The framework is particularly useful when:
 •	Community-level inference requires borrowing information across OTUs.
 
 Careful specification of the sampling hierarchy and systematic evaluation of numerical convergence are essential for reliable inference.
+
+library(phyloseq)
+library(Matrix)
+library(eDNAModel)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pheatmap)
+library(tibble)
+library(gllvm)
+library(glmmTMB)
+library(reshape2)
+library(TMB)
+
+data("physeq_new",package = "eDNAModel")
+
+ps=physeq_new$`Marine invasive species Thessaloniki`
+
+meta <- as.data.frame(
+    phyloseq::sample_data(ps)
+)
+
+meta$site_month <- interaction(
+    meta$Sampling.area.Name,
+    meta$Samplingmonth,
+    drop = TRUE,
+    sep = "_"
+)
+
+phyloseq::sample_data(ps) <-
+    phyloseq::sample_data(meta)
+
+fit_zinb <- FitModel_joint(
+    phyloseq = ps,
+    
+    site_col = "site_month",
+    sample_col = "Name",
+    replicate_col = "Replicate",
+    
+    occupancy_formula = ~ 1,
+    capture_formula = ~ 1,
+    abundance_formula = ~ 1,
+    
+    abundance_family = "zinb",
+    
+    gradient_tol = 1e-3,
+    gradient_marginal_factor = 5,
+    
+    max_restarts = 2,
+    
+    get_report_covariance = FALSE,
+    get_joint_precision = FALSE,
+    
+    verbose = TRUE,
+    
+    # Change this to TRUE only when you actually
+    # want every TMB iter/mgc line:
+    tmb_verbose = FALSE
+)
+
 

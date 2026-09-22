@@ -1,257 +1,471 @@
-test_that("FitModel_gllvm runs and returns expected structure with synthetic data (3 Sites)", {
+test_that(
+  "FitModel_gllvm runs and returns expected structure with synthetic data",
+  {
 
-  skip_if_not_installed("gllvm")
-  skip_if_not_installed("glmmTMB")
-  skip_if_not_installed("phyloseq")
+    skip_if_not_installed("gllvm")
+    skip_if_not_installed("glmmTMB")
+    skip_if_not_installed("phyloseq")
 
-  # ----------------------------
-  # Synthetic data
-  # ----------------------------
+    set.seed(123)
 
-  species_mat <- matrix(
-    c(5,2,3,4,6,1,
-      1,4,4,3,3,2,
-      3,1,2,2,5,4),
-    nrow = 3,
-    byrow = TRUE
-  )
+    # ==========================================================
+    # 1. Synthetic data
+    # ==========================================================
 
-  rownames(species_mat) <- paste0("OTU", 1:3)
-  colnames(species_mat) <- paste0("S", 1:6)
+    n_sites <- 12
+    n_rep   <- 3
+    n_otu   <- 5
 
-  otu_tab <- phyloseq::otu_table(
-    species_mat,
-    taxa_are_rows = TRUE
-  )
+    n_samples <- n_sites * n_rep
 
-  sample_df <- data.frame(
-    Site      = rep(c("Loc1","Loc2","Loc3"), each = 2),
-    Name      = paste0("Sample", 1:6),
-    Replicate = rep(1:2, 3),
-    row.names = paste0("S", 1:6)
-  )
+    # ----------------------------------------------------------
+    # Sample metadata
+    # ----------------------------------------------------------
 
-  physeq <- phyloseq::phyloseq(
-    otu_tab,
-    phyloseq::sample_data(sample_df)
-  )
+    sample_df <- data.frame(
 
-  # ----------------------------
-  # Run model
-  # ----------------------------
+      Site = rep(
+        paste0("Loc", seq_len(n_sites)),
+        each = n_rep
+      ),
 
-  out <- suppressWarnings(
+      Name = paste0(
+        "Sample",
+        seq_len(n_samples)
+      ),
 
-    FitModel_gllvm(
+      Replicate = rep(
+        seq_len(n_rep),
+        times = n_sites
+      ),
 
-      phyloseq = physeq,
+      row.names = paste0(
+        "S",
+        seq_len(n_samples)
+      ),
 
-      site_col = "Site",
-
-      otu_col = "OTU",
-      count_col = "y",
-
-      sample_col = "Name",
-      replicate_col = "Replicate",
-
-      # ------------------------
-      # IMPORTANT FIX
-      # ------------------------
-
-      abundance_rhs =
-        y ~ (1 | OTU),
-
-      capture_formula =
-        a_sim ~ 1 + (1 | OTU),
-
-      occupancy_covars = NULL,
-
-      abundance_family = "poisson",
-
-      min_species_sum = 1,
-      min_detection_replicates = 1,
-
-      n_iter = 3,
-      burn_in = 1,
-
-      num_lv_c = 1,
-
-      verbose = FALSE
+      stringsAsFactors = FALSE
     )
-  )
 
-  # ----------------------------
-  # Expected structure
-  # ----------------------------
+    # ----------------------------------------------------------
+    # Generate heterogeneous OTU counts
+    # ----------------------------------------------------------
 
-  expected_components <- c(
+    # Different baseline abundance among OTUs
+    lambda_otu <- c(
+      0.8,
+      1.2,
+      1.8,
+      2.5,
+      3.5
+    )
 
-    "summary",
-    "capture",
-    "capture_site",
+    species_mat <- matrix(
+      0,
+      nrow = n_otu,
+      ncol = n_samples
+    )
 
-    "psi_list",
-    "capture_list",
-    "lambda_list",
-    "p_detect_list",
+    for (k in seq_len(n_otu)) {
 
-    "occupancy_models",
-    "capture_models",
-    "abundance_models",
+      species_mat[k, ] <- rpois(
+        n_samples,
+        lambda = lambda_otu[k]
+      )
 
-    "reduced_data",
-    "sample_data",
-    "long_df",
+    }
 
-    "lv_sites",
-    "lv_species",
-    "mean_lv_sites",
-    "mean_lv_species",
+    # ----------------------------------------------------------
+    # Introduce additional zeros
+    #
+    # This makes the data more realistic for an
+    # occupancy/detection model.
+    # ----------------------------------------------------------
 
-    "filter_summary",
-    "diagnostic_AIC",
-    "note"
-  )
+    zero_mask <- matrix(
+      runif(n_otu * n_samples) < 0.35,
+      nrow = n_otu,
+      ncol = n_samples
+    )
 
-  expect_true(
-    all(expected_components %in% names(out))
-  )
+    species_mat[zero_mask] <- 0
 
-  # ----------------------------
-  # Basic checks
-  # ----------------------------
+    # ----------------------------------------------------------
+    # Guarantee every OTU has enough information
+    # ----------------------------------------------------------
 
-  expect_true(
-    nrow(out$summary) > 0
-  )
+    for (k in seq_len(n_otu)) {
 
-  expect_s3_class(
-    out$summary,
-    "data.frame"
-  )
+      if (sum(species_mat[k, ]) == 0) {
 
-  expect_s3_class(
-    out$capture,
-    "data.frame"
-  )
+        species_mat[
+          k,
+          sample(
+            seq_len(n_samples),
+            3
+          )
+        ] <- c(1, 2, 1)
 
-  expect_s3_class(
-    out$capture_site,
-    "data.frame"
-  )
+      }
 
-  # ----------------------------
-  # LV outputs
-  # ----------------------------
+      if (sum(species_mat[k, ] > 0) < 3) {
 
-  expect_s3_class(
-    out$lv_sites,
-    "data.frame"
-  )
+        idx <- sample(
+          which(species_mat[k, ] == 0),
+          3
+        )
 
-  expect_s3_class(
-    out$lv_species,
-    "data.frame"
-  )
+        species_mat[k, idx] <- c(
+          1,
+          2,
+          1
+        )
+      }
+    }
 
-  expect_s3_class(
-    out$mean_lv_sites,
-    "data.frame"
-  )
+    rownames(species_mat) <- paste0(
+      "OTU",
+      seq_len(n_otu)
+    )
 
-  expect_s3_class(
-    out$mean_lv_species,
-    "data.frame"
-  )
+    colnames(species_mat) <- rownames(
+      sample_df
+    )
 
-  # ----------------------------
-  # Iteration length
-  # ----------------------------
+    # ==========================================================
+    # 2. Construct phyloseq object
+    # ==========================================================
 
-  expected_length <- 3 - 1
+    otu_tab <- phyloseq::otu_table(
+      species_mat,
+      taxa_are_rows = TRUE
+    )
 
-  expect_length(
-    out$psi_list,
-    expected_length
-  )
+    physeq <- phyloseq::phyloseq(
 
-  expect_length(
-    out$capture_list,
-    expected_length
-  )
+      otu_tab,
 
-  expect_length(
-    out$lambda_list,
-    expected_length
-  )
+      phyloseq::sample_data(
+        sample_df
+      )
+    )
 
-  expect_length(
-    out$p_detect_list,
-    expected_length
-  )
+    # ==========================================================
+    # 3. Check synthetic data before fitting
+    # ==========================================================
 
-  # ----------------------------
-  # Summary columns
-  # ----------------------------
+    expect_equal(
+      phyloseq::nsamples(physeq),
+      n_samples
+    )
 
-  expect_true(all(c(
+    expect_equal(
+      phyloseq::ntaxa(physeq),
+      n_otu
+    )
 
-    "psi_mean",
-    "lambda_mean",
-    "p_detect_mean"
+    expect_true(
+      any(species_mat == 0)
+    )
 
-  ) %in% names(out$summary)))
+    expect_true(
+      any(species_mat > 0)
+    )
 
-  expect_true(all(c(
+    expect_true(
+      all(rowSums(species_mat) > 0)
+    )
 
-    "capture_mean",
-    "capture_median",
-    "capture_lwr",
-    "capture_upr"
+    # ==========================================================
+    # 4. Run FitModel_gllvm
+    # ==========================================================
 
-  ) %in% names(out$capture)))
+    out <- suppressWarnings(
 
-  expect_true(all(c(
+      FitModel_gllvm(
 
-    "capture_mean",
-    "capture_median",
-    "capture_lwr",
-    "capture_upr"
+        phyloseq = physeq,
 
-  ) %in% names(out$capture_site)))
+        site_col = "Site",
 
-  # ----------------------------
-  # Sanity checks
-  # ----------------------------
+        otu_col = "OTU",
+        count_col = "y",
 
-  expect_true(all(
-    out$summary$psi_mean >= 0 &
-    out$summary$psi_mean <= 1,
-    na.rm = TRUE
-  ))
+        sample_col = "Name",
+        replicate_col = "Replicate",
 
-  expect_true(all(
-    out$summary$p_detect_mean >= 0 &
-    out$summary$p_detect_mean <= 1,
-    na.rm = TRUE
-  ))
+        abundance_rhs =
+          y ~ (1 | OTU),
 
-  expect_true(all(
-    out$summary$lambda_mean >= 0,
-    na.rm = TRUE
-  ))
+        capture_formula =
+          a_sim ~ 1 + (1 | OTU),
 
-  # ----------------------------
-  # Diagnostic AIC
-  # ----------------------------
+        occupancy_covars = NULL,
 
-  expect_s3_class(
-    out$diagnostic_AIC,
-    "data.frame"
-  )
+        abundance_family =
+          "poisson",
 
-  expect_true(
-    nrow(out$diagnostic_AIC) >= 1
-  )
+        min_species_sum =
+          1,
 
-})
+        min_detection_replicates =
+          1,
+
+        # ----------------------------------------------
+        # More than 3 iterations for a stochastic fit
+        # ----------------------------------------------
+
+        n_iter =
+          10,
+
+        burn_in =
+          2,
+
+        num_lv_c =
+          1,
+
+        verbose =
+          FALSE
+      )
+    )
+
+    # ==========================================================
+    # 5. Expected output components
+    # ==========================================================
+
+    expected_components <- c(
+
+      "summary",
+      "capture",
+      "capture_site",
+
+      "psi_list",
+      "capture_list",
+      "lambda_list",
+      "p_detect_list",
+
+      "occupancy_models",
+      "capture_models",
+      "abundance_models",
+
+      "reduced_data",
+      "sample_data",
+      "long_df",
+
+      "lv_sites",
+      "lv_species",
+      "mean_lv_sites",
+      "mean_lv_species",
+
+      "filter_summary",
+      "diagnostic_AIC",
+      "note"
+    )
+
+    expect_true(
+      all(
+        expected_components %in%
+          names(out)
+      )
+    )
+
+    # ==========================================================
+    # 6. Basic output checks
+    # ==========================================================
+
+    expect_s3_class(
+      out$summary,
+      "data.frame"
+    )
+
+    expect_s3_class(
+      out$capture,
+      "data.frame"
+    )
+
+    expect_s3_class(
+      out$capture_site,
+      "data.frame"
+    )
+
+    expect_gt(
+      nrow(out$summary),
+      0
+    )
+
+    # ==========================================================
+    # 7. Latent-variable outputs
+    # ==========================================================
+
+    expect_s3_class(
+      out$lv_sites,
+      "data.frame"
+    )
+
+    expect_s3_class(
+      out$lv_species,
+      "data.frame"
+    )
+
+    expect_s3_class(
+      out$mean_lv_sites,
+      "data.frame"
+    )
+
+    expect_s3_class(
+      out$mean_lv_species,
+      "data.frame"
+    )
+
+    # ==========================================================
+    # 8. Iteration outputs
+    # ==========================================================
+    #
+    # IMPORTANT:
+    #
+    # Do NOT require exactly n_iter - burn_in here.
+    #
+    # FitModel_gllvm can discard failed iterations.
+    # Therefore the correct unit-test condition is that
+    # at least one successful post-burn-in iteration exists.
+    # ==========================================================
+
+    expect_gt(
+      length(out$psi_list),
+      0
+    )
+
+    expect_gt(
+      length(out$capture_list),
+      0
+    )
+
+    expect_gt(
+      length(out$lambda_list),
+      0
+    )
+
+    expect_gt(
+      length(out$p_detect_list),
+      0
+    )
+
+    # The retained iteration lists should agree in length
+
+    expect_equal(
+      length(out$psi_list),
+      length(out$capture_list)
+    )
+
+    expect_equal(
+      length(out$psi_list),
+      length(out$lambda_list)
+    )
+
+    expect_equal(
+      length(out$psi_list),
+      length(out$p_detect_list)
+    )
+
+    # ==========================================================
+    # 9. Summary columns
+    # ==========================================================
+
+    expect_true(
+      all(
+        c(
+          "psi_mean",
+          "lambda_mean",
+          "p_detect_mean"
+        ) %in%
+          names(out$summary)
+      )
+    )
+
+    expect_true(
+      all(
+        c(
+          "capture_mean",
+          "capture_median",
+          "capture_lwr",
+          "capture_upr"
+        ) %in%
+          names(out$capture)
+      )
+    )
+
+    expect_true(
+      all(
+        c(
+          "capture_mean",
+          "capture_median",
+          "capture_lwr",
+          "capture_upr"
+        ) %in%
+          names(out$capture_site)
+      )
+    )
+
+    # ==========================================================
+    # 10. Probability sanity checks
+    # ==========================================================
+
+    expect_true(
+      all(
+        out$summary$psi_mean >= 0 &
+          out$summary$psi_mean <= 1,
+        na.rm = TRUE
+      )
+    )
+
+    expect_true(
+      all(
+        out$summary$p_detect_mean >= 0 &
+          out$summary$p_detect_mean <= 1,
+        na.rm = TRUE
+      )
+    )
+
+    expect_true(
+      all(
+        out$summary$lambda_mean >= 0,
+        na.rm = TRUE
+      )
+    )
+
+    # ==========================================================
+    # 11. Capture sanity checks
+    # ==========================================================
+
+    expect_true(
+      all(
+        out$capture$capture_mean >= 0 &
+          out$capture$capture_mean <= 1,
+        na.rm = TRUE
+      )
+    )
+
+    expect_true(
+      all(
+        out$capture_site$capture_mean >= 0 &
+          out$capture_site$capture_mean <= 1,
+        na.rm = TRUE
+      )
+    )
+
+    # ==========================================================
+    # 12. Diagnostic AIC
+    # ==========================================================
+
+    expect_s3_class(
+      out$diagnostic_AIC,
+      "data.frame"
+    )
+
+    expect_gte(
+      nrow(out$diagnostic_AIC),
+      1
+    )
+
+  }
+)

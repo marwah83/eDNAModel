@@ -2,7 +2,7 @@
 title: "eDNAModel: gllvm"
 author: "Marwah Soliman, Bert van der Veen"
 date: "`r Sys.Date()`"
-output: 
+output:
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 3
@@ -33,25 +33,30 @@ library(gllvm)
 library(glmmTMB)
 library(reshape2)
 library(grid)
-
 ```
 
 # 1. Introduction
 
-This vignette demonstrates the updated occupancy–detection model workflow using the `eDNAModel` package and `phyloseq` data objects. The workflow includes fitting binomial and Poisson mixed-effects models across iterations, visualizing occupancy and detection probabilities, using gllvm for occupancy model.
-
----
+This vignette demonstrates the updated occupancy--detection model workflow
+using the `eDNAModel` package and `phyloseq` data objects. The workflow
+includes fitting occupancy, capture, and abundance models across repeated
+iterations, visualizing occupancy and detection probabilities, and using
+GLLVM latent variables to describe multivariate structure among taxa and
+samples.
 
 # 2. Load and Subset Data
+
+The example data are supplied with the `eDNAModel` package. This makes the
+vignette reproducible without relying on files stored on the user's local
+computer.
+
 ```{r load-data}
-physeq_new=readRDS("~/Downloads/BGE_Port_sampling.rds")
+data("physeq_new", package = "eDNAModel")
 
-data("physeq_new",package = "eDNAModel")
-
-physeq_one=physeq_new$`Marine Invasive species Trondheim`
+physeq_one <- physeq_new$`Marine Invasive species Trondheim`
 ```
 
-# 3. Fit the Occupancy–Detection Model
+# 3. Fit the Occupancy--Detection Model
 
 ```{r fit-model, echo=FALSE}
 out <- FitModel_gllvm(
@@ -70,212 +75,275 @@ out <- FitModel_gllvm(
   burn_in = 10,
   num_lv_c = 2
 )
-
 ```
+
 # 4. Visualization
 
 ## 4.1 Occupancy Probability Caterpillar Plot
 
 ```{r plot-occupancy, fig.width=10, fig.height=9}
-
-library(dplyr)
-library(ggplot2)
-
 otu_col <- "OTU"
 
-# ------------------------------------------------------------
-# 1. Combine retained GLLVM occupancy predictions
-# ------------------------------------------------------------
-
+# Combine retained GLLVM occupancy predictions
 psi_draws <- dplyr::bind_rows(out$psi_list)
 
 # eta is on the logit scale
 psi_draws <- psi_draws %>%
-    dplyr::mutate(
-        psi = stats::plogis(.data$eta)
-    )
+  dplyr::mutate(
+    psi = stats::plogis(.data$eta)
+  )
 
-# ------------------------------------------------------------
-# 2. Summarise occupancy at the OTU level
-#
-# This averages across sites and retained iterations.
-# ------------------------------------------------------------
-
+# Summarise occupancy by OTU across sites and retained iterations
 psi_otu_summary <- psi_draws %>%
-    dplyr::group_by(.data[[otu_col]]) %>%
-    dplyr::summarise(
-        psi_mean = mean(.data$psi, na.rm = TRUE),
-        psi_median = stats::median(.data$psi, na.rm = TRUE),
-        psi_lwr = stats::quantile(
-            .data$psi,
-            0.025,
-            na.rm = TRUE,
-            names = FALSE
-        ),
-        psi_upr = stats::quantile(
-            .data$psi,
-            0.975,
-            na.rm = TRUE,
-            names = FALSE
-        ),
-        .groups = "drop"
-    ) %>%
-    dplyr::arrange(.data$psi_mean)
+  dplyr::group_by(.data[[otu_col]]) %>%
+  dplyr::summarise(
+    psi_mean = mean(.data$psi, na.rm = TRUE),
+    psi_median = stats::median(.data$psi, na.rm = TRUE),
+    psi_lwr = stats::quantile(
+      .data$psi,
+      0.025,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+    psi_upr = stats::quantile(
+      .data$psi,
+      0.975,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(.data$psi_mean)
 
-# ------------------------------------------------------------
-# 3. Order OTUs by occupancy
-# ------------------------------------------------------------
-
+# Order OTUs by estimated occupancy
 psi_otu_summary[[otu_col]] <- factor(
-    psi_otu_summary[[otu_col]],
-    levels = psi_otu_summary[[otu_col]]
+  psi_otu_summary[[otu_col]],
+  levels = psi_otu_summary[[otu_col]]
 )
 
-# ------------------------------------------------------------
-# 4. Caterpillar plot
-# ------------------------------------------------------------
-
 ggplot(
-    psi_otu_summary,
-    aes(
-        x = psi_mean,
-        y = .data[[otu_col]]
-    )
+  psi_otu_summary,
+  aes(
+    x = psi_mean,
+    y = .data[[otu_col]]
+  )
 ) +
-    geom_point(
-        color = "darkgreen",
-        size = 2
-    ) +
-    geom_errorbarh(
-        aes(
-            xmin = psi_lwr,
-            xmax = psi_upr
-        ),
-        height = 0.2,
-        color = "darkgreen"
-    ) +
-    labs(
-        title = "Caterpillar Plot: Occupancy Probability by OTU",
-        x = expression("Occupancy probability (" * psi * ")"),
-        y = "OTU"
-    ) +
-    theme_minimal() +
-    theme(
-        axis.text.y = element_text(size = 8),
-        plot.title = element_text(hjust = 0.5)
-    )
-
-
+  geom_point(
+    color = "darkgreen",
+    size = 2
+  ) +
+  geom_errorbarh(
+    aes(
+      xmin = psi_lwr,
+      xmax = psi_upr
+    ),
+    height = 0.2,
+    color = "darkgreen"
+  ) +
+  labs(
+    title = "Caterpillar Plot: Occupancy Probability by OTU",
+    x = expression("Occupancy probability (" * psi * ")"),
+    y = "OTU"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5)
+  )
 ```
+
 ## 4.2 Detection Probability Caterpillar Plot
 
-```{r plot-detection,fig.width=10, fig.height=9}
-library(dplyr)
-library(ggplot2)
-
+```{r plot-detection, fig.width=10, fig.height=9}
 otu_col <- "OTU"
 
-# ------------------------------------------------------------
-# 1. Combine retained detection predictors
-# ------------------------------------------------------------
-
+# Combine retained detection predictors
 p_detect_draws <- dplyr::bind_rows(out$p_detect_list)
 
-# eta is on the cloglog scale
+# eta is on the complementary log-log scale
 p_detect_draws <- p_detect_draws %>%
-    dplyr::mutate(
-        p_detect = 1 - exp(-exp(.data$eta))
-    )
+  dplyr::mutate(
+    p_detect = 1 - exp(-exp(.data$eta))
+  )
 
-# ------------------------------------------------------------
-# 2. Summarise detection probability by OTU
-# ------------------------------------------------------------
-
+# Summarise detection probability by OTU
 p_detect_otu_summary <- p_detect_draws %>%
-    dplyr::group_by(.data[[otu_col]]) %>%
-    dplyr::summarise(
-        p_detect_mean = mean(.data$p_detect, na.rm = TRUE),
-        p_detect_median = stats::median(.data$p_detect, na.rm = TRUE),
-        p_detect_lwr = stats::quantile(
-            .data$p_detect,
-            0.025,
-            na.rm = TRUE,
-            names = FALSE
-        ),
-        p_detect_upr = stats::quantile(
-            .data$p_detect,
-            0.975,
-            na.rm = TRUE,
-            names = FALSE
-        ),
-        .groups = "drop"
-    ) %>%
-    dplyr::arrange(.data$p_detect_mean)
+  dplyr::group_by(.data[[otu_col]]) %>%
+  dplyr::summarise(
+    p_detect_mean = mean(.data$p_detect, na.rm = TRUE),
+    p_detect_median = stats::median(.data$p_detect, na.rm = TRUE),
+    p_detect_lwr = stats::quantile(
+      .data$p_detect,
+      0.025,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+    p_detect_upr = stats::quantile(
+      .data$p_detect,
+      0.975,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(.data$p_detect_mean)
 
-# ------------------------------------------------------------
-# 3. Order OTUs
-# ------------------------------------------------------------
-
+# Order OTUs
 p_detect_otu_summary[[otu_col]] <- factor(
-    p_detect_otu_summary[[otu_col]],
-    levels = p_detect_otu_summary[[otu_col]]
+  p_detect_otu_summary[[otu_col]],
+  levels = p_detect_otu_summary[[otu_col]]
 )
 
-# ------------------------------------------------------------
-# 4. Caterpillar plot
-# ------------------------------------------------------------
-
 ggplot(
-    p_detect_otu_summary,
-    aes(
-        x = p_detect_mean,
-        y = .data[[otu_col]]
-    )
+  p_detect_otu_summary,
+  aes(
+    x = p_detect_mean,
+    y = .data[[otu_col]]
+  )
 ) +
-    geom_point(
-        color = "steelblue",
-        size = 2
-    ) +
-    geom_errorbarh(
-        aes(
-            xmin = p_detect_lwr,
-            xmax = p_detect_upr
-        ),
-        height = 0.2,
-        color = "steelblue"
-    ) +
-    labs(
-        title = "Caterpillar Plot: Detection Probability by OTU",
-        x = "Detection Probability",
-        y = "OTU"
-    ) +
-    theme_minimal() +
-    theme(
-        axis.text.y = element_text(size = 8),
-        plot.title = element_text(hjust = 0.5)
-    )
- 
+  geom_point(
+    color = "steelblue",
+    size = 2
+  ) +
+  geom_errorbarh(
+    aes(
+      xmin = p_detect_lwr,
+      xmax = p_detect_upr
+    ),
+    height = 0.2,
+    color = "steelblue"
+  ) +
+  labs(
+    title = "Caterpillar Plot: Detection Probability by OTU",
+    x = "Detection Probability",
+    y = "OTU"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5)
+  )
 ```
 
-## 4.2  biplot
+## 4.3 GLLVM Latent-Variable Biplot
 
-```{r biplot,fig.width=10, fig.height=9}
-library(ggplot2)
-library(grid)
+The following biplot displays the first two latent-variable dimensions for
+samples and taxa. Sample scores are represented by points and taxon scores by
+arrows.
 
-site_col <- "Sampling.area.Name"
-otu_col  <- "OTU"
+```{r biplot, fig.width=10, fig.height=9}
+# ------------------------------------------------------------
+# 1. Check that two latent-variable dimensions are available
+# ------------------------------------------------------------
 
-# Extract latent coordinates
+required_lv <- c("LV1", "LV2")
+
+if (
+  is.null(out$mean_lv_sites) ||
+  is.null(out$mean_lv_species) ||
+  !all(required_lv %in% names(out$mean_lv_sites)) ||
+  !all(required_lv %in% names(out$mean_lv_species))
+) {
+  stop(
+    "The biplot requires LV1 and LV2 in both ",
+    "out$mean_lv_sites and out$mean_lv_species. ",
+    "Fit the model with num_lv_c = 2."
+  )
+}
+
+# ------------------------------------------------------------
+# 2. Extract latent coordinates
+# ------------------------------------------------------------
+
 site_mat <- as.matrix(
-  out$mean_lv_sites[, c("LV1", "LV2"), drop = FALSE]
+  out$mean_lv_sites[, required_lv, drop = FALSE]
 )
 
 species_mat <- as.matrix(
-  out$mean_lv_species[, c("LV1", "LV2"), drop = FALSE]
+  out$mean_lv_species[, required_lv, drop = FALSE]
 )
 
-# Common symmetric scaling
+# ------------------------------------------------------------
+# 3. Obtain labels
+#
+# Do not assume that mean_lv_sites contains the original
+# Sampling.area.Name column. Use an available identifier column
+# or row names instead.
+# ------------------------------------------------------------
+
+site_id_candidates <- setdiff(
+  names(out$mean_lv_sites),
+  required_lv
+)
+
+species_id_candidates <- setdiff(
+  names(out$mean_lv_species),
+  required_lv
+)
+
+if (length(site_id_candidates) > 0) {
+
+  site_labels <- as.character(
+    out$mean_lv_sites[[site_id_candidates[1]]]
+  )
+
+} else if (
+  !is.null(rownames(out$mean_lv_sites)) &&
+  length(rownames(out$mean_lv_sites)) == nrow(site_mat)
+) {
+
+  site_labels <- rownames(out$mean_lv_sites)
+
+} else {
+
+  site_labels <- paste0(
+    "Sample_", seq_len(nrow(site_mat))
+  )
+}
+
+if ("OTU" %in% names(out$mean_lv_species)) {
+
+  species_labels <- as.character(
+    out$mean_lv_species$OTU
+  )
+
+} else if (length(species_id_candidates) > 0) {
+
+  species_labels <- as.character(
+    out$mean_lv_species[[species_id_candidates[1]]]
+  )
+
+} else if (
+  !is.null(rownames(out$mean_lv_species)) &&
+  length(rownames(out$mean_lv_species)) == nrow(species_mat)
+) {
+
+  species_labels <- rownames(out$mean_lv_species)
+
+} else {
+
+  species_labels <- paste0(
+    "OTU_", seq_len(nrow(species_mat))
+  )
+}
+
+# Final safety checks
+if (length(site_labels) != nrow(site_mat)) {
+  site_labels <- paste0(
+    "Sample_", seq_len(nrow(site_mat))
+  )
+}
+
+if (length(species_labels) != nrow(species_mat)) {
+  species_labels <- paste0(
+    "OTU_", seq_len(nrow(species_mat))
+  )
+}
+
+# ------------------------------------------------------------
+# 4. Common symmetric scaling
+# ------------------------------------------------------------
+
 site_radius <- max(
   sqrt(rowSums(site_mat^2)),
   na.rm = TRUE
@@ -286,27 +354,47 @@ species_radius <- max(
   na.rm = TRUE
 )
 
-scale_factor <- sqrt(
-  site_radius / species_radius
-)
+if (
+  is.finite(site_radius) &&
+  is.finite(species_radius) &&
+  site_radius > 0 &&
+  species_radius > 0
+) {
+
+  scale_factor <- sqrt(
+    site_radius / species_radius
+  )
+
+} else {
+
+  scale_factor <- 1
+}
 
 scaled_sites <- site_mat / scale_factor
 scaled_species <- species_mat * scale_factor
 
-# Add labels
+# ------------------------------------------------------------
+# 5. Construct plotting data
+# ------------------------------------------------------------
+
 scaled_sites_df <- data.frame(
-  Site = out$mean_lv_sites[[site_col]],
-  LV1  = scaled_sites[, 1],
-  LV2  = scaled_sites[, 2]
+  Site = site_labels,
+  LV1 = scaled_sites[, 1],
+  LV2 = scaled_sites[, 2],
+  stringsAsFactors = FALSE
 )
 
 scaled_species_df <- data.frame(
-  OTU = out$mean_lv_species[[otu_col]],
+  OTU = species_labels,
   LV1 = scaled_species[, 1],
-  LV2 = scaled_species[, 2]
+  LV2 = scaled_species[, 2],
+  stringsAsFactors = FALSE
 )
 
-# Plot
+# ------------------------------------------------------------
+# 6. Plot
+# ------------------------------------------------------------
+
 ggplot() +
 
   geom_point(
@@ -376,5 +464,4 @@ ggplot() +
   ) +
 
   theme_minimal()
-
 ```

@@ -2,3 +2,14 @@
 ^\.Rproj\.user$
 ^doc$
 ^Meta$
+^eDNAModel\.Rproj$
+^\.git$
+^\.github$
+^\.DS_Store$
+^\.RData$
+^\.RDataTmp$
+^\.RDataTmp1$
+^\.Rhistory$
+^check$
+^FitModel_vs_joint_simulation\.rds$
+^phyloseq_filtered\.RDS$

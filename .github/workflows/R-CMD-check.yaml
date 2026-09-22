@@ -104,14 +104,22 @@ jobs:
       # using an incompatible cached TMB shared library.
       # ========================================================
 
-      - name: Reinstall TMB from source on macOS
+      - name: Reinstall TMB and gllvm from source on macOS
         if: runner.os == 'macOS'
         run: |
-          cat("Reinstalling TMB from source...\n")
+          cat("Removing cached TMB and gllvm installations...\n")
 
-          if ("TMB" %in% rownames(installed.packages())) {
+          pkgs <- rownames(installed.packages())
+
+          if ("gllvm" %in% pkgs) {
+            remove.packages("gllvm")
+          }
+
+          if ("TMB" %in% pkgs) {
             remove.packages("TMB")
           }
+
+          cat("\nInstalling TMB from source...\n")
 
           install.packages(
             "TMB",
@@ -119,16 +127,36 @@ jobs:
             type = "source"
           )
 
-          cat("\nTMB version:\n")
-          print(packageVersion("TMB"))
-
-          cat("\nTMB installation path:\n")
-          print(find.package("TMB"))
-
-          cat("\nTesting TMB namespace...\n")
+          cat("\nTesting TMB...\n")
           library(TMB)
 
-          cat("\nTMB loaded successfully.\n")
+          cat(
+            "TMB version:",
+            as.character(packageVersion("TMB")),
+            "\n"
+          )
+
+          cat("TMB loaded successfully.\n")
+
+
+          cat("\nInstalling gllvm from source...\n")
+
+          install.packages(
+            "gllvm",
+            repos = "https://cloud.r-project.org",
+            type = "source"
+          )
+
+          cat("\nTesting gllvm...\n")
+          library(gllvm)
+
+          cat(
+            "gllvm version:",
+            as.character(packageVersion("gllvm")),
+            "\n"
+          )
+
+          cat("gllvm loaded successfully.\n")
         shell: Rscript {0}
 
 
@@ -182,7 +210,7 @@ jobs:
       # than eDNAModel.
       # ========================================================
 
-      - name: Test TMB installation
+      - name: Test TMB and gllvm installation
         run: |
           cat("R version:\n")
           print(R.version.string)
@@ -197,6 +225,18 @@ jobs:
           library(TMB)
 
           cat("\nTMB loaded successfully.\n")
+
+
+          cat("\ngllvm version:\n")
+          print(packageVersion("gllvm"))
+
+          cat("\ngllvm path:\n")
+          print(find.package("gllvm"))
+
+          cat("\nLoading gllvm...\n")
+          library(gllvm)
+
+          cat("\ngllvm loaded successfully.\n")
         shell: Rscript {0}
 
 
@@ -260,4 +300,3 @@ jobs:
           if-no-files-found: ignore
           compression-level: 6
           overwrite: false
-          

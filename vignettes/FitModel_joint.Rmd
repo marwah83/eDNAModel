@@ -249,14 +249,19 @@ phyloseq::sample_data(ps) <-
 The resulting hierarchy can be inspected with:
 
 ```{r inspect-hierarchy}
-meta |>
+
+meta_check <- as.data.frame(
+  phyloseq::sample_data(ps)
+)
+
+hierarchy_summary <- meta_check %>%
   dplyr::summarise(
-    n_rows = dplyr::n(),
-    n_sites = dplyr::n_distinct(siteCode),
-    n_site_month = dplyr::n_distinct(site_month),
-    n_samples = dplyr::n_distinct(Name),
-    n_replicates = dplyr::n_distinct(Replicate)
+    n_sites = dplyr::n_distinct(.data$site_month),
+    n_biological_samples = dplyr::n_distinct(.data$Name),
+    n_replicates = dplyr::n_distinct(.data$Replicate)
   )
+
+hierarchy_summary
 ```
 
 Before fitting a model, verify that:

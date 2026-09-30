@@ -953,6 +953,11 @@ A more robust strategy is to search for available identifier columns and then
 fall back to row names or generated labels.
 
 ```{r biplot-labels}
+
+# ------------------------------------------------------------
+# Identify possible ID columns
+# ------------------------------------------------------------
+
 site_id_candidates <- setdiff(
   names(out$mean_lv_sites),
   required_lv
@@ -963,25 +968,22 @@ species_id_candidates <- setdiff(
   required_lv
 )
 
+# ------------------------------------------------------------
+# Site/sample labels
+# ------------------------------------------------------------
+
 if (length(site_id_candidates) > 0) {
 
   site_labels <- as.character(
-    out$mean_lv_sites[
-      [site_id_candidates[1]]
-    ]
+    out$mean_lv_sites[[site_id_candidates[1]]]
   )
 
 } else if (
-  !is.null(
-    rownames(out$mean_lv_sites)
-  ) &&
-  length(
-    rownames(out$mean_lv_sites)
-  ) == nrow(site_mat)
+  !is.null(rownames(out$mean_lv_sites)) &&
+  length(rownames(out$mean_lv_sites)) == nrow(site_mat)
 ) {
 
-  site_labels <-
-    rownames(out$mean_lv_sites)
+  site_labels <- rownames(out$mean_lv_sites)
 
 } else {
 
@@ -991,36 +993,28 @@ if (length(site_id_candidates) > 0) {
   )
 }
 
-if (
-  "OTU" %in%
-    names(out$mean_lv_species)
-) {
+# ------------------------------------------------------------
+# Species/OTU labels
+# ------------------------------------------------------------
+
+if ("OTU" %in% names(out$mean_lv_species)) {
 
   species_labels <- as.character(
     out$mean_lv_species$OTU
   )
 
-} else if (
-  length(species_id_candidates) > 0
-) {
+} else if (length(species_id_candidates) > 0) {
 
   species_labels <- as.character(
-    out$mean_lv_species[
-      [species_id_candidates[1]]
-    ]
+    out$mean_lv_species[[species_id_candidates[1]]]
   )
 
 } else if (
-  !is.null(
-    rownames(out$mean_lv_species)
-  ) &&
-  length(
-    rownames(out$mean_lv_species)
-  ) == nrow(species_mat)
+  !is.null(rownames(out$mean_lv_species)) &&
+  length(rownames(out$mean_lv_species)) == nrow(species_mat)
 ) {
 
-  species_labels <-
-    rownames(out$mean_lv_species)
+  species_labels <- rownames(out$mean_lv_species)
 
 } else {
 
@@ -1030,9 +1024,6 @@ if (
   )
 }
 ```
-
-Final safety checks ensure that the number of labels equals the number of
-coordinates.
 
 ```{r label-checks}
 if (

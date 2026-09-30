@@ -6,7 +6,7 @@ output:
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 3
-    number_sections: true
+    number_sections: false
 vignette: >
   %\VignetteIndexEntry{Occupancy, Detection, and Multivariate Community Modelling with eDNAModel}
   %\VignetteEngine{knitr::rmarkdown}

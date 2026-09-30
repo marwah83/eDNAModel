@@ -301,7 +301,7 @@ For the current analysis, the important variables include:
 
 The model is fitted using `FitModel_gllvm()`.
 
-```{r fit-model, echo=TRUE, eval=FALSE}
+```{r fit-model, echo=TRUE, eval=TRUE}
 out <- FitModel_gllvm(
   phyloseq = physeq_one,
 

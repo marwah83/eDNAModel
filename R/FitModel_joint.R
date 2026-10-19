@@ -542,7 +542,7 @@
 #'   all_of left_join
 #'
 #' @export
-FitModel_joint <- function(
+ FitModel_joint <- function(
     phyloseq,
     site_col,
     sample_col = "Name",
@@ -615,6 +615,11 @@ FitModel_joint <- function(
     
     # FALSE is safer for large OTU matrices.
     get_joint_precision = FALSE,
+
+    # Request approximate conditional 95% OTU intervals.
+    # This requires a random-effect precision matrix and may use memory.
+    otu_intervals = TRUE,
+    otu_conf_level = 0.95,
     
     # ==========================================================
     # HEURISTIC DIAGNOSTICS
@@ -640,6 +645,11 @@ FitModel_joint <- function(
   abundance_family <- match.arg(
     abundance_family
   )
+
+  if (length(otu_conf_level) != 1L || !is.finite(otu_conf_level) ||
+      otu_conf_level <= 0 || otu_conf_level >= 1) {
+    stop("otu_conf_level must be between 0 and 1.")
+  }
   
   
   # ==========================================================
@@ -2191,7 +2201,7 @@ FitModel_joint <- function(
       
       getJointPrecision =
         isTRUE(
-          get_joint_precision
+          (get_joint_precision || otu_intervals)
         ) &&
         length(
           random_effects
@@ -3075,6 +3085,116 @@ FitModel_joint <- function(
   
   
   # ==========================================================
+  # 45A. OTU OCCUPANCY AND CAPTURE PROBABILITIES
+  # ==========================================================
+  # For intercept-only occupancy and capture formulas, estimates
+  # are identical across sites/samples within each OTU.
+  # "mean" columns are plug-in empirical Bayes mode estimates,
+  # NOT posterior expectations.
+  # Intervals, when available, are CONDITIONAL on fixed parameters
+  # and their estimated hyperparameters. They do not propagate
+  # fixed-parameter estimation uncertainty.
+
+  fitted_pars <- obj$env$parList(opt$par)
+  otu_names <- levels(dat$.otu)
+  n_otu_prob <- length(otu_names)
+
+  otu_probabilities <- data.frame(
+    OTU = otu_names,
+    psi_mean = rep(NA_real_, n_otu_prob),
+    psi_lwr = rep(NA_real_, n_otu_prob),
+    psi_upr = rep(NA_real_, n_otu_prob),
+    p_mean = rep(NA_real_, n_otu_prob),
+    p_lwr = rep(NA_real_, n_otu_prob),
+    p_upr = rep(NA_real_, n_otu_prob),
+    stringsAsFactors = FALSE
+  )
+
+  otu_probability_note <- paste(
+    "Point estimates are inverse-logit transformations of fitted",
+    "fixed intercepts plus OTU-specific conditional random-effect modes."
+  )
+
+  intercept_only <- ncol(X_occ) == 1L &&
+    ncol(X_cap) == 1L &&
+    identical(colnames(X_occ), "(Intercept)") &&
+    identical(colnames(X_cap), "(Intercept)")
+
+  if (intercept_only) {
+    b_occ_prob <- if (random_occ_otu)
+      as.numeric(fitted_pars$b_occ_otu) else rep(0, n_otu_prob)
+    b_cap_prob <- if (random_capture_otu)
+      as.numeric(fitted_pars$b_cap_otu) else rep(0, n_otu_prob)
+
+    if (length(b_occ_prob) == n_otu_prob &&
+        length(b_cap_prob) == n_otu_prob) {
+      eta_occ_prob <- as.numeric(fitted_pars$beta_occ[1]) + b_occ_prob
+      eta_cap_prob <- as.numeric(fitted_pars$beta_cap[1]) + b_cap_prob
+      otu_probabilities$psi_mean <- stats::plogis(eta_occ_prob)
+      otu_probabilities$p_mean <- stats::plogis(eta_cap_prob)
+
+      # Conditional covariance of random effects at fitted fixed parameters.
+      # A random-only precision matrix MUST NOT be used as though it
+      # also contained the fixed effects and their covariances.
+      if (isTRUE(otu_intervals) && sdreport_ok && pd_hessian) {
+        Q <- sdr$jointPrecision
+        if (!is.null(Q) && requireNamespace("Matrix", quietly = TRUE)) {
+          q_names <- rownames(Q)
+          if (!is.null(q_names)) {
+            z_crit <- stats::qnorm((1 + otu_conf_level) / 2)
+            get_conditional_se <- function(block_name) {
+              idx <- which(q_names == block_name)
+              if (length(idx) != n_otu_prob) return(NULL)
+              # Solve only the selected columns, not the full inverse.
+              E <- Matrix::sparseMatrix(
+                i = idx, j = seq_along(idx), x = 1,
+                dims = c(nrow(Q), length(idx))
+              )
+              sol <- Matrix::solve(Matrix::forceSymmetric(Q), E)
+              vv <- as.numeric(Matrix::colSums(E * sol))
+              if (length(vv) != n_otu_prob ||
+                  any(!is.finite(vv) | vv < 0)) return(NULL)
+              sqrt(vv)
+            }
+            if (random_occ_otu) {
+              se_occ <- tryCatch(get_conditional_se("b_occ_otu"),
+                                 error = function(e) NULL)
+              if (!is.null(se_occ)) {
+                otu_probabilities$psi_lwr <- stats::plogis(
+                  eta_occ_prob - z_crit * se_occ)
+                otu_probabilities$psi_upr <- stats::plogis(
+                  eta_occ_prob + z_crit * se_occ)
+              }
+            }
+            if (random_capture_otu) {
+              se_cap <- tryCatch(get_conditional_se("b_cap_otu"),
+                                 error = function(e) NULL)
+              if (!is.null(se_cap)) {
+                otu_probabilities$p_lwr <- stats::plogis(
+                  eta_cap_prob - z_crit * se_cap)
+                otu_probabilities$p_upr <- stats::plogis(
+                  eta_cap_prob + z_crit * se_cap)
+              }
+            }
+          }
+        }
+      }
+      otu_probability_note <- paste(
+        otu_probability_note,
+        "Available limits are approximate conditional Wald intervals",
+        "holding all fixed parameters and variance components fixed;",
+        "they are NOT full frequentist confidence intervals.",
+        "Missing limits are NA."
+      )
+    }
+  } else {
+    otu_probability_note <- paste(
+      "OTU-only probabilities are not defined without a specified",
+      "covariate profile for non-intercept-only formulas; values are NA."
+    )
+  }
+
+  # ==========================================================
   # 46. RETURN OBJECT
   # ==========================================================
   
@@ -3090,6 +3210,9 @@ FitModel_joint <- function(
     
     fixed_effects =
       fixed_summary,
+
+    otu_probabilities = otu_probabilities,
+    otu_probability_note = otu_probability_note,
     
     derived =
       derived_summary,
@@ -3286,7 +3409,7 @@ FitModel_joint <- function(
         get_report_covariance,
       
       getJointPrecision =
-        get_joint_precision
+        (get_joint_precision || otu_intervals)
     ),
     
     
@@ -3349,4 +3472,6 @@ FitModel_joint <- function(
   
   return(out)
 }
-        
+         
+  
+   

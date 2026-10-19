@@ -1103,191 +1103,75 @@ assumes that the random-effect vector order corresponds to `retained_otus`;
 this ordering should be verified against the package implementation.
 
 ```{r complete-otu-probabilities, eval=TRUE}
-library(TMB)
-library(Matrix)
-library(dplyr)
+
+head(fit_zinb$otu_probabilities)
+
 library(ggplot2)
 
-# Check convergence before interpreting estimates
-print(fit_zinb$convergence)
+otu_probabilities <- fit_zinb$otu_probabilities
 
-obj <- fit_zinb$tmb_object
-pars <- obj$env$parList(obj$env$last.par.best)
-otus <- as.character(fit_zinb$retained_otus)
+# Occupancy
+occupancy_plot <- ggplot(
+  otu_probabilities,
+  aes(x = psi_mean, y = reorder(OTU, psi_mean))
+) +
+  geom_errorbar(
+    aes(xmin = psi_lwr, xmax = psi_upr),
+    orientation = "y",
+    width = 0.2,
+    color = "darkgreen"
+  ) +
+  geom_point(color = "darkgreen", size = 2) +
+  scale_x_continuous(
+    breaks = seq(0, 1, 0.2),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "OTU-specific Occupancy Probabilities",
+    x = "Occupancy probability",
+    y = "OTU"
+  ) +
+  theme_minimal()
 
-fe <- fit_zinb$fixed_effects
-beta_occ <- fe$Estimate[fe$parameter == "beta_occ"]
-beta_cap <- fe$Estimate[fe$parameter == "beta_cap"]
-b_occ <- as.numeric(pars$b_occ_otu)
-b_cap <- as.numeric(pars$b_cap_otu)
+# Detection
+detection_plot <- ggplot(
+  otu_probabilities,
+  aes(x = p_mean, y = reorder(OTU, p_mean))
+) +
+  geom_errorbar(
+    aes(xmin = p_lwr, xmax = p_upr),
+    orientation = "y",
+    width = 0.2,
+    color = "steelblue"
+  ) +
+  geom_point(color = "steelblue", size = 2) +
+  scale_x_continuous(
+    breaks = seq(0, 1, 0.2),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "OTU-specific Conditional Detection Probabilities",
+    x = "Conditional detection probability",
+    y = "OTU"
+  ) +
+  theme_minimal()
 
-stopifnot(
-  length(beta_occ) == 1L,
-  length(beta_cap) == 1L,
-  length(b_occ) == length(otus),
-  length(b_cap) == length(otus)
-)
+print(occupancy_plot)
+print(detection_plot)
 
-# Request the precision matrix stored by the fitted model
-Q <- fit_zinb$sdreport$jointPrecision
-if (is.null(Q)) {
-  stop("Joint precision matrix unavailable in fit_zinb$sdreport.")
-}
-
-parameter_names <- rownames(Q)
-if (is.null(parameter_names)) {
-  stop("Joint precision matrix has no parameter row names.")
-}
-
-idx_occ_fixed <- which(parameter_names == "beta_occ")
-idx_cap_fixed <- which(parameter_names == "beta_cap")
-idx_occ_otu <- which(parameter_names == "b_occ_otu")
-idx_cap_otu <- which(parameter_names == "b_cap_otu")
-
-if (length(idx_occ_fixed) != 1L ||
-    length(idx_cap_fixed) != 1L ||
-    length(idx_occ_otu) != length(otus) ||
-    length(idx_cap_otu) != length(otus)) {
-  stop(
-    "The precision matrix does not contain the required fixed and ",
-    "OTU random-effect blocks. Inspect its row names and use a ",
-    "validated covariance method before reporting confidence intervals."
-  )
-}
-
-# Selected entries of Q^{-1}; avoid forming the full inverse
-selected <- unique(c(
-  idx_occ_fixed, idx_cap_fixed, idx_occ_otu, idx_cap_otu
-))
-E <- Matrix::sparseMatrix(
-  i = selected,
-  j = seq_along(selected),
-  x = 1,
-  dims = c(nrow(Q), length(selected))
-)
-V <- as.matrix(Matrix::crossprod(
-  E,
-  Matrix::solve(Matrix::forceSymmetric(Q), E)
-))
-pos <- function(index) match(index, selected)
-
-o <- pos(idx_occ_fixed)
-c <- pos(idx_cap_fixed)
-
-var_occ <- vapply(pos(idx_occ_otu), function(j) {
-  V[o, o] + V[j, j] + 2 * V[o, j]
-}, numeric(1))
-var_cap <- vapply(pos(idx_cap_otu), function(j) {
-  V[c, c] + V[j, j] + 2 * V[c, j]
-}, numeric(1))
-
-if (any(!is.finite(c(var_occ, var_cap))) ||
-    any(c(var_occ, var_cap) < 0)) {
-  stop("Invalid variances for the OTU-specific linear predictors.")
-}
-
-eta_occ <- beta_occ + b_occ
-eta_cap <- beta_cap + b_cap
-z <- stats::qnorm(0.975)
-
-otu_probabilities <- data.frame(
-  OTU = otus,
-  psi_mean = stats::plogis(eta_occ),
-  psi_lwr = stats::plogis(eta_occ - z * sqrt(var_occ)),
-  psi_upr = stats::plogis(eta_occ + z * sqrt(var_occ)),
-  p_mean = stats::plogis(eta_cap),
-  p_lwr = stats::plogis(eta_cap - z * sqrt(var_cap)),
-  p_upr = stats::plogis(eta_cap + z * sqrt(var_cap))
-)
-
-head(otu_probabilities)
 ```
 
 Here, `psi_mean` and `p_mean` are conditional plug-in estimates, not
 posterior means. The suffixes `lwr` and `upr` indicate the lower and
 upper endpoints of the approximate 95% intervals.
 
-### Occupancy probability caterpillar plot
-
-```{r complete-occupancy-caterpillar, eval=TRUE, fig.width=10, fig.height=11}
-occupancy_plot <- otu_probabilities %>%
-  dplyr::arrange(.data$psi_mean) %>%
-  dplyr::mutate(OTU = factor(.data$OTU, levels = .data$OTU)) %>%
-  ggplot2::ggplot(ggplot2::aes(x = psi_mean, y = OTU)) +
-  ggplot2::geom_errorbar(
-    ggplot2::aes(xmin = psi_lwr, xmax = psi_upr),
-    orientation = "y", width = 0.2,
-    color = "darkgreen", linewidth = 0.5
-  ) +
-  ggplot2::geom_point(color = "darkgreen", size = 2) +
-  ggplot2::scale_x_continuous(
-    limits = c(0, 1), breaks = seq(0, 1, by = 0.2)
-  ) +
-  ggplot2::labs(
-    title = "Occupancy Probability by OTU",
-    subtitle = "Thessaloniki ZINB model — approximate 95% CI",
-    x = expression("Occupancy probability (" * psi * ")"),
-    y = "OTU"
-  ) +
-  ggplot2::theme_minimal(base_size = 12) +
-  ggplot2::theme(axis.text.y = ggplot2::element_text(size = 8))
-
-print(occupancy_plot)
-```
-
-Each green point shows an OTU-specific estimated occupancy probability
-for a location–month unit. The horizontal line gives its approximate
-95% confidence interval. Wide intervals indicate limited precision.
-
-### Capture (detection) probability caterpillar plot
-
-```{r complete-detection-caterpillar, eval=TRUE, fig.width=10, fig.height=11}
-detection_plot <- otu_probabilities %>%
-  dplyr::arrange(.data$p_mean) %>%
-  dplyr::mutate(OTU = factor(.data$OTU, levels = .data$OTU)) %>%
-  ggplot2::ggplot(ggplot2::aes(x = p_mean, y = OTU)) +
-  ggplot2::geom_errorbar(
-    ggplot2::aes(xmin = p_lwr, xmax = p_upr),
-    orientation = "y", width = 0.2,
-    color = "steelblue", linewidth = 0.5
-  ) +
-  ggplot2::geom_point(color = "steelblue", size = 2) +
-  ggplot2::scale_x_continuous(
-    limits = c(0, 1), breaks = seq(0, 1, by = 0.2)
-  ) +
-  ggplot2::labs(
-    title = "Detection Probability by OTU",
-    subtitle = "Thessaloniki ZINB model — approximate 95% CI",
-    x = "Conditional capture probability",
-    y = "OTU"
-  ) +
-  ggplot2::theme_minimal(base_size = 12) +
-  ggplot2::theme(axis.text.y = ggplot2::element_text(size = 8))
-
-print(detection_plot)
-```
+### 
 
 The blue points represent OTU-specific probabilities of biological-sample
 capture conditional on occupancy. These probabilities describe a different
 stage of the model from occupancy and need not rank OTUs in the same order.
 
 ### Save the figures and probability estimates
-
-```{r complete-save-plots, eval=FALSE}
-ggplot2::ggsave(
-  "Thessaloniki_Occupancy_95CI.png",
-  occupancy_plot, width = 10, height = 12, dpi = 300
-)
-ggplot2::ggsave(
-  "Thessaloniki_Detection_95CI.png",
-  detection_plot, width = 10, height = 12, dpi = 300
-)
-utils::write.csv(
-  otu_probabilities,
-  "Thessaloniki_OTU_Probabilities_95CI.csv",
-  row.names = FALSE
-)
-```
 
 # Reproducibility and reporting
 

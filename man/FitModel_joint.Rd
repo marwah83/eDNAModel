@@ -35,6 +35,8 @@ FitModel_joint(
   n_gradient_report = 2L,
   get_report_covariance = FALSE,
   get_joint_precision = FALSE,
+  otu_intervals = TRUE,
+  otu_conf_level = 0.95,
   log_sd_warning_threshold = -5,
   se_estimate_ratio_threshold = 10,
   estimate_zero_tol = 1e-06,

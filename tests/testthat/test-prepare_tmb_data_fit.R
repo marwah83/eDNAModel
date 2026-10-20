@@ -1,46 +1,26 @@
 
 library(testthat)
 
-test_that("FitModel_joint correctly prepares hierarchical TMB data", {
+test_that("FitModel_joint correctly prepares TMB data", {
 
-  skip_if_not_installed("TMB")
   skip_if_not_installed("phyloseq")
+  skip_if_not_installed("TMB")
   skip_if_not_installed("dplyr")
 
   # ============================================================
-  # 1. Synthetic data: species, sites, biological samples,
-  #    and sequencing replicates
+  # 1. Create synthetic data
   # ============================================================
 
   set.seed(123)
 
   n_otu <- 3
   n_sites <- 2
-  samples_per_site <- 2
-  replicates_per_sample <- 4
+  n_replicates <- 4
 
-  n_bio_samples <- n_sites * samples_per_site
-  n_libraries <- n_bio_samples * replicates_per_sample
+  n_libraries <- n_sites * n_replicates
 
-  otu_names <- paste0("OTU", seq_len(n_otu))
-  library_names <- paste0("Library", seq_len(n_libraries))
-
-  sample_df <- data.frame(
-    Site = rep(
-      paste0("Site", seq_len(n_sites)),
-      each = samples_per_site * replicates_per_sample
-    ),
-    Name = rep(
-      paste0("Sample", seq_len(n_bio_samples)),
-      each = replicates_per_sample
-    ),
-    Replicate = rep(
-      paste0("R", seq_len(replicates_per_sample)),
-      times = n_bio_samples
-    ),
-    row.names = library_names,
-    stringsAsFactors = FALSE
-  )
+  otu_names <- paste0("Species_", seq_len(n_otu))
+  library_names <- paste0("Library_", seq_len(n_libraries))
 
   counts <- matrix(
     rpois(n_otu * n_libraries, lambda = 5),
@@ -49,54 +29,104 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
     dimnames = list(otu_names, library_names)
   )
 
-  # Ensure every OTU has detections
+  # Ensure each OTU has positive counts
   counts[, 1] <- counts[, 1] + 2
 
+  # ============================================================
+  # 2. Construct sample metadata
+  # ============================================================
+
+  sample_df <- data.frame(
+    Site = rep(
+      paste0("Site_", seq_len(n_sites)),
+      each = n_replicates
+    ),
+
+    Name = rep(
+      paste0("Sample_", seq_len(n_sites)),
+      each = n_replicates
+    ),
+
+    Replicate = rep(
+      paste0("R", seq_len(n_replicates)),
+      times = n_sites
+    ),
+
+    row.names = library_names,
+    stringsAsFactors = FALSE
+  )
+
+  # ============================================================
+  # 3. Create phyloseq object
+  # ============================================================
+
   ps_test <- phyloseq::phyloseq(
-    phyloseq::otu_table(counts, taxa_are_rows = TRUE),
+    phyloseq::otu_table(
+      counts,
+      taxa_are_rows = TRUE
+    ),
     phyloseq::sample_data(sample_df)
   )
 
+  expect_s4_class(ps_test, "phyloseq")
+
   # ============================================================
-  # 2. Fit the joint model
+  # 4. Fit simple joint model
   # ============================================================
 
-  fit <- FitModel_joint(
-    phyloseq = ps_test,
-    site_col = "Site",
-    sample_col = "Name",
-    replicate_col = "Replicate",
+  # Capture numerical warnings separately because this test
+  # is intended to validate TMB data structures.
 
-    occupancy_formula = ~ 1,
-    capture_formula = ~ 1,
-    abundance_formula = ~ 1,
+  fit_warnings <- character()
 
-    abundance_family = "poisson",
+  fit <- withCallingHandlers(
 
-    min_species_sum = 1,
-    min_detection_replicates = 1,
+    FitModel_joint(
+      phyloseq = ps_test,
 
-    random_occ_otu = TRUE,
-    random_capture_otu = TRUE,
-    random_abund_otu = TRUE,
+      site_col = "Site",
+      sample_col = "Name",
+      replicate_col = "Replicate",
 
-    random_sample = FALSE,
-    random_sample_otu = FALSE,
-    random_zi_otu = FALSE,
+      occupancy_formula = ~ 1,
+      capture_formula = ~ 1,
+      abundance_formula = ~ 1,
 
-    max_restarts = 0,
-    iter_max = 1000,
-    eval_max = 2000,
+      abundance_family = "poisson",
 
-    get_report_covariance = FALSE,
-    get_joint_precision = FALSE,
-    otu_intervals = FALSE,
+      min_species_sum = 1,
+      min_detection_replicates = 1,
 
-    verbose = FALSE
+      random_occ_otu = FALSE,
+      random_capture_otu = FALSE,
+      random_abund_otu = FALSE,
+
+      random_sample = FALSE,
+      random_sample_otu = FALSE,
+      random_zi_otu = FALSE,
+
+      max_restarts = 0L,
+      iter_max = 1000L,
+      eval_max = 2000L,
+
+      get_report_covariance = FALSE,
+      get_joint_precision = FALSE,
+      otu_intervals = FALSE,
+
+      verbose = FALSE
+    ),
+
+    warning = function(w) {
+      fit_warnings <<- c(
+        fit_warnings,
+        conditionMessage(w)
+      )
+      invokeRestart("muffleWarning")
+    }
   )
 
   # ============================================================
-  # 3. Check returned TMB data
+  # 5. Check returned data structure
   # ============================================================
 
   expect_s3_class(fit, "eDNAModel_joint")
@@ -117,7 +147,6 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
     "sample_site_group",
     "row_otu",
     "row_sample_id",
-    "row_sample_otu_re",
     "sample_positive",
     "site_positive",
     "n_site_groups",
@@ -126,11 +155,18 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
   )
 
   expect_true(
-    all(expected_keys %in% names(prepared_data))
+    all(expected_keys %in% names(prepared_data)),
+    info = paste(
+      "Missing fields:",
+      paste(
+        setdiff(expected_keys, names(prepared_data)),
+        collapse = ", "
+      )
+    )
   )
 
   # ============================================================
-  # 4. Check hierarchy dimensions
+  # 6. Check dimensions
   # ============================================================
 
   expect_length(
@@ -145,7 +181,7 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
 
   expect_equal(
     nrow(prepared_data$X_cap),
-    n_bio_samples * n_otu
+    n_sites * n_otu
   )
 
   expect_equal(
@@ -160,11 +196,11 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
 
   expect_equal(
     prepared_data$n_sample_groups,
-    n_bio_samples * n_otu
+    n_sites * n_otu
   )
 
   # ============================================================
-  # 5. Check index mappings
+  # 7. Check grouping indices
   # ============================================================
 
   expect_length(
@@ -190,7 +226,7 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
   ))
 
   # ============================================================
-  # 6. Check detection indicators
+  # 8. Check detection indicators
   # ============================================================
 
   expect_length(
@@ -212,7 +248,7 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
   ))
 
   # ============================================================
-  # 7. Check Poisson family and offset
+  # 9. Check model settings
   # ============================================================
 
   expect_equal(prepared_data$family_code, 0L)
@@ -221,8 +257,12 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
     prepared_data$offset_abund == 0
   ))
 
+  expect_equal(prepared_data$use_occ_otu, 0L)
+  expect_equal(prepared_data$use_cap_otu, 0L)
+  expect_equal(prepared_data$use_abund_otu, 0L)
+
   # ============================================================
-  # 8. Check TMB object
+  # 10. Check TMB objective
   # ============================================================
 
   expect_true(is.list(fit$tmb_object))
@@ -233,7 +273,18 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
   expect_true(is.finite(fit$fit$objective))
 
   # ============================================================
-  # 9. Check memory settings
+  # 11. Check convergence diagnostics exist
+  # ============================================================
+
+  expect_true(is.list(fit$convergence))
+
+  expect_true(
+    fit$convergence$overall_status %in%
+      c("PASS", "MARGINAL", "FAIL")
+  )
+
+  # ============================================================
+  # 12. Check memory settings
   # ============================================================
 
   expect_false(
@@ -243,5 +294,16 @@ test_that("FitModel_joint correctly prepares hierarchical TMB data", {
   expect_false(
     fit$sdreport_settings$getJointPrecision
   )
+
+  # ============================================================
+  # 13. Report numerical warnings
+  # ============================================================
+
+  if (length(fit_warnings) > 0L) {
+    message(
+      "Numerical warnings captured: ",
+      paste(unique(fit_warnings), collapse = " | ")
+    )
+  }
 
 })

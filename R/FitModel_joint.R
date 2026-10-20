@@ -398,6 +398,12 @@
 #'   separate from \code{verbose} so normal package progress can be displayed
 #'   without printing thousands of TMB inner-optimization messages.
 #'
+#' @param otu_intervals Logical. If TRUE, compute uncertainty intervals
+#'   for OTU-specific model quantities. Default is TRUE.
+#'
+#' @param otu_conf_level Numeric. Confidence level used to construct
+#'   OTU-specific uncertainty intervals. Default is 0.95.
+#'
 #'
 #' @return
 #' A list containing the fitted optimizer object, TMB objective,

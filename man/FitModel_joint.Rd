@@ -155,6 +155,12 @@ Default is 2.}
 \code{FALSE} to reduce memory use and computation time. Set to
 \code{TRUE} only when the joint precision matrix is required.}
 
+\item{otu_intervals}{Logical. If TRUE, compute uncertainty intervals
+for OTU-specific model quantities. Default is TRUE.}
+
+\item{otu_conf_level}{Numeric. Confidence level used to construct
+OTU-specific uncertainty intervals. Default is 0.95.}
+
 \item{log_sd_warning_threshold}{Numeric threshold used to flag very small
 estimated random-effect standard deviations on the log-SD scale. This is
 a heuristic diagnostic only. Default is -5.}

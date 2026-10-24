@@ -20,7 +20,16 @@ FitModel_gllvm(
   n_iter = 50,
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-  num_lv_c = 2,
+  num_lv_c = 1,
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 0.001,
+  gllvm_strict = FALSE,
+  gllvm_condition_tol = 1e+08,
+  gllvm_eigen_tol = 1e-08,
+  gllvm_warn_separation = FALSE,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 0,
+  gllvm_excluded_prior = c(1, 1),
   verbose = TRUE
 )
 }
@@ -57,6 +66,19 @@ FitModel_gllvm(
 \item{abundance_family}{One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.}
 
 \item{num_lv_c}{Number of latent variables in the GLLVM occupancy model.}
+
+\item{gllvm_n_init}{Number of GLLVM initial fits (default 10).}
+
+\item{gllvm_gradient_tol}{Diagnostic threshold for maximum absolute gradient.}
+
+\item{gllvm_strict}{If TRUE, skip iterations failing optimizer/gradient diagnostics.}
+
+\item{gllvm_condition_tol}{Hessian condition-number diagnostic threshold (default 1e8).}
+
+\item{gllvm_eigen_tol}{Relative eigenvalue threshold for near-zero eigenvalues.}
+
+\item{gllvm_warn_separation}{Warn when augmented occupancy is constant for an OTU.
+Defaults to FALSE to preserve the stochastic updating chain.}
 
 \item{verbose}{Logical; print progress during fitting.}
 }

@@ -729,7 +729,7 @@ The transformation is implemented as:
 p_detect_draws <- p_detect_draws %>%
   dplyr::mutate(
     p_detect =
-      1 - exp(-exp(.data$eta))
+      plogis(eta)
   )
 ```
 
@@ -1332,7 +1332,7 @@ p_detect_draws <-
   ) %>%
   dplyr::mutate(
     p_detect =
-      1 - exp(-exp(.data$eta))
+      plogis(eta)
   )
 
 p_detect_otu_summary <-

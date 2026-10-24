@@ -30,6 +30,13 @@
 #' @param burn_in Number of initial iterations discarded.
 #' @param abundance_family One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.
 #' @param num_lv_c Number of latent variables in the GLLVM occupancy model.
+#' @param gllvm_n_init Number of GLLVM initial fits (default 10).
+#' @param gllvm_gradient_tol Diagnostic threshold for maximum absolute gradient.
+#' @param gllvm_strict If TRUE, skip iterations failing optimizer/gradient diagnostics.
+#' @param gllvm_condition_tol Hessian condition-number diagnostic threshold (default 1e8).
+#' @param gllvm_eigen_tol Relative eigenvalue threshold for near-zero eigenvalues.
+#' @param gllvm_warn_separation Warn when augmented occupancy is constant for an OTU.
+#'   Defaults to FALSE to preserve the stochastic updating chain.
 #' @param verbose Logical; print progress during fitting.
 #'
 #' @return A list containing:
@@ -180,7 +187,16 @@ FitModel_gllvm <- function(
   n_iter = 50,
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-  num_lv_c = 2,
+  num_lv_c = 1,
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 1e-3,
+  gllvm_strict = FALSE,
+  gllvm_condition_tol = 1e8,
+  gllvm_eigen_tol = 1e-8,
+  gllvm_warn_separation = FALSE,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 0,
+  gllvm_excluded_prior = c(1, 1),
   verbose = TRUE
 ) {
 
@@ -207,6 +223,47 @@ FitModel_gllvm <- function(
   if (!is.numeric(num_lv_c) || length(num_lv_c) != 1L ||
       num_lv_c < 0 || num_lv_c != as.integer(num_lv_c)) {
     stop("num_lv_c must be a non-negative integer.")
+  }
+
+  if (length(gllvm_n_init) != 1L || !is.finite(gllvm_n_init) ||
+      gllvm_n_init < 1 || gllvm_n_init != as.integer(gllvm_n_init)) {
+    stop("gllvm_n_init must be a positive integer.")
+  }
+  if (length(gllvm_gradient_tol) != 1L || !is.finite(gllvm_gradient_tol) ||
+      gllvm_gradient_tol <= 0) {
+    stop("gllvm_gradient_tol must be positive and finite.")
+  }
+  if (!is.logical(gllvm_strict) || length(gllvm_strict) != 1L ||
+      is.na(gllvm_strict)) {
+    stop("gllvm_strict must be TRUE or FALSE.")
+  }
+
+  if (!is.numeric(gllvm_condition_tol) || length(gllvm_condition_tol) != 1L ||
+      is.na(gllvm_condition_tol) || gllvm_condition_tol <= 1) {
+    stop("gllvm_condition_tol must be numeric and greater than 1.")
+  }
+  if (!is.numeric(gllvm_eigen_tol) || length(gllvm_eigen_tol) != 1L ||
+      !is.finite(gllvm_eigen_tol) || gllvm_eigen_tol <= 0) {
+    stop("gllvm_eigen_tol must be positive and finite.")
+  }
+  if (!is.logical(gllvm_warn_separation) || length(gllvm_warn_separation) != 1L ||
+      is.na(gllvm_warn_separation)) {
+    stop("gllvm_warn_separation must be TRUE or FALSE.")
+  }
+
+  if (!is.logical(gllvm_auto_exclude) || length(gllvm_auto_exclude) != 1L ||
+      is.na(gllvm_auto_exclude)) stop("gllvm_auto_exclude must be TRUE or FALSE.")
+  if (length(gllvm_min_occupied_sites) != 1L ||
+      !is.finite(gllvm_min_occupied_sites) ||
+      gllvm_min_occupied_sites < 0 ||
+      gllvm_min_occupied_sites != as.integer(gllvm_min_occupied_sites)) {
+    stop("gllvm_min_occupied_sites must be a nonnegative integer.")
+  }
+  if (!is.numeric(gllvm_excluded_prior) ||
+      length(gllvm_excluded_prior) != 2L ||
+      any(!is.finite(gllvm_excluded_prior)) ||
+      any(gllvm_excluded_prior <= 0)) {
+    stop("gllvm_excluded_prior must contain two positive Beta prior parameters.")
   }
 
   # ============================================================
@@ -1227,6 +1284,49 @@ FitModel_gllvm <- function(
     stringsAsFactors = FALSE
   )
 
+  # Numerical diagnostics for each attempted occupancy fit.
+  # These are diagnostics, not a substitute for examining chain stability.
+  gllvm_diagnostics <- data.frame(
+    iteration = seq_len(n_iter),
+    optimizer_converged = rep(NA, n_iter),
+    max_abs_gradient = rep(NA_real_, n_iter),
+    hessian_min_eigen = rep(NA_real_, n_iter),
+    hessian_negative_eigen = rep(NA_integer_, n_iter),
+    hessian_near_zero_eigen = rep(NA_integer_, n_iter),
+    covariance_min_eigen = rep(NA_real_, n_iter),
+    covariance_negative_eigen = rep(NA_integer_, n_iter),
+    covariance_near_zero_eigen = rep(NA_integer_, n_iter),
+    numerical_ok = rep(NA, n_iter),
+    n_all_present = rep(NA_integer_, n_iter),
+    n_all_absent = rep(NA_integer_, n_iter),
+    n_gllvm_otus = rep(NA_integer_, n_iter),
+    n_excluded_otus = rep(NA_integer_, n_iter),
+    hessian_condition_number = rep(NA_real_, n_iter),
+    hessian_ill_conditioned = rep(NA, n_iter),
+    hessian_positive_definite = rep(NA, n_iter),
+    stringsAsFactors = FALSE
+  )
+  # Preserve the exact OTU identities for each augmented occupancy matrix.
+  gllvm_separation <- vector("list", n_iter)
+  names(gllvm_separation) <- as.character(seq_len(n_iter))
+  gllvm_excluded_otus <- vector("list", n_iter)
+  names(gllvm_excluded_otus) <- as.character(seq_len(n_iter))
+
+
+  matrix_eigen_diagnostic <- function(M, tolerance = gllvm_eigen_tol) {
+    empty <- c(minimum = NA_real_, negative = NA_real_, near_zero = NA_real_)
+    if (is.null(M) || !is.matrix(M) || nrow(M) != ncol(M) ||
+        any(!is.finite(M))) return(empty)
+    M <- (M + t(M)) / 2
+    ev <- tryCatch(eigen(M, symmetric = TRUE, only.values = TRUE)$values,
+                   error = function(e) NULL)
+    if (is.null(ev) || !length(ev)) return(empty)
+    threshold <- tolerance * max(abs(ev))
+    c(minimum = min(ev),
+      negative = sum(ev < -threshold),
+      near_zero = sum(abs(ev) <= threshold))
+  }
+
   # ============================================================
   # 20. EM-like stochastic iterations
   # ============================================================
@@ -1278,6 +1378,64 @@ FitModel_gllvm <- function(
     z_matrix[idx] <-
       reduced_data$z_sim
 
+    # Constant columns in the AUGMENTED occupancy matrix may cause
+    # complete separation of species-specific binomial intercepts.
+    # Keep these OTUs; record the issue rather than changing the model.
+    occupied <- colSums(z_matrix == 1, na.rm = TRUE)
+    n_valid <- colSums(!is.na(z_matrix))
+    all_present <- colnames(z_matrix)[n_valid > 0 & occupied == n_valid]
+    all_absent <- colnames(z_matrix)[n_valid > 0 & occupied == 0]
+    gllvm_separation[[i]] <- list(
+      iteration = i,
+      all_present = all_present,
+      all_absent = all_absent,
+      occupied_sites = stats::setNames(as.integer(occupied), colnames(z_matrix)),
+      n_sites = nrow(z_matrix)
+    )
+    gllvm_diagnostics$n_all_present[i] <- length(all_present)
+    gllvm_diagnostics$n_all_absent[i] <- length(all_absent)
+    if (gllvm_warn_separation && (length(all_present) || length(all_absent))) {
+      warning(sprintf(
+        "GLLVM iteration %d: augmented occupancy has %d universally present OTUs (%s) and %d universally absent OTUs (%s).",
+        i, length(all_present), paste(all_present, collapse = ", "),
+        length(all_absent), paste(all_absent, collapse = ", ")
+      ), call. = FALSE)
+    }
+
+    # Automatic, iteration-specific screening of constant augmented
+    # occupancy columns. Optional min_occupied_sites > 0 also removes
+    # rare / near-universal columns (sensitivity analysis only).
+    # The full z_matrix is NEVER modified.
+    excluded <- character()
+    if (gllvm_auto_exclude) {
+      excluded <- colnames(z_matrix)[
+        n_valid == 0L |
+        occupied <= gllvm_min_occupied_sites |
+        (n_valid - occupied) <= gllvm_min_occupied_sites
+      ]
+    }
+    included <- colnames(z_matrix)[
+      !colnames(z_matrix) %in% excluded
+    ]
+    gllvm_excluded_otus[[i]] <- excluded
+    gllvm_diagnostics$n_excluded_otus[i] <- length(excluded)
+    gllvm_diagnostics$n_gllvm_otus[i] <- length(included)
+
+    if (length(included) < max(3L, num_lv_c + 2L)) {
+      warning(sprintf(
+        "Iteration %d: only %d OTUs remain after screening; skipping.",
+        i, length(included)
+      ), call. = FALSE)
+      next
+    }
+    z_gllvm <- z_matrix[, included, drop = FALSE]
+    if (verbose && length(excluded)) {
+      message(sprintf(
+        "GLLVM iteration %d: excluding %d OTUs from GLLVM only: %s",
+        i, length(excluded), paste(excluded, collapse = ", ")
+      ))
+    }
+
     # ----------------------------------------------------------
     # 20.2 GLLVM occupancy model
     # ----------------------------------------------------------
@@ -1285,10 +1443,15 @@ FitModel_gllvm <- function(
     model_occupancy <- tryCatch(
 
       gllvm::gllvm(
-        y = z_matrix,
+        y = z_gllvm,
         X = X_cov,
         family = "binomial",
-        num.lv = num_lv_c
+        num.lv = num_lv_c,
+        method = "VA",
+        control.start = list(
+          n.init = gllvm_n_init,
+          starting.val = "res"
+        )
       ),
 
       error = function(e) {
@@ -1306,6 +1469,91 @@ FitModel_gllvm <- function(
 
     if (is.null(model_occupancy)) {
       next
+    }
+
+    # gllvm 2.0.x reports convergence as logical TRUE/FALSE.
+    # Some other optimizer interfaces use numeric code 0 for success.
+    conv <- model_occupancy$convergence
+    optimizer_ok <- if (is.logical(conv) && length(conv) == 1L) {
+      isTRUE(conv)
+    } else if (is.numeric(conv) && length(conv) == 1L && !is.na(conv)) {
+      conv == 0
+    } else {
+      NA
+    }
+
+    # Use the parameter vector explicitly, rather than relying on the
+    # objective closure's current environment state.
+    gradient <- tryCatch({
+      fn <- model_occupancy$TMBfn
+      if (is.null(fn) || !is.function(fn$gr)) stop("No gradient function")
+      pars <- fn$par
+      if (is.null(pars)) fn$gr() else fn$gr(pars)
+    }, error = function(e) NA_real_)
+    max_gradient <- if (length(gradient) && all(is.finite(gradient))) {
+      max(abs(gradient))
+    } else NA_real_
+
+    hess_diag <- matrix_eigen_diagnostic(model_occupancy$Hess$Hess.full)
+    cov_diag <- matrix_eigen_diagnostic(model_occupancy$Hess$cov.mat.mod)
+
+    # Condition number: Inf when Hessian is non-positive-definite.
+    H <- model_occupancy$Hess$Hess.full
+    hessian_condition <- NA_real_
+    hessian_pd <- NA
+    if (is.matrix(H) && nrow(H) == ncol(H) && all(is.finite(H))) {
+      hessian_ev <- tryCatch(
+        eigen((H + t(H)) / 2, symmetric = TRUE, only.values = TRUE)$values,
+        error = function(e) NULL
+      )
+      if (!is.null(hessian_ev) && length(hessian_ev)) {
+        hessian_pd <- min(hessian_ev) > 0
+        hessian_condition <- if (hessian_pd) {
+          max(hessian_ev) / min(hessian_ev)
+        } else Inf
+      }
+    }
+    gllvm_diagnostics$hessian_condition_number[i] <- hessian_condition
+    gllvm_diagnostics$hessian_positive_definite[i] <- hessian_pd
+    gllvm_diagnostics$hessian_ill_conditioned[i] <- if (is.na(hessian_condition)) {
+      NA
+    } else hessian_condition > gllvm_condition_tol
+
+    # numerical_ok retains the original optimizer/gradient criterion.
+    # Ill-conditioning is separately recorded, not used to silently reject
+    # stochastic updates or alter the estimator.
+    numerical_ok <- isTRUE(optimizer_ok) && is.finite(max_gradient) &&
+      max_gradient <= gllvm_gradient_tol &&
+      is.finite(hess_diag["negative"]) && hess_diag["negative"] == 0 &&
+      is.finite(cov_diag["negative"]) && cov_diag["negative"] == 0
+
+    gllvm_diagnostics$optimizer_converged[i] <- optimizer_ok
+    gllvm_diagnostics$max_abs_gradient[i] <- max_gradient
+    gllvm_diagnostics$hessian_min_eigen[i] <- hess_diag["minimum"]
+    gllvm_diagnostics$hessian_negative_eigen[i] <- as.integer(hess_diag["negative"])
+    gllvm_diagnostics$hessian_near_zero_eigen[i] <- as.integer(hess_diag["near_zero"])
+    gllvm_diagnostics$covariance_min_eigen[i] <- cov_diag["minimum"]
+    gllvm_diagnostics$covariance_negative_eigen[i] <- as.integer(cov_diag["negative"])
+    gllvm_diagnostics$covariance_near_zero_eigen[i] <- as.integer(cov_diag["near_zero"])
+    gllvm_diagnostics$numerical_ok[i] <- numerical_ok
+
+    if (verbose) {
+      message(sprintf(
+        "GLLVM iteration %d: optimizer=%s; max gradient=%s; Hessian min=%s; covariance min=%s",
+        i, as.character(optimizer_ok),
+        format(max_gradient, digits = 4),
+        format(hess_diag["minimum"], digits = 4),
+        format(cov_diag["minimum"], digits = 4)
+      ))
+    }
+    if (!numerical_ok) {
+      warning(sprintf(
+        "GLLVM numerical diagnostics flagged iteration %d (optimizer=%s, max gradient=%s).",
+        i, as.character(optimizer_ok), format(max_gradient, digits = 4)
+      ), call. = FALSE)
+      # Skipping stochastic iterations changes the algorithm. Enable only
+      # when explicitly requested; by default record and continue.
+      if (gllvm_strict) next
     }
 
     occupancy_models[[i]] <-
@@ -1477,30 +1725,41 @@ FitModel_gllvm <- function(
       next
     }
 
-    psi_prob <- as.matrix(
-      psi_prob
-    )
+    psi_reduced <- as.matrix(psi_prob)
 
-    if (!identical(
-      dim(psi_prob),
-      dim(z_matrix)
-    )) {
-
-      warning(
-        "GLLVM prediction dimensions do not match occupancy matrix ",
-        "at iteration ",
-        i,
-        ". Iteration skipped."
-      )
-
+    if (!identical(dim(psi_reduced), dim(z_gllvm))) {
+      warning(sprintf(
+        "Iteration %d: reduced GLLVM prediction dimensions mismatch; skipping.",
+        i
+      ), call. = FALSE)
       next
     }
 
-    rownames(psi_prob) <-
-      rownames(z_matrix)
+    # Map GLLVM probabilities back to all OTUs in their original order.
+    psi_prob <- matrix(
+      NA_real_, nrow = nrow(z_matrix), ncol = ncol(z_matrix),
+      dimnames = dimnames(z_matrix)
+    )
+    psi_prob[, included] <- psi_reduced
 
-    colnames(psi_prob) <-
-      colnames(z_matrix)
+    # Excluded OTUs receive smoothed intercept-only probabilities.
+    # This is a Beta-Binomial empirical approximation conditional on
+    # the CURRENT augmented Z, not a joint hierarchical estimate.
+    # It avoids assigning 0 or 1 and preserves all OTUs downstream.
+    if (length(excluded)) {
+      a <- gllvm_excluded_prior[1L]
+      b <- gllvm_excluded_prior[2L]
+      for (otu in excluded) {
+        n <- n_valid[[otu]]
+        k <- occupied[[otu]]
+        psi_prob[, otu] <- (k + a) / (n + a + b)
+      }
+    }
+    if (anyNA(psi_prob) || any(!is.finite(psi_prob))) {
+      warning(sprintf("Iteration %d: invalid occupancy probabilities; skipping.", i),
+              call. = FALSE)
+      next
+    }
 
     psi_long <- reshape2::melt(
       psi_prob,
@@ -2715,6 +2974,33 @@ FitModel_gllvm <- function(
 
     diagnostic_AIC =
       diagnostic_AIC,
+
+    gllvm_diagnostics =
+      gllvm_diagnostics,
+
+    gllvm_separation =
+      gllvm_separation,
+
+    gllvm_excluded_otus =
+      gllvm_excluded_otus,
+
+    # Maps retained list positions back to original iteration numbers.
+    occupancy_model_iterations =
+      keep,
+
+
+    gllvm_settings = list(
+      num_lv_c = num_lv_c,
+      n_init = gllvm_n_init,
+      gradient_tol = gllvm_gradient_tol,
+      strict = gllvm_strict,
+      condition_tol = gllvm_condition_tol,
+      eigen_tol = gllvm_eigen_tol,
+      warn_separation = gllvm_warn_separation,
+      auto_exclude = gllvm_auto_exclude,
+      min_occupied_sites = gllvm_min_occupied_sites,
+      excluded_prior = gllvm_excluded_prior
+    ),
 
     iteration_success =
       iteration_success,

@@ -71,7 +71,8 @@ The workflow demonstrated here includes:
 7. constructing uncertainty intervals;
 8. visualizing occupancy probabilities using caterpillar plots;
 9. visualizing detection probabilities using caterpillar plots; and
-10. examining multivariate community structure using GLLVM latent variables.
+10. diagnosing GLLVM convergence and automatically excluded OTUs; and
+11. examining the one-dimensional GLLVM latent structure.
 
 The example uses the **Marine Invasive species Trondheim** dataset distributed
 with the `eDNAModel` package.
@@ -235,8 +236,9 @@ where:
 The latent variables summarize residual multivariate structure that remains
 after accounting for measured predictors.
 
-With two latent variables, the fitted site and species scores can be displayed
-in a two-dimensional biplot.
+With one latent variable, site scores and taxon loadings can be displayed
+separately along a single axis. A two-dimensional biplot requires fitting
+at least two latent variables and is not used in this example.
 
 # 4. Load Required Packages
 
@@ -317,7 +319,13 @@ out <- FitModel_gllvm(
 
   n_iter = 50,
   burn_in = 10,
-  num_lv_c = 2
+  num_lv_c = 1,
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 1e-3,
+  gllvm_condition_tol = 1e8,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 0,
+  gllvm_excluded_prior = c(1, 1)
 )
 ```
 
@@ -448,18 +456,27 @@ posterior sampler unless the underlying implementation explicitly defines it as
 such. Consequently, the empirical quantiles calculated below describe
 variation across the retained model iterations.
 
-## 7.8 Number of latent variables
+## 7.8 Number of latent variables and automatic screening
 
-The argument
+`num_lv_c = 1` requests one latent dimension. The model screens the current
+augmented occupancy matrix separately at each iteration. With
+`gllvm_auto_exclude = TRUE` and `gllvm_min_occupied_sites = 0`, OTUs occupied
+at all sites or absent from all sites are excluded **only from the GLLVM fit**.
+They remain in the capture, abundance, and latent-state updates.
 
-```r
-num_lv_c = 2
-```
+For excluded OTUs, occupancy probabilities are approximated by an
+intercept-only smoothed estimate
+\[
+\widehat\psi_k = \frac{n_{1k}+a}{n_k+a+b},
+\]
+where `gllvm_excluded_prior = c(a, b)` defaults to `c(1, 1)`.
+This is a sensitivity-analysis approximation, not a joint GLLVM estimate.
+The excluded OTUs can change between iterations. Screening does not guarantee
+that the Hessian will be well-conditioned.
 
-requests two latent-variable dimensions.
-
-This is particularly useful for visualization because the first two latent
-dimensions can be displayed directly in a two-dimensional biplot.
+`gllvm_n_init = 10` specifies multiple initializations and
+`gllvm_gradient_tol = 1e-3` specifies the gradient tolerance. The
+condition-number warning threshold is `gllvm_condition_tol = 1e8`.
 
 # 8. Inspecting the Model Output
 
@@ -609,48 +626,47 @@ summary(psi_otu_summary$psi_mean)
 
 # 11. Occupancy Probability Caterpillar Plot
 
-OTUs are ordered from the lowest to highest estimated mean occupancy.
+OTUs are ordered by estimated mean occupancy. The intervals are empirical
+2.5th–97.5th percentile ranges, **not automatically Bayesian credible intervals**.
 
 ```{r order-occupancy}
-psi_otu_summary[[otu_col]] <- factor(
-  psi_otu_summary[[otu_col]],
-  levels = psi_otu_summary[[otu_col]]
-)
+psi_otu_summary <- psi_otu_summary %>%
+  dplyr::mutate(
+    otu_ordered = factor(
+      .data[[otu_col]],
+      levels = unique(as.character(.data[[otu_col]])[
+        order(.data$psi_mean)
+      ])
+    )
+  )
 ```
 
-The caterpillar plot is then constructed as follows.
-
 ```{r plot-occupancy, fig.width=10, fig.height=9}
-ggplot(
-  psi_otu_summary,
-  aes(
-    x = psi_mean,
-    y = .data[[otu_col]]
-  )
-) +
-  geom_point(
-    color = "darkgreen",
-    size = 2
+ggplot(psi_otu_summary, aes(x = psi_mean, y = otu_ordered)) +
+  geom_errorbar(
+    aes(xmin = psi_lwr, xmax = psi_upr),
+    orientation = "y", width = 0.25,
+    color = "darkgreen", linewidth = 0.6
   ) +
-  geom_errorbarh(
-    aes(
-      xmin = psi_lwr,
-      xmax = psi_upr
-    ),
-    height = 0.2,
-    color = "darkgreen"
+  geom_point(color = "darkgreen", size = 2.5) +
+  scale_x_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, by = 0.2),
+    expand = expansion(mult = c(0.01, 0.02))
   ) +
   labs(
-    title = "Caterpillar Plot: Occupancy Probability by OTU",
-    x = expression(
-      "Occupancy probability (" * psi * ")"
-    ),
+    title = "Estimated Occupancy Probability by OTU",
+    subtitle = "Mean and empirical 2.5th–97.5th percentile range",
+    x = expression("Occupancy probability (" * psi * ")"),
     y = "OTU"
   ) +
-  theme_minimal() +
+  theme_minimal(base_size = 12) +
   theme(
     axis.text.y = element_text(size = 8),
-    plot.title = element_text(hjust = 0.5)
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
   )
 ```
 
@@ -844,485 +860,94 @@ For example:
 These interpretations should be considered together with the biological and
 sampling context.
 
-# 15. GLLVM Latent Variables
+# 15. GLLVM Numerical Diagnostics and Automatic OTU Exclusion
 
-The GLLVM component provides a low-dimensional representation of multivariate
-community structure.
+The function returns a diagnostic row for each iteration, including optimizer
+convergence, maximum absolute gradient, Hessian eigenvalues and condition
+numbers, and the number of OTUs included or excluded from the GLLVM.
 
-With
+```{r gllvm-diagnostics, eval=FALSE}
+diag <- out$gllvm_diagnostics
 
-```r
-num_lv_c = 2
+# Summarize all iterations, including burn-in
+summary(diag)
+
+# Count numerical warning flags
+with(diag, data.frame(
+  gradient_failures = sum(max_abs_gradient > 1e-3, na.rm = TRUE),
+  ill_conditioned = sum(hessian_ill_conditioned, na.rm = TRUE),
+  non_positive_definite = sum(!hessian_positive_definite, na.rm = TRUE)
+))
+
+# Examine OTUs excluded from each iteration
+out$gllvm_excluded_otus
+
+# Show the screening history
+plot(diag$iteration, diag$n_excluded_otus,
+     type = "b", xlab = "Iteration",
+     ylab = "OTUs excluded from occupancy GLLVM")
 ```
 
-the model estimates two latent dimensions.
+A successful optimizer status and a gradient below the specified tolerance
+are not sufficient to establish stable uncertainty estimates. An extremely
+large Hessian condition number or very small eigenvalues can indicate weak
+identification. In particular, when the latent-variable scale is near zero,
+large loading parameters may be weakly identified.
 
-The site coordinates are stored in:
+The automatic exclusion rule targets constant augmented occupancy columns;
+it does not directly diagnose or eliminate latent-loading identification
+problems. Interpret estimated loading standard errors cautiously when the
+Hessian is ill-conditioned.
 
-```r
-out$mean_lv_sites
+# 16. One-Dimensional GLLVM Latent Structure
+
+With `num_lv_c = 1`, the model has only `LV1`. A two-dimensional biplot is
+therefore inappropriate. Instead, inspect the available site scores and OTU
+loadings separately. Excluded OTUs do not have fitted GLLVM loadings in the
+iterations where they were excluded.
+
+```{r lv-structure, eval=FALSE}
+str(out$mean_lv_sites)
+str(out$mean_lv_species)
 ```
 
-and the species coordinates are stored in:
+The following plots are conditional on the returned summaries containing an
+`LV1` column. They avoid treating arbitrary columns as identifiers.
 
-```r
-out$mean_lv_species
-```
+```{r lv-one-dimensional, eval=TRUE, fig.width=9, fig.height=6}
+if (is.data.frame(out$mean_lv_sites) &&
+    "LV1" %in% names(out$mean_lv_sites)) {
+  site_lv <- out$mean_lv_sites
+  site_lv$label <- if (!is.null(rownames(site_lv)))
+    rownames(site_lv) else as.character(seq_len(nrow(site_lv)))
 
-The first two dimensions are denoted:
+  ggplot(site_lv, aes(x = reorder(label, LV1), y = LV1)) +
+    geom_point(color = "steelblue", size = 2) +
+    coord_flip() +
+    labs(x = "Site", y = "Latent score (LV1)",
+         title = "GLLVM Site Scores") +
+    theme_minimal()
+}
 
-```r
-LV1
-LV2
-```
+if (is.data.frame(out$mean_lv_species) &&
+    "LV1" %in% names(out$mean_lv_species)) {
+  species_lv <- out$mean_lv_species
+  species_lv$label <- if ("OTU" %in% names(species_lv))
+    as.character(species_lv$OTU) else if (!is.null(rownames(species_lv)))
+    rownames(species_lv) else as.character(seq_len(nrow(species_lv)))
 
-Before constructing a biplot, verify that these columns exist.
-
-# 16. GLLVM Latent-Variable Biplot
-
-## 16.1 Check the latent dimensions
-
-```{r biplot-check}
-required_lv <- c(
-  "LV1",
-  "LV2"
-)
-
-if (
-  is.null(out$mean_lv_sites) ||
-  is.null(out$mean_lv_species) ||
-  !all(
-    required_lv %in%
-      names(out$mean_lv_sites)
-  ) ||
-  !all(
-    required_lv %in%
-      names(out$mean_lv_species)
-  )
-) {
-
-  stop(
-    "The biplot requires LV1 and LV2 in both ",
-    "out$mean_lv_sites and out$mean_lv_species. ",
-    "Fit the model with num_lv_c = 2."
-  )
+  ggplot(species_lv, aes(x = reorder(label, LV1), y = LV1)) +
+    geom_point(color = "brown", size = 2) +
+    coord_flip() +
+    labs(x = "OTU", y = "Latent loading / coordinate (LV1)",
+         title = "GLLVM OTU Latent Coordinates") +
+    theme_minimal()
 }
 ```
 
-This check prevents the plotting code from continuing when fewer than two
-latent dimensions are available.
-
-## 16.2 Extract latent coordinates
-
-```{r biplot-coordinates}
-site_mat <- as.matrix(
-  out$mean_lv_sites[
-    ,
-    required_lv,
-    drop = FALSE
-  ]
-)
-
-species_mat <- as.matrix(
-  out$mean_lv_species[
-    ,
-    required_lv,
-    drop = FALSE
-  ]
-)
-```
-
-`site_mat` contains the coordinates for samples or sites.
-
-`species_mat` contains the corresponding taxon coordinates.
-
-# 17. Obtaining Robust Site and OTU Labels
-
-The latent-variable output should not be assumed to contain the original sample
-metadata columns.
-
-For example, code such as
-
-```r
-out$mean_lv_sites$Sampling.area.Name
-```
-
-can fail when `Sampling.area.Name` is not stored in the latent-variable output.
-
-A more robust strategy is to search for available identifier columns and then
-fall back to row names or generated labels.
-
-```{r biplot-labels}
-
-# ------------------------------------------------------------
-# Identify possible ID columns
-# ------------------------------------------------------------
-
-site_id_candidates <- setdiff(
-  names(out$mean_lv_sites),
-  required_lv
-)
-
-species_id_candidates <- setdiff(
-  names(out$mean_lv_species),
-  required_lv
-)
-
-# ------------------------------------------------------------
-# Site/sample labels
-# ------------------------------------------------------------
-
-if (length(site_id_candidates) > 0) {
-
-  site_labels <- as.character(
-    out$mean_lv_sites[[site_id_candidates[1]]]
-  )
-
-} else if (
-  !is.null(rownames(out$mean_lv_sites)) &&
-  length(rownames(out$mean_lv_sites)) == nrow(site_mat)
-) {
-
-  site_labels <- rownames(out$mean_lv_sites)
-
-} else {
-
-  site_labels <- paste0(
-    "Sample_",
-    seq_len(nrow(site_mat))
-  )
-}
-
-# ------------------------------------------------------------
-# Species/OTU labels
-# ------------------------------------------------------------
-
-if ("OTU" %in% names(out$mean_lv_species)) {
-
-  species_labels <- as.character(
-    out$mean_lv_species$OTU
-  )
-
-} else if (length(species_id_candidates) > 0) {
-
-  species_labels <- as.character(
-    out$mean_lv_species[[species_id_candidates[1]]]
-  )
-
-} else if (
-  !is.null(rownames(out$mean_lv_species)) &&
-  length(rownames(out$mean_lv_species)) == nrow(species_mat)
-) {
-
-  species_labels <- rownames(out$mean_lv_species)
-
-} else {
-
-  species_labels <- paste0(
-    "OTU_",
-    seq_len(nrow(species_mat))
-  )
-}
-```
-
-```{r label-checks}
-if (
-  length(site_labels) !=
-    nrow(site_mat)
-) {
-
-  site_labels <- paste0(
-    "Sample_",
-    seq_len(nrow(site_mat))
-  )
-}
-
-if (
-  length(species_labels) !=
-    nrow(species_mat)
-) {
-
-  species_labels <- paste0(
-    "OTU_",
-    seq_len(nrow(species_mat))
-  )
-}
-```
-
-This makes the plotting procedure more robust to changes in the structure of
-the model output.
-
-# 18. Scaling the Biplot
-
-Site scores and taxon scores may naturally occupy different numerical ranges.
-
-Plotting the unscaled values can therefore cause one set of coordinates to
-dominate the figure.
-
-A common symmetric rescaling is used here.
-
-First calculate the maximum Euclidean radius of the site scores:
-
-\[
-R_{\mathrm{site}}
-=
-\max_i
-\sqrt{
-LV1_i^2 + LV2_i^2
-}.
-\]
-
-Similarly, for species:
-
-\[
-R_{\mathrm{species}}
-=
-\max_k
-\sqrt{
-LV1_k^2 + LV2_k^2
-}.
-\]
-
-```{r biplot-radii}
-site_radius <- max(
-  sqrt(
-    rowSums(site_mat^2)
-  ),
-  na.rm = TRUE
-)
-
-species_radius <- max(
-  sqrt(
-    rowSums(species_mat^2)
-  ),
-  na.rm = TRUE
-)
-```
-
-The common scaling factor is
-
-\[
-c
-=
-\sqrt{
-\frac{
-R_{\mathrm{site}}
-}{
-R_{\mathrm{species}}
-}
-}.
-\]
-
-```{r biplot-scale-factor}
-if (
-  is.finite(site_radius) &&
-  is.finite(species_radius) &&
-  site_radius > 0 &&
-  species_radius > 0
-) {
-
-  scale_factor <- sqrt(
-    site_radius /
-      species_radius
-  )
-
-} else {
-
-  scale_factor <- 1
-}
-```
-
-Site scores and species scores are then transformed symmetrically:
-
-\[
-\mathbf{u}^{*}
-=
-\frac{\mathbf{u}}{c},
-\]
-
-and
-
-\[
-\boldsymbol{\lambda}^{*}
-=
-c\boldsymbol{\lambda}.
-\]
-
-```{r biplot-scaling}
-scaled_sites <-
-  site_mat / scale_factor
-
-scaled_species <-
-  species_mat * scale_factor
-```
-
-This scaling is primarily for visualization. It does not refit the model or
-change the underlying fitted latent structure.
-
-# 19. Construct Biplot Data
-
-Create plotting data frames for sites and species.
-
-```{r biplot-data}
-scaled_sites_df <- data.frame(
-  Site = site_labels,
-  LV1 = scaled_sites[, 1],
-  LV2 = scaled_sites[, 2],
-  stringsAsFactors = FALSE
-)
-
-scaled_species_df <- data.frame(
-  OTU = species_labels,
-  LV1 = scaled_species[, 1],
-  LV2 = scaled_species[, 2],
-  stringsAsFactors = FALSE
-)
-```
-
-The resulting objects can be inspected before plotting.
-
-```{r inspect-biplot-data}
-head(scaled_sites_df)
-
-head(scaled_species_df)
-```
-
-# 20. Plot the GLLVM Latent Space
-
-```{r biplot, fig.width=10, fig.height=9}
-ggplot() +
-
-  geom_point(
-    data = scaled_sites_df,
-    aes(
-      x = LV1,
-      y = LV2
-    ),
-    color = "blue",
-    size = 2
-  ) +
-
-  geom_text(
-    data = scaled_sites_df,
-    aes(
-      x = LV1,
-      y = LV2,
-      label = Site
-    ),
-    color = "blue",
-    size = 2.5,
-    vjust = -0.5
-  ) +
-
-  geom_segment(
-    data = scaled_species_df,
-    aes(
-      x = 0,
-      y = 0,
-      xend = LV1,
-      yend = LV2
-    ),
-    arrow = grid::arrow(
-      length =
-        grid::unit(
-          0.2,
-          "cm"
-        )
-    ),
-    color = "brown",
-    alpha = 0.8
-  ) +
-
-  geom_text(
-    data = scaled_species_df,
-    aes(
-      x = LV1,
-      y = LV2,
-      label = OTU
-    ),
-    color = "brown",
-    size = 3,
-    vjust = -0.5
-  ) +
-
-  geom_hline(
-    yintercept = 0,
-    linetype = "dashed",
-    linewidth = 0.3
-  ) +
-
-  geom_vline(
-    xintercept = 0,
-    linetype = "dashed",
-    linewidth = 0.3
-  ) +
-
-  coord_equal() +
-
-  labs(
-    x = "Latent Variable 1",
-    y = "Latent Variable 2",
-    title =
-      "GLLVM Latent Variable Biplot"
-  ) +
-
-  theme_minimal()
-```
-
-# 21. Interpreting the GLLVM Biplot
-
-The biplot provides a graphical representation of multivariate structure in the
-community.
-
-## 21.1 Sample points
-
-Blue points represent samples or sites.
-
-Samples positioned close together in latent space have relatively similar
-latent community profiles.
-
-Samples located far apart differ more strongly along the latent dimensions.
-
-Clusters of samples can therefore indicate groups with similar residual
-community composition.
-
-## 21.2 OTU arrows
-
-Brown arrows represent taxa.
-
-The direction of an arrow describes the direction in latent space associated
-with that taxon's score or loading.
-
-The length of an arrow reflects the magnitude of its representation in the
-displayed latent dimensions after the plotting rescaling.
-
-Taxa with arrows pointing in similar directions have similar patterns with
-respect to these latent dimensions.
-
-Taxa pointing in opposite directions exhibit contrasting patterns along the
-displayed latent space.
-
-## 21.3 Samples and taxa together
-
-A sample positioned in the direction of a particular OTU arrow is associated
-with a relatively stronger position along the latent dimensions represented by
-that taxon.
-
-However, the biplot should not automatically be interpreted as evidence of
-direct ecological interactions among taxa.
-
-Latent associations can arise from:
-
-- unmeasured environmental gradients;
-- shared habitat preferences;
-- temporal variation;
-- spatial structure;
-- sampling effects;
-- biological associations; or
-- other residual sources of community dependence.
-
-The biplot therefore describes multivariate structure rather than establishing
-causal relationships.
+A one-dimensional latent score describes residual community variation along
+one fitted axis; its sign is arbitrary. It does not by itself establish
+positive or negative ecological interactions between OTUs.
 
 # 22. Relationship Between Occupancy, Detection, and Latent Structure
 
@@ -1451,23 +1076,11 @@ Possible steps include:
 - checking whether the selected latent-variable dimension is supported by the
   available data.
 
-## 24.3 `LV1` or `LV2` is missing
+## 24.3 Latent-variable plots cannot be constructed
 
-The biplot requires two latent dimensions.
-
-Fit the model using:
-
-```r
-num_lv_c = 2
-```
-
-and confirm:
-
-```r
-names(out$mean_lv_sites)
-
-names(out$mean_lv_species)
-```
+The example uses `num_lv_c = 1`. Inspect `names(out$mean_lv_sites)` and
+`names(out$mean_lv_species)` before plotting. A two-dimensional biplot is not
+available from a one-latent-variable fit.
 
 ## 24.4 Site labels have length zero
 
@@ -1491,15 +1104,15 @@ A practical workflow for `FitModel_gllvm()` is:
 7. Choose the number of latent variables.
 8. Fit the repeated models.
 9. Remove the specified burn-in iterations.
-10. Verify how many successful iterations remain.
+10. Verify how many successful iterations remain and inspect excluded OTUs and Hessian diagnostics.
 11. Transform occupancy predictors to probabilities using the correct inverse
     link.
 12. Transform detection predictors using the complementary log-log inverse
     link.
 13. Summarize occupancy and detection by OTU.
 14. Inspect uncertainty across retained iterations.
-15. Examine latent-variable site and taxon scores.
-16. Construct the GLLVM biplot.
+15. Examine one-dimensional latent-variable site and taxon scores.
+16. Construct one-dimensional score and loading plots.
 17. Interpret occupancy, detection, abundance, and latent structure jointly.
 18. Report the model specification and fitting settings.
 
@@ -1507,7 +1120,7 @@ A practical workflow for `FitModel_gllvm()` is:
 
 The complete workflow can be summarized as follows.
 
-```{r complete-example, eval=FALSE}
+```{r complete-example, eval=TRUE}
 library(eDNAModel)
 library(phyloseq)
 library(dplyr)
@@ -1542,7 +1155,12 @@ out <- FitModel_gllvm(
 
   burn_in = 10,
 
-  num_lv_c = 2
+  num_lv_c = 1,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 0,
+  gllvm_excluded_prior = c(1, 1),
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 1e-3
 )
 
 # ---------------------------
@@ -1677,7 +1295,9 @@ For the example in this vignette:
 Site variable: Name
 Occupancy covariate: Samplingmonth
 Abundance family: Poisson
-Number of latent variables: 2
+Number of latent variables: 1
+Automatic OTU exclusion: enabled
+Exclusion threshold: 0 occupied/unoccupied sites
 Number of iterations: 50
 Burn-in: 10
 ```
@@ -1724,9 +1344,10 @@ modelled separately using an appropriate count distribution.
 
 The GLLVM component complements these taxon-specific quantities by providing a
 low-dimensional representation of residual multivariate community structure.
-With two latent variables, site scores and taxon scores can be displayed
-together in a biplot, facilitating exploration of similarities among samples
-and taxa.
+With one latent variable, site scores and OTU loadings can be displayed
+along a single axis. The automatic screening step excludes constant occupancy
+columns from the GLLVM while retaining their OTUs in the remaining model
+components; numerical diagnostics must still be checked.
 
 The occupancy and detection caterpillar plots provide complementary
 taxon-specific summaries. A species may have high estimated occupancy but low

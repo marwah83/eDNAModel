@@ -949,6 +949,123 @@ A one-dimensional latent score describes residual community variation along
 one fitted axis; its sign is arbitrary. It does not by itself establish
 positive or negative ecological interactions between OTUs.
 
+## 16.1 Optional LV1--LV2 biplot (two latent variables)
+
+A two-dimensional biplot requires a **separate fit with `num_lv_c = 2`**.
+The primary example above uses `num_lv_c = 1` and cannot supply `LV2`.
+Because the two-dimensional fit may be less numerically stable, inspect its
+convergence, gradient and Hessian diagnostics before interpreting the biplot.
+
+```{r fit-two-lv, eval=TRUE}
+out_lv2 <- FitModel_gllvm(
+  phyloseq = physeq_one,
+  site_col = "Name",
+  abundance_rhs = (1 | Samplingmonth / OTU) + (1 | OTU),
+  occupancy_covars = "Samplingmonth",
+  abundance_family = "poisson",
+  n_iter = 50,
+  burn_in = 10,
+  num_lv_c = 2,
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 1e-3,
+  gllvm_condition_tol = 1e8,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 0,
+  gllvm_excluded_prior = c(1, 1)
+)
+
+# Inspect the available diagnostic columns and fit quality
+names(out_lv2$gllvm_diagnostics)
+summary(out_lv2$gllvm_diagnostics)
+```
+
+The following code draws site scores in blue and OTU loadings as brown arrows.
+It uses row names for labels when available and otherwise constructs generic
+labels. The plotting scale balances the two sets of coordinates without
+changing the fitted model. The site and OTU coordinates must correspond to
+the same fitted latent axes; do not combine coordinates from different fits.
+
+```{r lv1-lv2-biplot, eval=TRUE, fig.width=10, fig.height=9}
+site_df <- as.data.frame(out_lv2$mean_lv_sites)
+otu_df  <- as.data.frame(out_lv2$mean_lv_species)
+
+required_lv <- c("LV1", "LV2")
+if (!all(required_lv %in% names(site_df)) ||
+    !all(required_lv %in% names(otu_df))) {
+  stop("Both site and OTU summaries must contain LV1 and LV2. Fit num_lv_c = 2.")
+}
+
+site_mat <- as.matrix(site_df[, required_lv, drop = FALSE])
+otu_mat  <- as.matrix(otu_df[, required_lv, drop = FALSE])
+if (!all(is.finite(site_mat)) || !all(is.finite(otu_mat))) {
+  stop("Non-finite latent coordinates found; inspect the model diagnostics.")
+}
+
+site_labels <- if ("Site" %in% names(site_df)) {
+  as.character(site_df$Site)
+} else if (!is.null(rownames(site_df))) {
+  rownames(site_df)
+} else {
+  paste0("Site_", seq_len(nrow(site_df)))
+}
+otu_labels <- if ("OTU" %in% names(otu_df)) {
+  as.character(otu_df$OTU)
+} else if (!is.null(rownames(otu_df))) {
+  rownames(otu_df)
+} else {
+  paste0("OTU_", seq_len(nrow(otu_df)))
+}
+
+site_radius <- max(sqrt(rowSums(site_mat^2)))
+otu_radius  <- max(sqrt(rowSums(otu_mat^2)))
+scale_factor <- if (is.finite(site_radius) && is.finite(otu_radius) &&
+                    site_radius > 0 && otu_radius > 0) {
+  sqrt(site_radius / otu_radius)
+} else 1
+
+site_plot <- data.frame(
+  Site = site_labels,
+  LV1 = site_mat[, 1] / scale_factor,
+  LV2 = site_mat[, 2] / scale_factor
+)
+otu_plot <- data.frame(
+  OTU = otu_labels,
+  LV1 = otu_mat[, 1] * scale_factor,
+  LV2 = otu_mat[, 2] * scale_factor
+)
+
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey75") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey75") +
+  geom_point(data = site_plot, aes(LV1, LV2),
+             color = "steelblue", size = 2.5) +
+  geom_text(data = site_plot, aes(LV1, LV2, label = Site),
+            color = "steelblue", size = 2.8, vjust = -0.6,
+            check_overlap = TRUE) +
+  geom_segment(data = otu_plot,
+               aes(x = 0, y = 0, xend = LV1, yend = LV2),
+               arrow = grid::arrow(length = grid::unit(0.15, "cm")),
+               color = "sienna4", alpha = 0.7) +
+  geom_text(data = otu_plot, aes(LV1, LV2, label = OTU),
+            color = "sienna4", size = 2.7, vjust = -0.5,
+            check_overlap = TRUE) +
+  coord_equal() +
+  labs(title = "GLLVM latent-variable biplot",
+       subtitle = "Site scores (blue) and OTU loadings (brown)",
+       x = "Latent variable 1 (LV1)",
+       y = "Latent variable 2 (LV2)") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+**Interpretation.** Nearby sites have similar fitted positions in the
+residual latent space. OTU arrows show the direction and relative magnitude
+of loadings on LV1 and LV2. These associations do not establish direct
+biological interactions. Axes can change sign or rotate between fits, so
+averaged latent coordinates should only be interpreted when their orientation
+has been aligned consistently across iterations.
+
 # 22. Relationship Between Occupancy, Detection, and Latent Structure
 
 The three principal outputs provide complementary information.

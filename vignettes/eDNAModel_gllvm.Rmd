@@ -290,7 +290,7 @@ The following specification uses one unconstrained
 latent variable and automatically excludes OTUs with
 insufficient variation in augmented occupancy states.
 
-```{r fit-model, eval=FALSE}
+```{r fit-model, eval=TRUE}
 set.seed(123)
 
 out <- FitModel_gllvm(
@@ -502,7 +502,7 @@ out$gllvm_separation[[1]]
 
 The exclusion history can be summarized using:
 
-```{r exclusion-history, eval=FALSE}
+```{r exclusion-history, eval=TRUE}
 excluded_summary <- data.frame(
   iteration = seq_along(out$gllvm_excluded_otus),
 
@@ -698,7 +698,7 @@ diag %>%
 
 An optional second fit can be performed using:
 
-```{r fit-two-lv, eval=FALSE}
+```{r fit-two-lv, eval=TRUE}
 set.seed(123)
 
 out_lv2 <- FitModel_gllvm(
@@ -732,7 +732,7 @@ out_lv2 <- FitModel_gllvm(
 
 ## 11.1 Compare convergence
 
-```{r compare-convergence, eval=FALSE}
+```{r compare-convergence, eval=TRUE}
 compare_gllvm <- function(x, label) {
 
   d <- x$gllvm_diagnostics
@@ -807,7 +807,7 @@ on the logit linear-predictor scale.
 
 They must be transformed using `plogis()`.
 
-```{r occupancy-data, eval=FALSE}
+```{r occupancy-data, eval=TRUE}
 psi_draws <- dplyr::bind_rows(
   out$psi_list
 )
@@ -822,7 +822,7 @@ head(psi_draws)
 
 ## 12.1 OTU-specific occupancy summaries
 
-```{r occupancy-summary, eval=FALSE}
+```{r occupancy-summary, eval=TRUE}
 psi_otu_summary <- psi_draws %>%
   group_by(OTU) %>%
   summarise(
@@ -860,7 +860,7 @@ credible intervals.
 
 # 13. Occupancy Caterpillar Plot
 
-```{r occupancy-plot, eval=FALSE, fig.width=10, fig.height=9}
+```{r occupancy-plot, eval=TRUE, fig.width=10, fig.height=9}
 psi_otu_summary <- psi_otu_summary %>%
   mutate(
     otu_ordered = factor(
@@ -917,7 +917,7 @@ p
 
 The correct transformation is:
 
-```{r detection-data, eval=FALSE}
+```{r detection-data, eval=TRUE}
 p_detect_draws <- dplyr::bind_rows(
   out$p_detect_list
 )
@@ -938,7 +938,7 @@ are different and use the logit inverse link.
 
 ## 14.1 OTU-specific detection summaries
 
-```{r detection-summary, eval=FALSE}
+```{r detection-summary, eval=TRUE}
 p_detect_otu_summary <- p_detect_draws %>%
   group_by(OTU) %>%
   summarise(
@@ -975,7 +975,7 @@ head(p_detect_otu_summary)
 
 # 15. Detection Caterpillar Plot
 
-```{r detection-plot, eval=FALSE, fig.width=10, fig.height=9}
+```{r detection-plot, eval=TRUE, fig.width=10, fig.height=9}
 p_detect_otu_summary <- p_detect_otu_summary %>%
   mutate(
     otu_ordered = factor(
@@ -1070,7 +1070,7 @@ names(out$mean_lv_species)
 
 ## 17.1 Site latent scores
 
-```{r site-lv-plot, eval=FALSE, fig.width=9, fig.height=7}
+```{r site-lv-plot, eval=TRUE, fig.width=9, fig.height=7}
 site_lv <- as.data.frame(out$mean_lv_sites)
 
 if ("LV1" %in% names(site_lv)) {
@@ -1101,7 +1101,7 @@ if ("LV1" %in% names(site_lv)) {
 
 ## 17.2 OTU latent loadings
 
-```{r otu-lv-plot, eval=FALSE, fig.width=9, fig.height=7}
+```{r otu-lv-plot, eval=TRUE, fig.width=9, fig.height=7}
 otu_lv <- as.data.frame(out$mean_lv_species)
 
 if ("LV1" %in% names(otu_lv)) {
@@ -1151,7 +1151,7 @@ The following plot should only be interpreted when
 the latent axes have been aligned consistently
 across retained iterations.
 
-```{r two-dimensional-biplot, eval=FALSE, fig.width=10, fig.height=9}
+```{r two-dimensional-biplot, eval=TRUE, fig.width=10, fig.height=9}
 site_df <- as.data.frame(
   out_lv2$mean_lv_sites
 )

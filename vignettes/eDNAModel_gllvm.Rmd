@@ -24,73 +24,48 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r load-packages, message=FALSE, warning=FALSE}
-library(phyloseq)
-library(Matrix)
-library(eDNAModel)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(pheatmap)
-library(tibble)
-library(gllvm)
-library(glmmTMB)
-library(reshape2)
-library(grid)
-```
-
 # 1. Introduction
 
-Environmental DNA (eDNA) metabarcoding data provide an increasingly important
-source of information for biodiversity monitoring. However, interpretation of
-eDNA observations is complicated by imperfect detection, variation in
-sequencing abundance, differences among taxa, and multivariate dependence among
-species.
+Environmental DNA (eDNA) metabarcoding data provide valuable
+information for biodiversity monitoring. However, interpreting
+eDNA observations is challenging because of imperfect detection,
+variation in sequencing abundance, differences among taxa,
+and dependence among species.
 
-An observed zero does not necessarily imply that a taxon is absent from the
-sampled environment. A species may be present but fail to be detected, or it
-may be detected inconsistently because of biological, environmental, sampling,
-or laboratory processes.
+An observed zero does not necessarily indicate ecological absence.
+A species may be present but fail to be captured or detected
+during the sampling and laboratory processes.
 
-The `eDNAModel` package provides tools for modelling these different components
-of eDNA data.
+The `eDNAModel` package provides a framework for separating
+occupancy, detection, and abundance processes.
 
-This vignette demonstrates the workflow implemented in `FitModel_gllvm()`.
-The function combines occupancy and detection modelling with a Generalized
-Linear Latent Variable Model (GLLVM) representation of multivariate community
-structure.
+This vignette demonstrates `FitModel_gllvm()`, which combines
+hierarchical occupancy and detection modelling with a
+Generalized Linear Latent Variable Model (GLLVM).
 
-The workflow demonstrated here includes:
+The workflow includes:
 
-1. loading a `phyloseq` object;
-2. fitting the model using `FitModel_gllvm()`;
-3. obtaining repeated model fits;
-4. discarding initial iterations using a burn-in period;
-5. estimating OTU-specific occupancy probabilities;
-6. estimating OTU-specific detection probabilities;
-7. constructing uncertainty intervals;
-8. visualizing occupancy probabilities using caterpillar plots;
-9. visualizing detection probabilities using caterpillar plots; and
-10. diagnosing GLLVM convergence and automatically excluded OTUs; and
-11. examining the one-dimensional GLLVM latent structure.
+1. Loading and inspecting a phyloseq dataset.
+2. Specifying occupancy and abundance models.
+3. Fitting the model with one latent variable.
+4. Automatically screening OTUs for occupancy separation.
+5. Examining GLLVM numerical convergence.
+6. Estimating occupancy probabilities.
+7. Estimating detection probabilities.
+8. Constructing OTU-specific caterpillar plots.
+9. Examining GLLVM latent-variable scores and loadings.
+10. Optionally fitting a two-dimensional GLLVM.
 
-The example uses the **Marine Invasive species Trondheim** dataset distributed
-with the `eDNAModel` package.
+The example uses the **Marine Invasive species Trondheim**
+dataset distributed with `eDNAModel`.
 
 # 2. Conceptual Model
 
-The modelling framework separates several processes that can contribute to
-variation in eDNA observations.
+The modelling framework distinguishes three processes:
 
-For taxon \(k\), site or sampling unit \(i\), and observation \(j\), the
-framework distinguishes:
-
-- occupancy;
-- detection or capture; and
-- observed abundance.
-
-This distinction is important because absence, non-detection, and low abundance
-are not necessarily equivalent ecological processes.
+- Occupancy: whether a taxon is present at a site.
+- Detection or capture: whether a present taxon is observed.
+- Abundance: variation in the observed count process.
 
 ## 2.1 Occupancy
 
@@ -102,161 +77,180 @@ Z_{ik} \in \{0,1\}
 
 denote the latent occupancy state of OTU \(k\) at site \(i\).
 
-The occupancy state can be represented as
+The occupancy model is
 
 \[
-Z_{ik} \sim \mathrm{Bernoulli}(\psi_{ik}),
+Z_{ik} \sim \operatorname{Bernoulli}(\psi_{ik}),
 \]
 
 where
 
 \[
-\psi_{ik} = P(Z_{ik}=1)
+\psi_{ik}=P(Z_{ik}=1).
 \]
 
-is the probability that OTU \(k\) occupies site \(i\).
-
-The occupancy component can depend on environmental, temporal, spatial, or
-sampling covariates.
-
-For example, an occupancy linear predictor can be written as
+A logistic occupancy model can be expressed as
 
 \[
-\mathrm{logit}(\psi_{ik})
+\operatorname{logit}(\psi_{ik})
 =
 \eta^{(\psi)}_{ik}.
 \]
 
-The corresponding occupancy probability is
+Therefore,
 
 \[
 \psi_{ik}
 =
-\frac{\exp(\eta^{(\psi)}_{ik})}
-     {1+\exp(\eta^{(\psi)}_{ik})}.
+\frac{1}{1+\exp(-\eta^{(\psi)}_{ik})}.
 \]
 
-In R, this transformation is performed using `plogis()`.
+In R, occupancy linear predictors are transformed using:
 
-## 2.2 Detection or capture
+```{r occupancy-link-example}
+eta_example <- c(-2, 0, 2)
 
-Conditional on occurrence, a taxon may or may not be detected.
-
-Let
-
-\[
-D_{ik} \in \{0,1\}
-\]
-
-represent detection of taxon \(k\).
-
-The detection probability can be denoted by
-
-\[
-p_{ik}=P(D_{ik}=1 \mid Z_{ik}=1).
-\]
-
-In the output used in this vignette, the detection linear predictor is
-transformed using a complementary log-log inverse link:
-
-\[
-p_{ik}
-=
-1-\exp\{-\exp(\eta^{(p)}_{ik})\}.
-\]
-
-Therefore, the corresponding R transformation is
-
-```r
-1 - exp(-exp(eta))
+stats::plogis(eta_example)
 ```
 
-rather than `plogis(eta)`.
+## 2.2 Detection and capture
 
-This distinction is important when transforming model predictions to the
-probability scale.
+Conditional on occupancy, a taxon may or may not be captured
+or detected.
 
-## 2.3 Abundance
+The hierarchical model distinguishes latent capture indicators
+from the probability of observing a positive read count.
 
-Conditional abundance represents variation in observed taxon counts.
+The returned object contains two relevant prediction components:
 
-A generic abundance model can be represented as
+- `capture_list`: capture-model linear predictors on the logit scale.
+- `p_detect_list`: detection predictors represented on the
+  complementary log-log scale.
+
+For the capture component,
 
 \[
-Y_{ik} \sim F(\mu_{ik}),
+p^{(c)} = \operatorname{logit}^{-1}(\eta^{(c)}).
 \]
 
-where \(F\) denotes the selected count distribution.
+The corresponding R transformation is:
 
-For a log-linked model,
+```r
+plogis(eta)
+```
+
+For `p_detect_list`, the inverse complementary log-log
+transformation is
 
 \[
-\log(\mu_{ik})
+p^{(d)}
 =
-\eta^{(\mu)}_{ik}.
+1-\exp\{-\exp(\eta^{(d)})\}.
 \]
 
-The current example uses
+A numerically convenient R implementation is:
+
+```r
+-expm1(-exp(eta))
+```
+
+These transformations must not be interchanged.
+
+## 2.3 Conditional abundance
+
+The abundance component models variation in observed
+taxon counts.
+
+For a Poisson abundance model,
+
+\[
+Y_{ijk}\mid\text{relevant latent states}
+\sim \operatorname{Poisson}(\mu_{ijk}),
+\]
+
+where the conditional mean has a log link:
+
+\[
+\log(\mu_{ijk})
+=
+\eta^{(\mu)}_{ijk}.
+\]
+
+The example uses:
 
 ```r
 abundance_family = "poisson"
 ```
 
-so the conditional abundance component is fitted using a Poisson distribution.
+# 3. Generalized Linear Latent Variable Models
 
-# 3. Why Use a GLLVM?
+A GLLVM represents residual multivariate community structure
+using a small number of latent variables.
 
-Community datasets contain many taxa measured simultaneously. Species may
-respond similarly to environmental conditions or may exhibit residual
-associations that are not explained by measured predictors.
-
-Generalized Linear Latent Variable Models provide a low-dimensional
-representation of this multivariate structure.
-
-Instead of modelling every possible pairwise association directly, a small
-number of latent variables can be introduced.
-
-Conceptually, the linear predictor for taxon \(k\) at site \(i\) can contain
+A generic occupancy predictor is
 
 \[
-\eta_{ik}
+\operatorname{logit}(\psi_{ik})
 =
-\mathbf{x}_{i}^{T}\boldsymbol{\beta}_{k}
+\mathbf{x}_i^\top\boldsymbol{\beta}_k
 +
-\mathbf{u}_{i}^{T}\boldsymbol{\lambda}_{k},
+\mathbf{u}_i^\top\boldsymbol{\lambda}_k,
 \]
 
 where:
 
-- \(\mathbf{x}_{i}\) contains observed predictors;
-- \(\boldsymbol{\beta}_{k}\) contains taxon-specific coefficients;
-- \(\mathbf{u}_{i}\) contains latent-variable scores for sites or samples;
-- \(\boldsymbol{\lambda}_{k}\) contains taxon loadings.
+- \(\mathbf{x}_i\) contains observed covariates.
+- \(\boldsymbol{\beta}_k\) contains taxon-specific coefficients.
+- \(\mathbf{u}_i\) contains latent-variable scores.
+- \(\boldsymbol{\lambda}_k\) contains taxon-specific loadings.
 
-The latent variables summarize residual multivariate structure that remains
-after accounting for measured predictors.
+The latent variables represent residual multivariate patterns
+not explained by the observed predictors.
 
-With one latent variable, site scores and taxon loadings can be displayed
-separately along a single axis. A two-dimensional biplot requires fitting
-at least two latent variables and is not used in this example.
+## 3.1 Updated latent-variable arguments
+
+The updated `FitModel_gllvm()` distinguishes two arguments:
+
+```r
+num_lv_c = 0
+num_lv = 1
+```
+
+`num_lv` specifies the number of unconstrained latent variables
+used to represent residual community structure.
+
+`num_lv_c` is retained separately for constrained latent
+variables. In the updated workflow demonstrated here,
+it is fixed at zero.
+
+For one residual latent variable:
+
+```r
+num_lv_c = 0
+num_lv = 1
+```
+
+For two residual latent variables:
+
+```r
+num_lv_c = 0
+num_lv = 2
+```
+
+Increasing `num_lv` introduces additional parameters and
+may increase numerical instability.
 
 # 4. Load Required Packages
-
-The main packages used in this vignette are:
 
 ```{r packages}
 library(eDNAModel)
 library(phyloseq)
 library(dplyr)
 library(ggplot2)
+library(tidyr)
 ```
 
-The example dataset is supplied directly with `eDNAModel`, so the vignette does
-not depend on a local file path.
-
-# 5. Load and Subset the Example Data
-
-Load the example data using:
+# 5. Load the Example Dataset
 
 ```{r load-data}
 data("physeq_new", package = "eDNAModel")
@@ -264,10 +258,7 @@ data("physeq_new", package = "eDNAModel")
 physeq_one <- physeq_new$`Marine Invasive species Trondheim`
 ```
 
-The resulting object is a `phyloseq` object containing the OTU abundance table
-and associated sample information.
-
-The object can be inspected using:
+Inspect the object:
 
 ```{r inspect-data}
 physeq_one
@@ -279,7 +270,7 @@ phyloseq::nsamples(physeq_one)
 phyloseq::sample_variables(physeq_one)
 ```
 
-The first rows of the sample metadata can be examined with:
+Inspect sample metadata:
 
 ```{r inspect-metadata}
 head(
@@ -289,21 +280,19 @@ head(
 )
 ```
 
-Before fitting the model, users should verify that the variables referenced in
-the model specification are present in the sample metadata.
+In this example, `Name` identifies the sampling site and
+`Samplingmonth` is used as an occupancy covariate and in
+the abundance random-effects structure.
 
-For the current analysis, the important variables include:
+# 6. Fit the Model
 
-- `Name`, used to identify sites or sampling units;
-- `Samplingmonth`, used as an occupancy covariate and in the abundance model;
-- OTU identifiers; and
-- observed taxon counts.
+The following specification uses one unconstrained
+latent variable and automatically excludes OTUs with
+insufficient variation in augmented occupancy states.
 
-# 6. Fit the Occupancy--Detection Model
+```{r fit-model, eval=FALSE}
+set.seed(123)
 
-The model is fitted using `FitModel_gllvm()`.
-
-```{r fit-model, echo=TRUE, eval=TRUE}
 out <- FitModel_gllvm(
   phyloseq = physeq_one,
 
@@ -319,51 +308,46 @@ out <- FitModel_gllvm(
 
   n_iter = 50,
   burn_in = 10,
-  num_lv_c = 1,
+
+  num_lv_c = 0,
+  num_lv = 1,
+
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 2,
+  gllvm_excluded_prior = c(1, 1),
+
   gllvm_n_init = 10,
   gllvm_gradient_tol = 1e-3,
-  gllvm_condition_tol = 1e8,
-  gllvm_auto_exclude = TRUE,
-  gllvm_min_occupied_sites = 0,
-  gllvm_excluded_prior = c(1, 1)
+  gllvm_condition_tol = 1e8
 )
 ```
 
-For package-vignette construction, this chunk may be set to `eval=FALSE` if the
-model is computationally expensive. When performing an actual analysis, run
-the code normally.
+The fitting chunk is not evaluated automatically because
+the repeated-fitting procedure can be computationally expensive.
+
+Run it interactively before executing the analysis sections
+below, or load a previously saved fitted object.
+
+```{r load-saved-fit, eval=FALSE}
+# Optional: save a fitted model
+saveRDS(out, "FitModel_gllvm_lv1.rds")
+
+# Optional: reload a fitted model
+out <- readRDS("FitModel_gllvm_lv1.rds")
+```
 
 # 7. Understanding the Model Specification
 
-The arguments supplied to `FitModel_gllvm()` determine the structure of the
-model.
-
-## 7.1 `phyloseq`
-
-```r
-phyloseq = physeq_one
-```
-
-specifies the `phyloseq` object containing the community data and associated
-sample metadata.
-
-## 7.2 Site definition
+## 7.1 Site definition
 
 ```r
 site_col = "Name"
 ```
 
-defines the variable used as the site or sampling-unit identifier.
+Occupancy is defined relative to the unique sampling sites
+identified by `Name`.
 
-The scientific interpretation of the occupancy probability depends directly on
-this choice.
-
-With `Name` as the site identifier, occupancy is interpreted relative to the
-sampling units represented by `Name`.
-
-## 7.3 Abundance model
-
-The abundance model is specified as
+## 7.2 Abundance random effects
 
 ```r
 abundance_rhs =
@@ -371,152 +355,135 @@ abundance_rhs =
   (1 | OTU)
 ```
 
-This structure allows the abundance component to represent variation associated
-with sampling month and OTUs.
+The nested random-effects expression expands to
+sampling-month and sampling-month-by-OTU effects.
 
-The nested notation
+The additional OTU random intercept represents
+OTU-specific heterogeneity.
 
-```r
-Samplingmonth / OTU
-```
-
-represents hierarchical variation involving OTUs within sampling month, while
-
-```r
-(1 | OTU)
-```
-
-allows additional OTU-level heterogeneity.
-
-The precise interpretation of these random effects should always be considered
-relative to the sampling design and the implementation of the model.
-
-## 7.4 Occupancy covariate
-
-The model uses
+## 7.3 Occupancy covariates
 
 ```r
 occupancy_covars = "Samplingmonth"
 ```
 
-so sampling month is included as a predictor of occupancy.
+Sampling month is included as a predictor of occupancy.
 
-This allows estimated occurrence probabilities to vary according to temporal
-sampling conditions represented by `Samplingmonth`.
+The interpretation depends on whether `Samplingmonth`
+is encoded as a factor or a numeric variable.
 
-## 7.5 Abundance family
-
-The abundance family is
-
-```r
-abundance_family = "poisson"
-```
-
-which assumes a Poisson conditional count model.
-
-If substantial conditional overdispersion remains, an alternative count
-distribution may be appropriate when supported by the implementation and
-scientific context.
-
-## 7.6 Number of iterations
-
-The model uses
-
-```r
-n_iter = 50
-```
-
-which requests 50 repeated iterations of the modelling procedure.
-
-Repeated fitting allows uncertainty and variability in the fitted quantities to
-be summarized across retained iterations.
-
-## 7.7 Burn-in
-
-The argument
-
-```r
-burn_in = 10
-```
-
-indicates that the initial iterations are excluded from the summaries produced
-from retained fits.
-
-With
+## 7.4 Iterations and burn-in
 
 ```r
 n_iter = 50
 burn_in = 10
 ```
 
-the intended summaries are based on the post-burn-in successful iterations.
+The model runs 50 iterations, with the first 10 excluded
+from retained-iteration summaries.
 
-It is important to distinguish this repeated-fitting procedure from an MCMC
-posterior sampler unless the underlying implementation explicitly defines it as
-such. Consequently, the empirical quantiles calculated below describe
-variation across the retained model iterations.
+The resulting empirical quantiles should not automatically
+be interpreted as Bayesian posterior credible intervals.
 
-## 7.8 Number of latent variables and automatic screening
+## 7.5 Automatic OTU exclusion
 
-`num_lv_c = 1` requests one latent dimension. The model screens the current
-augmented occupancy matrix separately at each iteration. With
-`gllvm_auto_exclude = TRUE` and `gllvm_min_occupied_sites = 0`, OTUs occupied
-at all sites or absent from all sites are excluded **only from the GLLVM fit**.
-They remain in the capture, abundance, and latent-state updates.
+```r
+gllvm_auto_exclude = TRUE
+gllvm_min_occupied_sites = 2
+```
 
-For excluded OTUs, occupancy probabilities are approximated by an
-intercept-only smoothed estimate
+At each iteration, the function examines the augmented
+site-by-OTU occupancy matrix.
+
+For OTU \(k\), define
+
 \[
-\widehat\psi_k = \frac{n_{1k}+a}{n_k+a+b},
+n_{1k}=\sum_i Z_{ik}
 \]
-where `gllvm_excluded_prior = c(a, b)` defaults to `c(1, 1)`.
-This is a sensitivity-analysis approximation, not a joint GLLVM estimate.
-The excluded OTUs can change between iterations. Screening does not guarantee
-that the Hessian will be well-conditioned.
 
-`gllvm_n_init = 10` specifies multiple initializations and
-`gllvm_gradient_tol = 1e-3` specifies the gradient tolerance. The
-condition-number warning threshold is `gllvm_condition_tol = 1e8`.
+and
 
-# 8. Inspecting the Model Output
+\[
+n_{0k}=n_k-n_{1k}.
+\]
 
-After fitting, inspect the returned object before constructing figures.
+With `gllvm_min_occupied_sites = 2`, an OTU is excluded
+from the GLLVM fit if
+
+\[
+n_{1k}\leq 2
+\]
+
+or
+
+\[
+n_{0k}\leq 2.
+\]
+
+This screening avoids fitting the occupancy GLLVM to OTUs
+with very little occupancy variation.
+
+Importantly, the excluded OTUs remain in the other
+components of the hierarchical model.
+
+## 7.6 Occupancy estimates for excluded OTUs
+
+For excluded OTUs, the function uses a smoothed
+occupancy approximation:
+
+\[
+\widehat{\psi}_k
+=
+\frac{n_{1k}+a}{n_k+a+b},
+\]
+
+where
+
+```r
+gllvm_excluded_prior = c(a, b)
+```
+
+and the example uses \(a=b=1\).
+
+These values are not jointly estimated GLLVM occupancy
+predictions and should be distinguished from the
+predictions for included OTUs.
+
+# 8. Inspect the Model Output
+
+The following chunks require a fitted object named `out`.
 
 ```{r inspect-output, eval=FALSE}
 class(out)
 
 names(out)
+
+length(out$psi_list)
+
+length(out$p_detect_list)
+
+names(out$gllvm_diagnostics)
+
+out$gllvm_settings
 ```
 
-Several components are particularly useful for the visualizations in this
-vignette:
+The main outputs include:
 
-```{r important-output, eval=FALSE}
-out$psi_list
+- `psi_list`: occupancy linear predictors.
+- `capture_list`: capture-model linear predictors.
+- `p_detect_list`: detection linear predictors.
+- `gllvm_diagnostics`: iteration-level numerical diagnostics.
+- `gllvm_excluded_otus`: excluded OTUs by iteration.
+- `gllvm_separation`: occupancy separation diagnostics.
+- `mean_lv_sites`: summarized latent site scores.
+- `mean_lv_species`: summarized OTU latent coordinates.
 
-out$p_detect_list
+Inspect their structures before plotting:
 
-out$mean_lv_sites
-
-out$mean_lv_species
-```
-
-Conceptually:
-
-- `psi_list` contains retained occupancy linear predictors;
-- `p_detect_list` contains retained detection linear predictors;
-- `mean_lv_sites` contains averaged latent-variable coordinates for sites or
-  samples;
-- `mean_lv_species` contains averaged latent-variable coordinates or loadings
-  for taxa.
-
-Users should inspect the structure of these components before assuming that
-specific identifier columns are available.
-
-For example:
-
-```{r inspect-output-structure, eval=FALSE}
+```{r inspect-structures, eval=FALSE}
 str(out$psi_list, max.level = 1)
+
+str(out$capture_list, max.level = 1)
 
 str(out$p_detect_list, max.level = 1)
 
@@ -525,735 +492,216 @@ head(out$mean_lv_sites)
 head(out$mean_lv_species)
 ```
 
-# 9. Occupancy Probability
+# 9. Examine Automatic OTU Exclusion
 
-The occupancy output is stored on the linear-predictor scale.
+```{r exclusion-diagnostics, eval=FALSE}
+out$gllvm_excluded_otus[[1]]
 
-The first step is therefore to combine the retained iterations.
-
-```{r occupancy-data}
-otu_col <- "OTU"
-
-psi_draws <- dplyr::bind_rows(
-  out$psi_list
-)
+out$gllvm_separation[[1]]
 ```
 
-The occupancy predictor uses the logit scale, so it is transformed using
+The exclusion history can be summarized using:
 
-\[
-\psi
-=
-\frac{\exp(\eta)}
-     {1+\exp(\eta)}
-=
-\mathrm{logit}^{-1}(\eta).
-\]
+```{r exclusion-history, eval=FALSE}
+excluded_summary <- data.frame(
+  iteration = seq_along(out$gllvm_excluded_otus),
 
-In R:
-
-```{r occupancy-transform}
-psi_draws <- psi_draws %>%
-  dplyr::mutate(
-    psi = stats::plogis(.data$eta)
+  n_excluded = vapply(
+    out$gllvm_excluded_otus,
+    length,
+    integer(1)
   )
-```
-
-The resulting `psi` variable lies between 0 and 1.
-
-Values close to zero indicate low estimated occupancy probability, whereas
-values close to one indicate high estimated occupancy probability.
-
-# 10. Summarizing Occupancy by OTU
-
-Occupancy estimates can be summarized across sites and retained iterations for
-each OTU.
-
-```{r occupancy-summary}
-psi_otu_summary <- psi_draws %>%
-  dplyr::group_by(.data[[otu_col]]) %>%
-  dplyr::summarise(
-    psi_mean = mean(
-      .data$psi,
-      na.rm = TRUE
-    ),
-
-    psi_median = stats::median(
-      .data$psi,
-      na.rm = TRUE
-    ),
-
-    psi_lwr = stats::quantile(
-      .data$psi,
-      0.025,
-      na.rm = TRUE,
-      names = FALSE
-    ),
-
-    psi_upr = stats::quantile(
-      .data$psi,
-      0.975,
-      na.rm = TRUE,
-      names = FALSE
-    ),
-
-    .groups = "drop"
-  ) %>%
-  dplyr::arrange(.data$psi_mean)
-```
-
-For every OTU, this produces:
-
-- `psi_mean`: mean estimated occupancy probability;
-- `psi_median`: median estimated occupancy probability;
-- `psi_lwr`: 2.5th percentile;
-- `psi_upr`: 97.5th percentile.
-
-These lower and upper quantiles describe the empirical spread of the retained
-occupancy predictions represented in `psi_list`.
-
-They should therefore not automatically be described as Bayesian posterior
-credible intervals unless the fitted object is generated by a posterior
-sampling procedure with that interpretation.
-
-The results can be inspected using:
-
-```{r inspect-occupancy-summary}
-head(psi_otu_summary)
-
-summary(psi_otu_summary$psi_mean)
-```
-
-# 11. Occupancy Probability Caterpillar Plot
-
-OTUs are ordered by estimated mean occupancy. The intervals are empirical
-2.5th–97.5th percentile ranges, **not automatically Bayesian credible intervals**.
-
-```{r order-occupancy}
-psi_otu_summary <- psi_otu_summary %>%
-  dplyr::mutate(
-    otu_ordered = factor(
-      .data[[otu_col]],
-      levels = unique(as.character(.data[[otu_col]])[
-        order(.data$psi_mean)
-      ])
-    )
-  )
-```
-
-```{r plot-occupancy, fig.width=10, fig.height=9}
-ggplot(psi_otu_summary, aes(x = psi_mean, y = otu_ordered)) +
-  geom_errorbar(
-    aes(xmin = psi_lwr, xmax = psi_upr),
-    orientation = "y", width = 0.25,
-    color = "darkgreen", linewidth = 0.6
-  ) +
-  geom_point(color = "darkgreen", size = 2.5) +
-  scale_x_continuous(
-    limits = c(0, 1),
-    breaks = seq(0, 1, by = 0.2),
-    expand = expansion(mult = c(0.01, 0.02))
-  ) +
-  labs(
-    title = "Estimated Occupancy Probability by OTU",
-    subtitle = "Mean and empirical 2.5th–97.5th percentile range",
-    x = expression("Occupancy probability (" * psi * ")"),
-    y = "OTU"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    axis.text.y = element_text(size = 8),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5)
-  )
-```
-
-## 11.1 Interpreting the occupancy plot
-
-Each point represents the mean estimated occupancy probability for one OTU.
-
-The horizontal interval represents the 2.5th to 97.5th percentile range across
-the retained occupancy predictions.
-
-OTUs toward the right side of the figure have higher estimated occupancy
-probabilities.
-
-OTUs toward the left have lower estimated occupancy probabilities.
-
-Wide intervals indicate greater variation or uncertainty in the retained
-predictions, whereas narrow intervals indicate more stable estimates.
-
-Importantly, low occupancy should not automatically be interpreted as low
-detection. Occupancy and detection describe different components of the
-observation process.
-
-# 12. Detection Probability
-
-The detection predictions are stored in
-
-```r
-out$p_detect_list
-```
-
-The retained detection predictors are first combined.
-
-```{r detection-data}
-p_detect_draws <- dplyr::bind_rows(
-  out$p_detect_list
 )
-```
 
-In this output, `eta` is on the complementary log-log scale.
+head(excluded_summary)
 
-Therefore,
-
-\[
-\log[-\log(1-p)]
-=
-\eta.
-\]
-
-Solving for \(p\) gives
-
-\[
-p
-=
-1-\exp[-\exp(\eta)].
-\]
-
-The transformation is implemented as:
-
-```{r detection-transform}
-p_detect_draws <- p_detect_draws %>%
-  dplyr::mutate(
-    p_detect =
-      plogis(eta)
-  )
-```
-
-The resulting detection probabilities lie between 0 and 1.
-
-# 13. Summarizing Detection Probability by OTU
-
-Detection probabilities are summarized in the same way as occupancy
-probabilities.
-
-```{r detection-summary}
-p_detect_otu_summary <- p_detect_draws %>%
-  dplyr::group_by(.data[[otu_col]]) %>%
-  dplyr::summarise(
-    p_detect_mean = mean(
-      .data$p_detect,
-      na.rm = TRUE
-    ),
-
-    p_detect_median = stats::median(
-      .data$p_detect,
-      na.rm = TRUE
-    ),
-
-    p_detect_lwr = stats::quantile(
-      .data$p_detect,
-      0.025,
-      na.rm = TRUE,
-      names = FALSE
-    ),
-
-    p_detect_upr = stats::quantile(
-      .data$p_detect,
-      0.975,
-      na.rm = TRUE,
-      names = FALSE
-    ),
-
-    .groups = "drop"
-  ) %>%
-  dplyr::arrange(.data$p_detect_mean)
-```
-
-The resulting table contains taxon-specific estimates of:
-
-- mean detection probability;
-- median detection probability;
-- lower empirical quantile; and
-- upper empirical quantile.
-
-Inspect the results using:
-
-```{r inspect-detection-summary}
-head(p_detect_otu_summary)
-
-summary(
-  p_detect_otu_summary$p_detect_mean
-)
-```
-
-# 14. Detection Probability Caterpillar Plot
-
-Order the OTUs according to their estimated mean detection probability.
-
-```{r order-detection}
-p_detect_otu_summary[[otu_col]] <- factor(
-  p_detect_otu_summary[[otu_col]],
-  levels = p_detect_otu_summary[[otu_col]]
-)
-```
-
-Then construct the caterpillar plot.
-
-```{r plot-detection, fig.width=10, fig.height=9}
 ggplot(
-  p_detect_otu_summary,
-  aes(
-    x = p_detect_mean,
-    y = .data[[otu_col]]
-  )
+  excluded_summary,
+  aes(x = iteration, y = n_excluded)
 ) +
-  geom_point(
-    color = "steelblue",
-    size = 2
-  ) +
-  geom_errorbarh(
-    aes(
-      xmin = p_detect_lwr,
-      xmax = p_detect_upr
-    ),
-    height = 0.2,
-    color = "steelblue"
-  ) +
+  geom_line() +
+  geom_point() +
   labs(
-    title =
-      "Caterpillar Plot: Detection Probability by OTU",
-    x = "Detection Probability",
-    y = "OTU"
+    title = "OTUs Excluded from the Occupancy GLLVM",
+    x = "Iteration",
+    y = "Number of excluded OTUs"
   ) +
-  theme_minimal() +
-  theme(
-    axis.text.y = element_text(size = 8),
-    plot.title = element_text(hjust = 0.5)
-  )
+  theme_minimal()
 ```
 
-## 14.1 Interpreting the detection plot
+## 9.1 Example: OTUs detected at every site
 
-An OTU can have high occupancy but relatively low detection probability.
+In the Trondheim dataset, the OTUs `otu2` and `otu4`
+were observed at all 75 sampling sites in the analysis.
 
-Such a taxon may occur widely but be difficult to detect using the sampling or
-laboratory procedure.
+These OTUs have no observed site-level occupancy variation.
 
-Conversely, an OTU can have relatively restricted occupancy but high detection
-probability when present.
+Consequently, excluding them from the GLLVM occupancy
+component is expected.
 
-The two caterpillar plots should therefore be interpreted jointly.
+However, occupancy at every site does not imply
+perfect detection in every sampling replicate.
 
-For example:
+The site-level observed detection frequencies can be
+examined using:
 
-| Occupancy | Detection | Possible interpretation |
-|:---|:---|:---|
-| High | High | Widespread and readily detected |
-| High | Low | Widespread but difficult to detect |
-| Low | High | Restricted occurrence but readily detected when present |
-| Low | Low | Restricted occurrence and difficult detection |
+```{r observed-occupancy, eval=FALSE}
+observed_occupancy <- out$long_df %>%
+  group_by(Name, OTU) %>%
+  summarise(
+    detected = as.integer(any(y > 0)),
+    .groups = "drop"
+  ) %>%
+  group_by(OTU) %>%
+  summarise(
+    detected_sites = sum(detected),
+    total_sites = n(),
+    observed_proportion = mean(detected),
+    .groups = "drop"
+  )
 
-These interpretations should be considered together with the biological and
-sampling context.
+observed_occupancy %>%
+  filter(OTU %in% c("otu2", "otu4"))
+```
 
-# 15. GLLVM Numerical Diagnostics and Automatic OTU Exclusion
+If the analysis defines detection using a nonzero
+abundance threshold, replace `y > 0` with the same
+threshold used by the fitted model.
 
-The function returns a diagnostic row for each iteration, including optimizer
-convergence, maximum absolute gradient, Hessian eigenvalues and condition
-numbers, and the number of OTUs included or excluded from the GLLVM.
+# 10. GLLVM Numerical Diagnostics
+
+The updated function returns iteration-level numerical
+diagnostics for the occupancy GLLVM.
+
+A successful optimizer termination does not necessarily
+guarantee that the gradient and Hessian diagnostics
+are satisfactory.
 
 ```{r gllvm-diagnostics, eval=FALSE}
 diag <- out$gllvm_diagnostics
 
-# Summarize all iterations, including burn-in
+names(diag)
+
 summary(diag)
-
-# Count numerical warning flags
-with(diag, data.frame(
-  gradient_failures = sum(max_abs_gradient > 1e-3, na.rm = TRUE),
-  ill_conditioned = sum(hessian_ill_conditioned, na.rm = TRUE),
-  non_positive_definite = sum(!hessian_positive_definite, na.rm = TRUE)
-))
-
-# Examine OTUs excluded from each iteration
-out$gllvm_excluded_otus
-
-# Show the screening history
-plot(diag$iteration, diag$n_excluded_otus,
-     type = "b", xlab = "Iteration",
-     ylab = "OTUs excluded from occupancy GLLVM")
 ```
 
-A successful optimizer status and a gradient below the specified tolerance
-are not sufficient to establish stable uncertainty estimates. An extremely
-large Hessian condition number or very small eigenvalues can indicate weak
-identification. In particular, when the latent-variable scale is near zero,
-large loading parameters may be weakly identified.
+## 10.1 Gradient and Hessian checks
 
-The automatic exclusion rule targets constant augmented occupancy columns;
-it does not directly diagnose or eliminate latent-loading identification
-problems. Interpret estimated loading standard errors cautiously when the
-Hessian is ill-conditioned.
+```{r convergence-summary, eval=FALSE}
+gradient_tolerance <- 1e-3
 
-# 16. One-Dimensional GLLVM Latent Structure
+convergence_summary <- diag %>%
+  mutate(
+    gradient_ok =
+      is.finite(max_abs_gradient) &
+      max_abs_gradient <= gradient_tolerance,
 
-With `num_lv_c = 1`, the model has only `LV1`. A two-dimensional biplot is
-therefore inappropriate. Instead, inspect the available site scores and OTU
-loadings separately. Excluded OTUs do not have fitted GLLVM loadings in the
-iterations where they were excluded.
+    hessian_ok =
+      !is.na(hessian_positive_definite) &
+      hessian_positive_definite,
 
-```{r lv-structure, eval=FALSE}
-str(out$mean_lv_sites)
-str(out$mean_lv_species)
+    optimizer_ok =
+      optimizer_converged %in% TRUE,
+
+    fully_ok =
+      gradient_ok &
+      hessian_ok &
+      optimizer_ok
+  ) %>%
+  summarise(
+    n_iterations = n(),
+
+    optimizer_ok = sum(optimizer_ok),
+
+    gradient_ok = sum(gradient_ok),
+
+    hessian_ok = sum(hessian_ok),
+
+    fully_ok = sum(fully_ok)
+  )
+
+convergence_summary
 ```
 
-The following plots are conditional on the returned summaries containing an
-`LV1` column. They avoid treating arbitrary columns as identifiers.
+Inspect individual iterations:
 
-```{r lv-one-dimensional, eval=TRUE, fig.width=9, fig.height=6}
-if (is.data.frame(out$mean_lv_sites) &&
-    "LV1" %in% names(out$mean_lv_sites)) {
-  site_lv <- out$mean_lv_sites
-  site_lv$label <- if (!is.null(rownames(site_lv)))
-    rownames(site_lv) else as.character(seq_len(nrow(site_lv)))
-
-  ggplot(site_lv, aes(x = reorder(label, LV1), y = LV1)) +
-    geom_point(color = "steelblue", size = 2) +
-    coord_flip() +
-    labs(x = "Site", y = "Latent score (LV1)",
-         title = "GLLVM Site Scores") +
-    theme_minimal()
-}
-
-if (is.data.frame(out$mean_lv_species) &&
-    "LV1" %in% names(out$mean_lv_species)) {
-  species_lv <- out$mean_lv_species
-  species_lv$label <- if ("OTU" %in% names(species_lv))
-    as.character(species_lv$OTU) else if (!is.null(rownames(species_lv)))
-    rownames(species_lv) else as.character(seq_len(nrow(species_lv)))
-
-  ggplot(species_lv, aes(x = reorder(label, LV1), y = LV1)) +
-    geom_point(color = "brown", size = 2) +
-    coord_flip() +
-    labs(x = "OTU", y = "Latent loading / coordinate (LV1)",
-         title = "GLLVM OTU Latent Coordinates") +
-    theme_minimal()
-}
+```{r convergence-details, eval=FALSE}
+diag %>%
+  select(
+    iteration,
+    optimizer_converged,
+    max_abs_gradient,
+    hessian_min_eigen,
+    hessian_positive_definite,
+    hessian_condition_number,
+    numerical_ok,
+    n_gllvm_otus,
+    n_excluded_otus
+  ) %>%
+  print(n = Inf)
 ```
 
-A one-dimensional latent score describes residual community variation along
-one fitted axis; its sign is arbitrary. It does not by itself establish
-positive or negative ecological interactions between OTUs.
+## 10.2 Interpretation of Hessian eigenvalues
 
-## 16.1 Optional LV1--LV2 biplot (two latent variables)
+A positive-definite Hessian is often used as an
+indicator of local curvature and numerical stability.
 
-A two-dimensional biplot requires a **separate fit with `num_lv_c = 2`**.
-The primary example above uses `num_lv_c = 1` and cannot supply `LV2`.
-Because the two-dimensional fit may be less numerically stable, inspect its
-convergence, gradient and Hessian diagnostics before interpreting the biplot.
+However, small negative eigenvalues can arise from
+numerical precision.
 
-```{r fit-two-lv, eval=TRUE}
+For example, the one-latent-variable fit previously
+produced the following minimum-Hessian-eigenvalue
+summary:
+
+| Statistic | Value |
+|:---|---:|
+| Minimum | -2.09528e-12 |
+| Median | -8.272773e-14 |
+| Maximum | 3.118859e-09 |
+
+These values are extremely close to zero.
+
+They may reflect numerical differentiation or
+rounding error, but they can also indicate a nearly
+singular Hessian and weakly identified parameters.
+
+The magnitude and relative scale of the eigenvalues
+should therefore be investigated before treating
+such fits as reliable.
+
+```{r hessian-summary, eval=FALSE}
+diag %>%
+  summarise(
+    min_eigen = min(
+      hessian_min_eigen,
+      na.rm = TRUE
+    ),
+
+    median_eigen = median(
+      hessian_min_eigen,
+      na.rm = TRUE
+    ),
+
+    max_eigen = max(
+      hessian_min_eigen,
+      na.rm = TRUE
+    ),
+
+    median_condition = median(
+      hessian_condition_number,
+      na.rm = TRUE
+    )
+  )
+```
+
+# 11. Comparing One and Two Latent Variables
+
+An optional second fit can be performed using:
+
+```{r fit-two-lv, eval=FALSE}
+set.seed(123)
+
 out_lv2 <- FitModel_gllvm(
-  phyloseq = physeq_one,
-  site_col = "Name",
-  abundance_rhs = (1 | Samplingmonth / OTU) + (1 | OTU),
-  occupancy_covars = "Samplingmonth",
-  abundance_family = "poisson",
-  n_iter = 50,
-  burn_in = 10,
-  num_lv_c = 2,
-  gllvm_n_init = 10,
-  gllvm_gradient_tol = 1e-3,
-  gllvm_condition_tol = 1e8,
-  gllvm_auto_exclude = TRUE,
-  gllvm_min_occupied_sites = 0,
-  gllvm_excluded_prior = c(1, 1)
-)
-
-# Inspect the available diagnostic columns and fit quality
-names(out_lv2$gllvm_diagnostics)
-summary(out_lv2$gllvm_diagnostics)
-```
-
-The following code draws site scores in blue and OTU loadings as brown arrows.
-It uses row names for labels when available and otherwise constructs generic
-labels. The plotting scale balances the two sets of coordinates without
-changing the fitted model. The site and OTU coordinates must correspond to
-the same fitted latent axes; do not combine coordinates from different fits.
-
-```{r lv1-lv2-biplot, eval=TRUE, fig.width=10, fig.height=9}
-site_df <- as.data.frame(out_lv2$mean_lv_sites)
-otu_df  <- as.data.frame(out_lv2$mean_lv_species)
-
-required_lv <- c("LV1", "LV2")
-if (!all(required_lv %in% names(site_df)) ||
-    !all(required_lv %in% names(otu_df))) {
-  stop("Both site and OTU summaries must contain LV1 and LV2. Fit num_lv_c = 2.")
-}
-
-site_mat <- as.matrix(site_df[, required_lv, drop = FALSE])
-otu_mat  <- as.matrix(otu_df[, required_lv, drop = FALSE])
-if (!all(is.finite(site_mat)) || !all(is.finite(otu_mat))) {
-  stop("Non-finite latent coordinates found; inspect the model diagnostics.")
-}
-
-site_labels <- if ("Site" %in% names(site_df)) {
-  as.character(site_df$Site)
-} else if (!is.null(rownames(site_df))) {
-  rownames(site_df)
-} else {
-  paste0("Site_", seq_len(nrow(site_df)))
-}
-otu_labels <- if ("OTU" %in% names(otu_df)) {
-  as.character(otu_df$OTU)
-} else if (!is.null(rownames(otu_df))) {
-  rownames(otu_df)
-} else {
-  paste0("OTU_", seq_len(nrow(otu_df)))
-}
-
-site_radius <- max(sqrt(rowSums(site_mat^2)))
-otu_radius  <- max(sqrt(rowSums(otu_mat^2)))
-scale_factor <- if (is.finite(site_radius) && is.finite(otu_radius) &&
-                    site_radius > 0 && otu_radius > 0) {
-  sqrt(site_radius / otu_radius)
-} else 1
-
-site_plot <- data.frame(
-  Site = site_labels,
-  LV1 = site_mat[, 1] / scale_factor,
-  LV2 = site_mat[, 2] / scale_factor
-)
-otu_plot <- data.frame(
-  OTU = otu_labels,
-  LV1 = otu_mat[, 1] * scale_factor,
-  LV2 = otu_mat[, 2] * scale_factor
-)
-
-ggplot() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey75") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey75") +
-  geom_point(data = site_plot, aes(LV1, LV2),
-             color = "steelblue", size = 2.5) +
-  geom_text(data = site_plot, aes(LV1, LV2, label = Site),
-            color = "steelblue", size = 2.8, vjust = -0.6,
-            check_overlap = TRUE) +
-  geom_segment(data = otu_plot,
-               aes(x = 0, y = 0, xend = LV1, yend = LV2),
-               arrow = grid::arrow(length = grid::unit(0.15, "cm")),
-               color = "sienna4", alpha = 0.7) +
-  geom_text(data = otu_plot, aes(LV1, LV2, label = OTU),
-            color = "sienna4", size = 2.7, vjust = -0.5,
-            check_overlap = TRUE) +
-  coord_equal() +
-  labs(title = "GLLVM latent-variable biplot",
-       subtitle = "Site scores (blue) and OTU loadings (brown)",
-       x = "Latent variable 1 (LV1)",
-       y = "Latent variable 2 (LV2)") +
-  theme_minimal(base_size = 12) +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
-        plot.subtitle = element_text(hjust = 0.5))
-```
-
-**Interpretation.** Nearby sites have similar fitted positions in the
-residual latent space. OTU arrows show the direction and relative magnitude
-of loadings on LV1 and LV2. These associations do not establish direct
-biological interactions. Axes can change sign or rotate between fits, so
-averaged latent coordinates should only be interpreted when their orientation
-has been aligned consistently across iterations.
-
-# 22. Relationship Between Occupancy, Detection, and Latent Structure
-
-The three principal outputs provide complementary information.
-
-## Occupancy
-
-Occupancy describes whether taxa are likely to occur in the sampled units.
-
-It addresses the question:
-
-> How likely is this OTU to occur in the sampled system?
-
-## Detection
-
-Detection describes the probability of observing a taxon conditional on the
-relevant occupancy/detection process.
-
-It addresses the question:
-
-> When an OTU is present, how readily is it detected?
-
-## GLLVM latent variables
-
-The latent-variable component describes multivariate community structure that
-is not represented directly by simple taxon-specific occupancy probabilities.
-
-It addresses the question:
-
-> Which samples and taxa show similar residual multivariate patterns?
-
-These components should therefore be interpreted together rather than as
-competing summaries.
-
-# 23. Recommended Diagnostic Checks
-
-Before interpreting the figures, inspect the fitted object carefully.
-
-At minimum, users should determine:
-
-```{r diagnostic-checks, eval=FALSE}
-# Available output
-names(out)
-
-# Number of retained iterations
-length(out$psi_list)
-
-length(out$p_detect_list)
-
-# Occupancy output
-head(
-  dplyr::bind_rows(
-    out$psi_list
-  )
-)
-
-# Detection output
-head(
-  dplyr::bind_rows(
-    out$p_detect_list
-  )
-)
-
-# Latent-variable output
-head(out$mean_lv_sites)
-
-head(out$mean_lv_species)
-```
-
-It is also useful to check for non-finite predictions:
-
-```{r finite-checks, eval=FALSE}
-psi_check <-
-  dplyr::bind_rows(
-    out$psi_list
-  )
-
-detect_check <-
-  dplyr::bind_rows(
-    out$p_detect_list
-  )
-
-sum(
-  !is.finite(psi_check$eta)
-)
-
-sum(
-  !is.finite(detect_check$eta)
-)
-```
-
-A model should not be interpreted solely because the plotting code executes
-successfully.
-
-The quality of the underlying model fits and the number of successful retained
-iterations should also be evaluated.
-
-# 24. Common Problems
-
-## 24.1 `Samplingmonth` not found
-
-If an error indicates that `Samplingmonth` does not exist, inspect:
-
-```r
-phyloseq::sample_variables(
-  physeq_one
-)
-```
-
-and verify that the metadata column is named exactly `Samplingmonth`.
-
-R variable names are case sensitive.
-
-## 24.2 No successful iterations remain after burn-in
-
-If the model reports that no successful iterations remain after burn-in, the
-problem is with model fitting rather than plotting.
-
-Possible steps include:
-
-- checking the data structure;
-- checking for very rare OTUs;
-- increasing the number of iterations;
-- examining the abundance model;
-- simplifying the random-effect structure; and
-- checking whether the selected latent-variable dimension is supported by the
-  available data.
-
-## 24.3 Latent-variable plots cannot be constructed
-
-The example uses `num_lv_c = 1`. Inspect `names(out$mean_lv_sites)` and
-`names(out$mean_lv_species)` before plotting. A two-dimensional biplot is not
-available from a one-latent-variable fit.
-
-## 24.4 Site labels have length zero
-
-Do not assume that `out$mean_lv_sites` contains a particular original metadata
-column.
-
-The robust label-selection procedure used in this vignette checks available
-identifier columns, then row names, and finally constructs generic sample
-labels.
-
-# 25. Recommended Analysis Workflow
-
-A practical workflow for `FitModel_gllvm()` is:
-
-1. Construct and validate the `phyloseq` object.
-2. Verify OTU counts and sample metadata.
-3. Define the appropriate site variable.
-4. Select scientifically meaningful occupancy covariates.
-5. Specify the abundance model.
-6. Select an appropriate abundance family.
-7. Choose the number of latent variables.
-8. Fit the repeated models.
-9. Remove the specified burn-in iterations.
-10. Verify how many successful iterations remain and inspect excluded OTUs and Hessian diagnostics.
-11. Transform occupancy predictors to probabilities using the correct inverse
-    link.
-12. Transform detection predictors using the complementary log-log inverse
-    link.
-13. Summarize occupancy and detection by OTU.
-14. Inspect uncertainty across retained iterations.
-15. Examine one-dimensional latent-variable site and taxon scores.
-16. Construct one-dimensional score and loading plots.
-17. Interpret occupancy, detection, abundance, and latent structure jointly.
-18. Report the model specification and fitting settings.
-
-# 26. Complete Example
-
-The complete workflow can be summarized as follows.
-
-```{r complete-example, eval=TRUE}
-library(eDNAModel)
-library(phyloseq)
-library(dplyr)
-library(ggplot2)
-
-# Load example data
-data(
-  "physeq_new",
-  package = "eDNAModel"
-)
-
-physeq_one <-
-  physeq_new$`Marine Invasive species Trondheim`
-
-# Fit model
-out <- FitModel_gllvm(
   phyloseq = physeq_one,
 
   site_col = "Name",
@@ -1262,185 +710,204 @@ out <- FitModel_gllvm(
     (1 | Samplingmonth / OTU) +
     (1 | OTU),
 
-  occupancy_covars =
-    "Samplingmonth",
+  occupancy_covars = "Samplingmonth",
 
-  abundance_family =
-    "poisson",
+  abundance_family = "poisson",
 
   n_iter = 50,
-
   burn_in = 10,
 
-  num_lv_c = 1,
+  num_lv_c = 0,
+  num_lv = 2,
+
   gllvm_auto_exclude = TRUE,
-  gllvm_min_occupied_sites = 0,
+  gllvm_min_occupied_sites = 2,
   gllvm_excluded_prior = c(1, 1),
+
   gllvm_n_init = 10,
-  gllvm_gradient_tol = 1e-3
+  gllvm_gradient_tol = 1e-3,
+  gllvm_condition_tol = 1e8
+)
+```
+
+## 11.1 Compare convergence
+
+```{r compare-convergence, eval=FALSE}
+compare_gllvm <- function(x, label) {
+
+  d <- x$gllvm_diagnostics
+
+  gradient_ok <-
+    is.finite(d$max_abs_gradient) &
+    d$max_abs_gradient <= 1e-3
+
+  hessian_ok <-
+    !is.na(d$hessian_positive_definite) &
+    d$hessian_positive_definite
+
+  optimizer_ok <-
+    d$optimizer_converged %in% TRUE
+
+  data.frame(
+    model = label,
+
+    n_iterations = nrow(d),
+
+    optimizer_ok = sum(optimizer_ok),
+
+    gradient_ok = sum(gradient_ok),
+
+    hessian_ok = sum(hessian_ok),
+
+    fully_ok = sum(
+      gradient_ok & hessian_ok & optimizer_ok
+    )
+  )
+}
+
+comparison <- dplyr::bind_rows(
+  compare_gllvm(out, "num_lv = 1"),
+  compare_gllvm(out_lv2, "num_lv = 2")
 )
 
-# ---------------------------
-# Occupancy
-# ---------------------------
-
-psi_draws <-
-  dplyr::bind_rows(
-    out$psi_list
-  ) %>%
-  dplyr::mutate(
-    psi =
-      stats::plogis(.data$eta)
-  )
-
-psi_otu_summary <-
-  psi_draws %>%
-  dplyr::group_by(OTU) %>%
-  dplyr::summarise(
-    psi_mean =
-      mean(psi, na.rm = TRUE),
-
-    psi_median =
-      median(psi, na.rm = TRUE),
-
-    psi_lwr =
-      quantile(
-        psi,
-        0.025,
-        na.rm = TRUE,
-        names = FALSE
-      ),
-
-    psi_upr =
-      quantile(
-        psi,
-        0.975,
-        na.rm = TRUE,
-        names = FALSE
-      ),
-
-    .groups = "drop"
-  )
-
-# ---------------------------
-# Detection
-# ---------------------------
-
-p_detect_draws <-
-  dplyr::bind_rows(
-    out$p_detect_list
-  ) %>%
-  dplyr::mutate(
-    p_detect =
-      plogis(eta)
-  )
-
-p_detect_otu_summary <-
-  p_detect_draws %>%
-  dplyr::group_by(OTU) %>%
-  dplyr::summarise(
-    p_detect_mean =
-      mean(
-        p_detect,
-        na.rm = TRUE
-      ),
-
-    p_detect_median =
-      median(
-        p_detect,
-        na.rm = TRUE
-      ),
-
-    p_detect_lwr =
-      quantile(
-        p_detect,
-        0.025,
-        na.rm = TRUE,
-        names = FALSE
-      ),
-
-    p_detect_upr =
-      quantile(
-        p_detect,
-        0.975,
-        na.rm = TRUE,
-        names = FALSE
-      ),
-
-    .groups = "drop"
-  )
-
-# Inspect results
-psi_otu_summary
-
-p_detect_otu_summary
-
-out$mean_lv_sites
-
-out$mean_lv_species
+comparison
 ```
 
-# 27. Reporting Results
+## 11.2 Example numerical comparison
 
-When reporting an analysis performed with `FitModel_gllvm()`, the following
-information should be documented.
+In a previous analysis of the Trondheim data,
+the following diagnostics were obtained:
 
-## Data structure
+| Diagnostic | One latent variable | Two latent variables |
+|:---|---:|---:|
+| Total iterations | 50 | 50 |
+| Optimizer converged | 50 | 50 |
+| Gradient criterion passed | 43 | 14 |
+| Positive-definite Hessian | 8 | 44 |
+| Both criteria passed | 8 | 13 |
 
-Report:
+The one-dimensional model satisfied the gradient
+criterion more frequently, whereas the two-dimensional
+model more frequently produced a positive-definite
+Hessian.
 
-- the dataset;
-- the number of samples;
-- the number of OTUs;
-- the definition of the site or sampling unit; and
-- relevant repeated-sampling structure.
+Neither specification passed both criteria in a
+majority of iterations.
 
-## Model structure
+These results illustrate why model selection should
+not rely exclusively on optimizer termination status.
 
-Report:
+They are example diagnostics, not expected results
+for every dataset or random seed.
 
-- `site_col`;
-- occupancy covariates;
-- abundance model;
-- abundance family;
-- random-effect structure; and
-- number of latent variables.
+# 12. Occupancy Probability Estimation
 
-For the example in this vignette:
+The occupancy predictions in `psi_list` are stored
+on the logit linear-predictor scale.
 
-```text
-Site variable: Name
-Occupancy covariate: Samplingmonth
-Abundance family: Poisson
-Number of latent variables: 1
-Automatic OTU exclusion: enabled
-Exclusion threshold: 0 occupied/unoccupied sites
-Number of iterations: 50
-Burn-in: 10
+They must be transformed using `plogis()`.
+
+```{r occupancy-data, eval=FALSE}
+psi_draws <- dplyr::bind_rows(
+  out$psi_list
+)
+
+psi_draws <- psi_draws %>%
+  mutate(
+    psi = stats::plogis(eta)
+  )
+
+head(psi_draws)
 ```
 
-## Model-derived quantities
+## 12.1 OTU-specific occupancy summaries
 
-Report the method used to obtain:
+```{r occupancy-summary, eval=FALSE}
+psi_otu_summary <- psi_draws %>%
+  group_by(OTU) %>%
+  summarise(
+    psi_mean = mean(psi, na.rm = TRUE),
 
-- occupancy probabilities;
-- detection probabilities;
-- OTU-level summaries;
-- empirical uncertainty intervals;
-- site latent scores; and
-- taxon latent scores.
+    psi_median = median(psi, na.rm = TRUE),
 
-The link functions should also be stated explicitly.
+    psi_lwr = quantile(
+      psi,
+      0.025,
+      na.rm = TRUE,
+      names = FALSE
+    ),
 
-For occupancy:
+    psi_upr = quantile(
+      psi,
+      0.975,
+      na.rm = TRUE,
+      names = FALSE
+    ),
 
-\[
-\psi
-=
-\mathrm{logit}^{-1}(\eta).
-\]
+    .groups = "drop"
+  ) %>%
+  arrange(psi_mean)
 
-For detection:
+head(psi_otu_summary)
+```
+
+The empirical intervals summarize variation across
+the predictions represented in the retained iterations
+and sites.
+
+They are not automatically Bayesian posterior
+credible intervals.
+
+# 13. Occupancy Caterpillar Plot
+
+```{r occupancy-plot, eval=FALSE, fig.width=10, fig.height=9}
+psi_otu_summary <- psi_otu_summary %>%
+  mutate(
+    otu_ordered = factor(
+      OTU,
+      levels = as.character(OTU)
+    )
+  )
+
+ggplot(
+  psi_otu_summary,
+  aes(
+    x = psi_mean,
+    y = otu_ordered
+  )
+) +
+  geom_errorbar(
+    aes(
+      xmin = psi_lwr,
+      xmax = psi_upr
+    ),
+    orientation = "y",
+    width = 0.25,
+    color = "darkgreen"
+  ) +
+  geom_point(
+    color = "darkgreen",
+    size = 2.5
+  ) +
+  scale_x_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, 0.2)
+  ) +
+  labs(
+    title = "Estimated Occupancy Probability by OTU",
+    subtitle = "Mean and empirical 2.5%-97.5% range",
+    x = "Occupancy probability",
+    y = "OTU"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+# 14. Detection Probability Estimation
+
+The detection predictions in `p_detect_list`
+are represented on the complementary log-log scale.
+
+Therefore,
 
 \[
 p
@@ -1448,34 +915,552 @@ p
 1-\exp[-\exp(\eta)].
 \]
 
-# 28. Summary
+The correct transformation is:
 
-`FitModel_gllvm()` provides a framework for analysing multivariate eDNA
-community data while distinguishing important components of the ecological and
-observation process.
+```{r detection-data, eval=FALSE}
+p_detect_draws <- dplyr::bind_rows(
+  out$p_detect_list
+)
 
-In the workflow presented here, occupancy represents the probability that an
-OTU occurs within a sampling unit, while detection describes the probability of
-detecting an OTU through the observation process. Conditional abundance is
-modelled separately using an appropriate count distribution.
+p_detect_draws <- p_detect_draws %>%
+  mutate(
+    p_detect = -expm1(-exp(eta))
+  )
 
-The GLLVM component complements these taxon-specific quantities by providing a
-low-dimensional representation of residual multivariate community structure.
-With one latent variable, site scores and OTU loadings can be displayed
-along a single axis. The automatic screening step excludes constant occupancy
-columns from the GLLVM while retaining their OTUs in the remaining model
-components; numerical diagnostics must still be checked.
+head(p_detect_draws)
+```
 
-The occupancy and detection caterpillar plots provide complementary
-taxon-specific summaries. A species may have high estimated occupancy but low
-detection probability, or low occupancy but high detection when present.
-Separating these processes helps prevent ecological absence from being
-confounded with imperfect observation.
+**Important:** Do not use `plogis(eta)` for
+`out$p_detect_list`.
 
-Careful attention should be given to the definition of the sampling unit, the
-choice of covariates, the abundance distribution, the number of retained model
-iterations, and the interpretation of the latent-variable structure.
+The capture-model predictions in `capture_list`
+are different and use the logit inverse link.
 
-Together, these components provide a flexible workflow for investigating
-occupancy, detectability, abundance, and multivariate community structure in
-eDNA metabarcoding datasets.
+## 14.1 OTU-specific detection summaries
+
+```{r detection-summary, eval=FALSE}
+p_detect_otu_summary <- p_detect_draws %>%
+  group_by(OTU) %>%
+  summarise(
+    p_detect_mean = mean(
+      p_detect,
+      na.rm = TRUE
+    ),
+
+    p_detect_median = median(
+      p_detect,
+      na.rm = TRUE
+    ),
+
+    p_detect_lwr = quantile(
+      p_detect,
+      0.025,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+
+    p_detect_upr = quantile(
+      p_detect,
+      0.975,
+      na.rm = TRUE,
+      names = FALSE
+    ),
+
+    .groups = "drop"
+  ) %>%
+  arrange(p_detect_mean)
+
+head(p_detect_otu_summary)
+```
+
+# 15. Detection Caterpillar Plot
+
+```{r detection-plot, eval=FALSE, fig.width=10, fig.height=9}
+p_detect_otu_summary <- p_detect_otu_summary %>%
+  mutate(
+    otu_ordered = factor(
+      OTU,
+      levels = as.character(OTU)
+    )
+  )
+
+ggplot(
+  p_detect_otu_summary,
+  aes(
+    x = p_detect_mean,
+    y = otu_ordered
+  )
+) +
+  geom_errorbar(
+    aes(
+      xmin = p_detect_lwr,
+      xmax = p_detect_upr
+    ),
+    orientation = "y",
+    width = 0.25,
+    color = "steelblue"
+  ) +
+  geom_point(
+    color = "steelblue",
+    size = 2.5
+  ) +
+  scale_x_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, 0.2)
+  ) +
+  labs(
+    title = "Estimated Detection Probability by OTU",
+    subtitle = "Mean and empirical 2.5%-97.5% range",
+    x = "Detection probability",
+    y = "OTU"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+# 16. Capture Probability
+
+The capture component is distinct from the
+detection probabilities summarized above.
+
+The capture model uses a logit link.
+
+```{r capture-probability, eval=FALSE}
+capture_draws <- dplyr::bind_rows(
+  out$capture_list
+)
+
+capture_draws <- capture_draws %>%
+  mutate(
+    p_capture = stats::plogis(eta)
+  )
+
+head(capture_draws)
+```
+
+Capture probabilities approaching one may indicate
+high capture rates, but extreme fitted values can
+also arise from separation or weak identification.
+
+The capture model should therefore be examined
+separately from the occupancy GLLVM.
+
+# 17. One-Dimensional GLLVM Latent Structure
+
+With
+
+```r
+num_lv_c = 0
+num_lv = 1
+```
+
+the GLLVM contains one unconstrained latent dimension.
+
+Site scores and OTU loadings can be displayed
+separately.
+
+```{r inspect-latent-variables, eval=FALSE}
+head(out$mean_lv_sites)
+
+head(out$mean_lv_species)
+
+names(out$mean_lv_sites)
+
+names(out$mean_lv_species)
+```
+
+## 17.1 Site latent scores
+
+```{r site-lv-plot, eval=FALSE, fig.width=9, fig.height=7}
+site_lv <- as.data.frame(out$mean_lv_sites)
+
+if ("LV1" %in% names(site_lv)) {
+
+  site_lv$Site <- if ("Site" %in% names(site_lv)) {
+    as.character(site_lv$Site)
+  } else {
+    rownames(site_lv)
+  }
+
+  ggplot(
+    site_lv,
+    aes(
+      x = reorder(Site, LV1),
+      y = LV1
+    )
+  ) +
+    geom_point(color = "steelblue") +
+    coord_flip() +
+    labs(
+      title = "GLLVM Site Scores",
+      x = "Site",
+      y = "Latent variable 1"
+    ) +
+    theme_minimal()
+}
+```
+
+## 17.2 OTU latent loadings
+
+```{r otu-lv-plot, eval=FALSE, fig.width=9, fig.height=7}
+otu_lv <- as.data.frame(out$mean_lv_species)
+
+if ("LV1" %in% names(otu_lv)) {
+
+  otu_lv$OTU_label <- if ("OTU" %in% names(otu_lv)) {
+    as.character(otu_lv$OTU)
+  } else {
+    rownames(otu_lv)
+  }
+
+  ggplot(
+    otu_lv,
+    aes(
+      x = reorder(OTU_label, LV1),
+      y = LV1
+    )
+  ) +
+    geom_point(color = "brown") +
+    coord_flip() +
+    labs(
+      title = "GLLVM OTU Loadings",
+      x = "OTU",
+      y = "Latent variable 1"
+    ) +
+    theme_minimal()
+}
+```
+
+Latent-variable signs are arbitrary.
+
+Additionally, averaging latent scores and loadings
+across iterations requires consistent alignment
+of the latent axes.
+
+# 18. Optional Two-Dimensional GLLVM Biplot
+
+A two-dimensional GLLVM requires:
+
+```r
+num_lv_c = 0
+num_lv = 2
+```
+
+Use the separately fitted `out_lv2` object.
+
+The following plot should only be interpreted when
+the latent axes have been aligned consistently
+across retained iterations.
+
+```{r two-dimensional-biplot, eval=FALSE, fig.width=10, fig.height=9}
+site_df <- as.data.frame(
+  out_lv2$mean_lv_sites
+)
+
+otu_df <- as.data.frame(
+  out_lv2$mean_lv_species
+)
+
+required_lv <- c("LV1", "LV2")
+
+stopifnot(
+  all(required_lv %in% names(site_df)),
+  all(required_lv %in% names(otu_df))
+)
+
+site_mat <- as.matrix(
+  site_df[, required_lv, drop = FALSE]
+)
+
+otu_mat <- as.matrix(
+  otu_df[, required_lv, drop = FALSE]
+)
+
+stopifnot(
+  all(is.finite(site_mat)),
+  all(is.finite(otu_mat))
+)
+
+site_labels <- if ("Site" %in% names(site_df)) {
+  as.character(site_df$Site)
+} else {
+  rownames(site_df)
+}
+
+otu_labels <- if ("OTU" %in% names(otu_df)) {
+  as.character(otu_df$OTU)
+} else {
+  rownames(otu_df)
+}
+
+site_radius <- max(
+  sqrt(rowSums(site_mat^2))
+)
+
+otu_radius <- max(
+  sqrt(rowSums(otu_mat^2))
+)
+
+scale_factor <- if (
+  site_radius > 0 &&
+  otu_radius > 0
+) {
+  sqrt(site_radius / otu_radius)
+} else {
+  1
+}
+
+site_plot <- data.frame(
+  Site = site_labels,
+  LV1 = site_mat[, 1] / scale_factor,
+  LV2 = site_mat[, 2] / scale_factor
+)
+
+otu_plot <- data.frame(
+  OTU = otu_labels,
+  LV1 = otu_mat[, 1] * scale_factor,
+  LV2 = otu_mat[, 2] * scale_factor
+)
+
+ggplot() +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    color = "grey75"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "grey75"
+  ) +
+  geom_point(
+    data = site_plot,
+    aes(LV1, LV2),
+    color = "steelblue",
+    size = 2
+  ) +
+  geom_text(
+    data = site_plot,
+    aes(LV1, LV2, label = Site),
+    color = "steelblue",
+    check_overlap = TRUE,
+    vjust = -0.5
+  ) +
+  geom_segment(
+    data = otu_plot,
+    aes(
+      x = 0,
+      y = 0,
+      xend = LV1,
+      yend = LV2
+    ),
+    arrow = grid::arrow(
+      length = grid::unit(0.15, "cm")
+    ),
+    color = "brown"
+  ) +
+  geom_text(
+    data = otu_plot,
+    aes(LV1, LV2, label = OTU),
+    color = "brown",
+    check_overlap = TRUE
+  ) +
+  coord_equal() +
+  labs(
+    title = "Two-Dimensional GLLVM Biplot",
+    subtitle = "Site scores and OTU loadings",
+    x = "Latent variable 1",
+    y = "Latent variable 2"
+  ) +
+  theme_minimal()
+```
+
+The site scores summarize similarities in
+residual community composition.
+
+OTU loadings describe how taxa relate to
+the latent axes.
+
+These associations do not establish direct
+biological interactions between taxa.
+
+# 19. Checking for Non-Finite Predictions
+
+Before interpreting the fitted probabilities,
+check the retained linear predictors.
+
+```{r finite-checks, eval=FALSE}
+psi_check <- dplyr::bind_rows(
+  out$psi_list
+)
+
+detect_check <- dplyr::bind_rows(
+  out$p_detect_list
+)
+
+sum(!is.finite(psi_check$eta))
+
+sum(!is.finite(detect_check$eta))
+```
+
+Also inspect the number of retained iterations:
+
+```{r retained-iterations, eval=FALSE}
+length(out$psi_list)
+
+length(out$p_detect_list)
+```
+
+# 20. Common Numerical Problems
+
+## 20.1 Rows containing only zeros
+
+The GLLVM may report:
+
+> There are rows full of zeros in y.
+
+This means that some rows of the occupancy response
+matrix contain no occupied OTUs among the taxa
+included in the GLLVM.
+
+Such rows can be legitimate but may complicate
+latent-variable estimation.
+
+## 20.2 Gradient convergence warnings
+
+A warning such as
+
+> GLLVM numerical diagnostics flagged iteration
+
+indicates that one or more numerical diagnostic
+criteria were not satisfied.
+
+A maximum absolute gradient above the specified
+tolerance suggests that the optimizer may not
+have reached a sufficiently stationary solution.
+
+## 20.3 Non-positive-definite Hessian
+
+A non-positive-definite Hessian can arise from
+numerical error, weak identification, or problematic
+likelihood curvature.
+
+Extremely small eigenvalues should be evaluated
+relative to the Hessian scale and condition number.
+
+## 20.4 False convergence in glmmTMB
+
+The warning
+
+> Model convergence problem; false convergence (8)
+
+can originate from the capture or abundance
+model components fitted using `glmmTMB`.
+
+This warning should be investigated independently
+of the occupancy GLLVM diagnostics.
+
+## 20.5 Increasing the number of latent variables
+
+Increasing `num_lv` does not necessarily improve
+numerical stability.
+
+A two-dimensional GLLVM may provide a richer
+representation of community structure but can
+also introduce additional estimation difficulties.
+
+A simpler model should be retained as a baseline
+until convergence and identification are assessed.
+
+# 21. Recommended Analysis Workflow
+
+For a new eDNA dataset, the recommended workflow is:
+
+1. Validate the phyloseq object and sample metadata.
+2. Identify the appropriate site variable.
+3. Examine the number of samples and OTUs.
+4. Check observed occupancy and detection frequencies.
+5. Specify occupancy covariates.
+6. Specify the abundance model.
+7. Begin with `num_lv_c = 0` and `num_lv = 1`.
+8. Enable automatic OTU screening.
+9. Examine gradient and Hessian diagnostics.
+10. Investigate capture and abundance convergence separately.
+11. Compare with `num_lv = 2` if scientifically justified.
+12. Transform predictions using the correct inverse links.
+13. Summarize occupancy and detection probabilities.
+14. Construct caterpillar plots.
+15. Interpret latent scores only after verifying their stability.
+16. Report all numerical limitations and excluded OTUs.
+
+# 22. Reporting Results
+
+A scientific report should document the dataset,
+sampling design, model structure, and numerical diagnostics.
+
+For the primary example, the specification is:
+
+| Component | Specification |
+|:---|:---|
+| Site variable | `Name` |
+| Occupancy covariate | `Samplingmonth` |
+| Abundance family | Poisson |
+| Abundance random effects | Sampling month / OTU and OTU |
+| Constrained latent variables | 0 |
+| Unconstrained latent variables | 1 |
+| Automatic OTU exclusion | Enabled |
+| Minimum occupied/unoccupied sites | 2 |
+| Excluded-OTU prior | Beta(1,1) smoothing |
+| Iterations | 50 |
+| Burn-in | 10 |
+| GLLVM initializations | 10 |
+| Gradient tolerance | 0.001 |
+
+Reports should also distinguish GLLVM-derived occupancy
+predictions from the smoothed estimates assigned to
+excluded OTUs.
+
+When describing empirical uncertainty intervals,
+the method used to obtain the retained iterations
+should be explained.
+
+# 23. Summary
+
+`FitModel_gllvm()` provides a hierarchical framework
+for analysing multivariate eDNA data while distinguishing
+occupancy, detection, and conditional abundance.
+
+The GLLVM component provides a low-dimensional
+representation of residual community structure.
+
+The updated implementation separates the number of
+unconstrained latent variables (`num_lv`) from the
+constrained latent-variable argument (`num_lv_c`).
+
+Automatic OTU screening can reduce separation problems
+caused by taxa with very low or very high occupancy,
+but it does not guarantee numerical convergence.
+
+Gradient diagnostics, Hessian eigenvalues, and condition
+numbers should be examined before interpreting the
+estimated latent-variable structure.
+
+Finally, the occupancy and detection components must
+be transformed using their respective inverse link
+functions:
+
+\[
+\psi=\operatorname{logit}^{-1}(\eta^{(\psi)})
+\]
+
+and
+
+\[
+p^{(d)}
+=
+1-\exp[-\exp(\eta^{(d)})].
+\]
+
+Careful interpretation of these components provides
+a more informative picture of taxon occurrence,
+detectability, abundance, and multivariate community
+structure in eDNA datasets.

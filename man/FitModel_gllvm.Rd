@@ -20,7 +20,8 @@ FitModel_gllvm(
   n_iter = 50,
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-  num_lv_c = 1,
+  num_lv_c = 0,
+  num_lv = 1,
   gllvm_n_init = 10,
   gllvm_gradient_tol = 0.001,
   gllvm_strict = FALSE,
@@ -65,7 +66,11 @@ FitModel_gllvm(
 
 \item{abundance_family}{One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.}
 
-\item{num_lv_c}{Number of latent variables in the GLLVM occupancy model.}
+\item{num_lv_c}{Number of constrained latent variables (currently must be 0;
+constrained latent-variable estimation is not implemented in this wrapper).}
+
+\item{num_lv}{Number of unconstrained latent variables in the GLLVM occupancy
+model. Choose 1 or 2 for residual species associations (default 1).}
 
 \item{gllvm_n_init}{Number of GLLVM initial fits (default 10).}
 

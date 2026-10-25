@@ -29,7 +29,10 @@
 #' @param n_iter Number of EM-like iterations.
 #' @param burn_in Number of initial iterations discarded.
 #' @param abundance_family One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.
-#' @param num_lv_c Number of latent variables in the GLLVM occupancy model.
+#' @param num_lv_c Number of constrained latent variables (currently must be 0;
+#'   constrained latent-variable estimation is not implemented in this wrapper).
+#' @param num_lv Number of unconstrained latent variables in the GLLVM occupancy
+#'   model. Choose 1 or 2 for residual species associations (default 1).
 #' @param gllvm_n_init Number of GLLVM initial fits (default 10).
 #' @param gllvm_gradient_tol Diagnostic threshold for maximum absolute gradient.
 #' @param gllvm_strict If TRUE, skip iterations failing optimizer/gradient diagnostics.
@@ -187,7 +190,8 @@ FitModel_gllvm <- function(
   n_iter = 50,
   burn_in = 10,
   abundance_family = c("poisson", "nbinom", "zip", "zinb"),
-  num_lv_c = 1,
+  num_lv_c = 0,
+  num_lv = 1,
   gllvm_n_init = 10,
   gllvm_gradient_tol = 1e-3,
   gllvm_strict = FALSE,
@@ -223,6 +227,19 @@ FitModel_gllvm <- function(
   if (!is.numeric(num_lv_c) || length(num_lv_c) != 1L ||
       num_lv_c < 0 || num_lv_c != as.integer(num_lv_c)) {
     stop("num_lv_c must be a non-negative integer.")
+  }
+
+  if (!is.numeric(num_lv) || length(num_lv) != 1L ||
+      is.na(num_lv) || !is.finite(num_lv) ||
+      num_lv < 0 || num_lv != as.integer(num_lv)) {
+    stop("num_lv must be a non-negative integer.")
+  }
+
+  # This implementation fits an unconstrained GLLVM with optional
+  # site-level covariates X_cov. Constrained latent variables require
+  # a separate specification and are not implemented here.
+  if (num_lv_c != 0L) {
+    stop("num_lv_c must be 0 in this implementation. Use num_lv = 1 or 2 for unconstrained latent variables.")
   }
 
   if (length(gllvm_n_init) != 1L || !is.finite(gllvm_n_init) ||
@@ -1421,7 +1438,7 @@ FitModel_gllvm <- function(
     gllvm_diagnostics$n_excluded_otus[i] <- length(excluded)
     gllvm_diagnostics$n_gllvm_otus[i] <- length(included)
 
-    if (length(included) < max(3L, num_lv_c + 2L)) {
+    if (length(included) < max(3L, num_lv + 2L)) {
       warning(sprintf(
         "Iteration %d: only %d OTUs remain after screening; skipping.",
         i, length(included)
@@ -1446,7 +1463,7 @@ FitModel_gllvm <- function(
         y = z_gllvm,
         X = X_cov,
         family = "binomial",
-        num.lv = num_lv_c,
+        num.lv = num_lv,
         method = "VA",
         control.start = list(
           n.init = gllvm_n_init,
@@ -2991,6 +3008,7 @@ FitModel_gllvm <- function(
 
     gllvm_settings = list(
       num_lv_c = num_lv_c,
+      num_lv = num_lv,
       n_init = gllvm_n_init,
       gradient_tol = gllvm_gradient_tol,
       strict = gllvm_strict,

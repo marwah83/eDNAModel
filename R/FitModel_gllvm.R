@@ -41,6 +41,22 @@
 #' @param gllvm_warn_separation Warn when augmented occupancy is constant for an OTU.
 #'   Defaults to FALSE to preserve the stochastic updating chain.
 #' @param verbose Logical; print progress during fitting.
+#' @param gllvm_auto_exclude Logical. If TRUE, automatically exclude
+#'   OTUs with insufficient variation in their latent occupancy states
+#'   from the GLLVM occupancy fit. Excluded OTUs remain in the other
+#'   components of the hierarchical model.
+#'
+#' @param gllvm_min_occupied_sites Non-negative integer specifying the
+#'   minimum number of occupied and unoccupied sites required for an
+#'   OTU to be included in the GLLVM. An OTU is excluded when either
+#'   count is less than or equal to this threshold. A value of 0
+#'   excludes only OTUs with constant occupancy states.
+#'
+#' @param gllvm_excluded_prior Numeric vector of length two containing
+#'   the positive Beta prior parameters (a, b) used to smooth occupancy
+#'   probabilities for OTUs excluded from the GLLVM. The smoothed
+#'   estimate is (n_occupied + a) / (n_sites + a + b).
+#'   The default is c(1, 1).
 #'
 #' @return A list containing:
 #' \describe{

@@ -22,59 +22,23 @@ test_that(
     site_ids <- paste0("Loc", seq_len(n_sites))
     otu_ids <- paste0("OTU", seq_len(n_otu))
 
-    # ----------------------------------------------------------
     # Sample metadata
-    # ----------------------------------------------------------
-
     sample_df <- data.frame(
       Site = rep(site_ids, each = n_rep),
       Name = paste0("Sample", seq_len(n_samples)),
-      Replicate = rep(
-        seq_len(n_rep),
-        times = n_sites
-      ),
-      row.names = paste0(
-        "S",
-        seq_len(n_samples)
-      ),
+      Replicate = rep(seq_len(n_rep), times = n_sites),
+      row.names = paste0("S", seq_len(n_samples)),
       stringsAsFactors = FALSE
     )
 
-    # ----------------------------------------------------------
     # Site-level occupancy probabilities
-    # ----------------------------------------------------------
+    psi_otu <- c(0.55, 0.65, 0.70, 0.75, 0.80)
 
-    psi_otu <- c(
-      0.55,
-      0.65,
-      0.70,
-      0.75,
-      0.80
-    )
-
-    # ----------------------------------------------------------
     # Replicate-level detection probabilities
-    # ----------------------------------------------------------
+    p_otu <- c(0.35, 0.45, 0.50, 0.55, 0.60)
 
-    p_otu <- c(
-      0.35,
-      0.45,
-      0.50,
-      0.55,
-      0.60
-    )
-
-    # ----------------------------------------------------------
     # OTU-specific abundance parameters
-    # ----------------------------------------------------------
-
-    lambda_otu <- c(
-      1.5,
-      2.0,
-      2.5,
-      3.0,
-      3.5
-    )
+    lambda_otu <- c(1.5, 2.0, 2.5, 3.0, 3.5)
 
     species_mat <- matrix(
       0L,
@@ -86,10 +50,7 @@ test_that(
       )
     )
 
-    # ----------------------------------------------------------
     # Generate occupancy, detection and abundance
-    # ----------------------------------------------------------
-
     for (k in seq_len(n_otu)) {
 
       occupied <- rbinom(
@@ -123,25 +84,14 @@ test_that(
       }
     }
 
-    # ----------------------------------------------------------
     # Guarantee informative detection histories
-    #
-    # Each OTU has at least one site containing both
-    # detections and non-detections.
-    # ----------------------------------------------------------
-
     for (k in seq_len(n_otu)) {
 
       idx <- which(
         sample_df$Site == site_ids[k]
       )
 
-      species_mat[k, idx] <- c(
-        2L,
-        0L,
-        3L,
-        0L
-      )
+      species_mat[k, idx] <- c(2L, 0L, 3L, 0L)
     }
 
     # ==========================================================
@@ -159,7 +109,7 @@ test_that(
     )
 
     # ==========================================================
-    # 3. Check synthetic data before fitting
+    # 3. Check synthetic data
     # ==========================================================
 
     expect_equal(
@@ -172,31 +122,17 @@ test_that(
       n_otu
     )
 
-    expect_true(
-      any(species_mat == 0)
-    )
-
-    expect_true(
-      any(species_mat > 0)
-    )
-
-    expect_true(
-      all(rowSums(species_mat) > 0)
-    )
+    expect_true(any(species_mat == 0))
+    expect_true(any(species_mat > 0))
+    expect_true(all(rowSums(species_mat) > 0))
 
     # ==========================================================
     # 4. Check replicated detection histories
     # ==========================================================
 
     observed <- data.frame(
-      Site = rep(
-        sample_df$Site,
-        each = n_otu
-      ),
-      OTU = rep(
-        otu_ids,
-        times = n_samples
-      ),
+      Site = rep(sample_df$Site, each = n_otu),
+      OTU = rep(otu_ids, times = n_samples),
       detected = as.integer(
         as.vector(species_mat > 0)
       )
@@ -213,10 +149,7 @@ test_that(
     confirmed <- histories %>%
       dplyr::filter(n_detected > 0)
 
-    expect_gt(
-      nrow(confirmed),
-      0
-    )
+    expect_gt(nrow(confirmed), 0)
 
     expect_gt(
       sum(confirmed$n_failed),
@@ -231,7 +164,7 @@ test_that(
     )
 
     # ==========================================================
-    # 5. Run FitModel_gllvm
+    # 5. Run updated FitModel_gllvm
     # ==========================================================
 
     out <- suppressWarnings(
@@ -239,15 +172,13 @@ test_that(
         phyloseq = physeq,
 
         site_col = "Site",
-
         otu_col = "OTU",
         count_col = "y",
 
         sample_col = "Name",
         replicate_col = "Replicate",
 
-        abundance_rhs =
-          y ~ (1 | OTU),
+        abundance_rhs = y ~ (1 | OTU),
 
         capture_formula =
           a_sim ~ 1 + (1 | OTU),
@@ -262,10 +193,16 @@ test_that(
         n_iter = 10,
         burn_in = 2,
 
-        num_lv_c = 1,
+        num_lv_c = 0,
+        num_lv = 1,
 
         gllvm_auto_exclude = TRUE,
+        gllvm_min_occupied_sites = 2,
+        gllvm_excluded_prior = c(1, 1),
+
         gllvm_n_init = 5,
+        gllvm_gradient_tol = 1e-3,
+        gllvm_condition_tol = 1e8,
 
         verbose = FALSE
       )
@@ -303,15 +240,15 @@ test_that(
 
       "gllvm_diagnostics",
       "gllvm_excluded_otus",
+      "gllvm_separation",
+      "gllvm_settings",
       "retained_iterations",
 
       "note"
     )
 
     expect_true(
-      all(
-        expected_components %in% names(out)
-      )
+      all(expected_components %in% names(out))
     )
 
     # ==========================================================
@@ -362,21 +299,23 @@ test_that(
       "data.frame"
     )
 
+    # One unconstrained latent variable
+    expect_true(
+      "LV1" %in% names(out$mean_lv_sites)
+    )
+
+    expect_true(
+      "LV1" %in% names(out$mean_lv_species)
+    )
+
     # ==========================================================
     # 9. Iteration consistency
     # ==========================================================
 
     n_keep <- length(out$psi_list)
 
-    expect_gt(
-      n_keep,
-      0
-    )
-
-    expect_lte(
-      n_keep,
-      8
-    )
+    expect_gt(n_keep, 0)
+    expect_lte(n_keep, 8)
 
     iteration_components <- c(
       "capture_list",
@@ -396,10 +335,6 @@ test_that(
 
     # ==========================================================
     # 10. Required summary columns
-    #
-    # FIX:
-    # Check that required columns are present without
-    # requiring an exact match of all column names.
     # ==========================================================
 
     required_summary_cols <- c(
@@ -424,17 +359,11 @@ test_that(
     )
 
     expect_true(
-      all(
-        capture_cols %in%
-          names(out$capture)
-      )
+      all(capture_cols %in% names(out$capture))
     )
 
     expect_true(
-      all(
-        capture_cols %in%
-          names(out$capture_site)
-      )
+      all(capture_cols %in% names(out$capture_site))
     )
 
     # ==========================================================
@@ -443,9 +372,7 @@ test_that(
 
     check_probability <- function(x) {
 
-      expect_true(
-        is.numeric(x)
-      )
+      expect_true(is.numeric(x))
 
       expect_true(
         all(is.finite(x))
@@ -498,7 +425,156 @@ test_that(
     )
 
     # ==========================================================
-    # 14. Capture model diagnostics
+    # 14. GLLVM settings
+    # ==========================================================
+
+    expect_true(
+      is.list(out$gllvm_settings)
+    )
+
+    expect_true(
+      is.list(out$gllvm_excluded_otus)
+    )
+
+    expect_true(
+      is.list(out$gllvm_separation)
+    )
+
+    # ==========================================================
+    # 15. GLLVM numerical diagnostics
+    # ==========================================================
+
+    diag <- out$gllvm_diagnostics
+
+    expect_s3_class(
+      diag,
+      "data.frame"
+    )
+
+    expect_gt(
+      nrow(diag),
+      0
+    )
+
+    required_diag_cols <- c(
+      "iteration",
+      "optimizer_converged",
+      "max_abs_gradient",
+      "hessian_min_eigen",
+      "hessian_positive_definite",
+      "hessian_condition_number",
+      "numerical_ok",
+      "n_gllvm_otus",
+      "n_excluded_otus"
+    )
+
+    expect_true(
+      all(required_diag_cols %in% names(diag))
+    )
+
+    expect_equal(
+      nrow(diag),
+      10
+    )
+
+    expect_true(
+      all(
+        diag$n_excluded_otus >= 0,
+        na.rm = TRUE
+      )
+    )
+
+    expect_true(
+      all(
+        diag$n_gllvm_otus >= 0,
+        na.rm = TRUE
+      )
+    )
+
+    expect_true(
+      all(
+        diag$n_excluded_otus <= n_otu,
+        na.rm = TRUE
+      )
+    )
+
+    # ----------------------------------------------------------
+    # 15.1 Check excluded OTU counts
+    #
+    # CORRECTED:
+    # Remove names before comparing integer vectors.
+    # ----------------------------------------------------------
+
+    screened <- which(
+      !is.na(diag$n_excluded_otus)
+    )
+
+    if (length(screened) > 0) {
+
+      expect_equal(
+        unname(
+          lengths(
+            out$gllvm_excluded_otus
+          )[screened]
+        ),
+        as.integer(
+          diag$n_excluded_otus[screened]
+        )
+      )
+    }
+
+    # ----------------------------------------------------------
+    # 15.2 Check GLLVM OTU accounting
+    # ----------------------------------------------------------
+
+    valid_counts <- which(
+      !is.na(diag$n_gllvm_otus) &
+        !is.na(diag$n_excluded_otus)
+    )
+
+    if (length(valid_counts) > 0) {
+
+      expect_equal(
+        as.integer(
+          diag$n_gllvm_otus[valid_counts] +
+            diag$n_excluded_otus[valid_counts]
+        ),
+        rep(
+          as.integer(n_otu),
+          length(valid_counts)
+        )
+      )
+    }
+
+    # ----------------------------------------------------------
+    # 15.3 Check numerical diagnostic types
+    # ----------------------------------------------------------
+
+    expect_true(
+      is.numeric(diag$max_abs_gradient)
+    )
+
+    expect_true(
+      is.numeric(diag$hessian_min_eigen)
+    )
+
+    expect_true(
+      is.numeric(diag$hessian_condition_number)
+    )
+
+    expect_true(
+      is.logical(diag$hessian_positive_definite)
+    )
+
+    expect_true(
+      is.logical(diag$numerical_ok)
+    )
+
+    # Numerical warnings are allowed.
+    # Do not require every iteration to converge.
+
+    # ==========================================================
+    # 16. Capture model diagnostics
     # ==========================================================
 
     capture_links <- vapply(
@@ -514,7 +590,7 @@ test_that(
     )
 
     # ----------------------------------------------------------
-    # Count capture failures in each retained iteration
+    # 16.1 Count capture failures in each retained iteration
     # ----------------------------------------------------------
 
     capture_counts <- lapply(
@@ -540,10 +616,8 @@ test_that(
       capture_counts
     )
 
-    # At least one iteration should contain capture failures.
-    #
-    # This is a minimal regression check, not proof that
-    # the capture component is statistically identifiable.
+    # At least one retained iteration should contain
+    # capture failures.
 
     expect_true(
       any(capture_counts$n_zero > 0),
@@ -557,10 +631,6 @@ test_that(
     expect_true(
       all(capture_counts$n_one > 0)
     )
-
-    # ----------------------------------------------------------
-    # Report diagnostic information
-    # ----------------------------------------------------------
 
     message(
       "Capture-model diagnostic summary:"
@@ -577,12 +647,10 @@ test_that(
     )
 
     # ==========================================================
-    # 15. Prediction-scale checks
+    # 17. Prediction-scale checks
     # ==========================================================
 
-    # ----------------------------------------------------------
-    # Capture GLMM: logit link
-    # ----------------------------------------------------------
+    # Capture GLMM: inverse logit
 
     capture_draws <- dplyr::bind_rows(
       out$capture_list
@@ -602,10 +670,7 @@ test_that(
       stats::plogis(capture_eta)
     )
 
-    # ----------------------------------------------------------
-    # Detection from p_detect_list:
-    # inverse complementary log-log transformation
-    # ----------------------------------------------------------
+    # Detection: inverse complementary log-log
 
     p_detect_draws <- dplyr::bind_rows(
       out$p_detect_list
@@ -627,6 +692,44 @@ test_that(
 
     check_probability(
       p_detect
+    )
+
+    # Occupancy: inverse logit
+
+    psi_draws <- dplyr::bind_rows(
+      out$psi_list
+    )
+
+    expect_true(
+      "eta" %in% names(psi_draws)
+    )
+
+    psi_eta <- psi_draws$eta
+
+    expect_true(
+      all(is.finite(psi_eta))
+    )
+
+    check_probability(
+      stats::plogis(psi_eta)
+    )
+
+    # ==========================================================
+    # 18. Final checks
+    # ==========================================================
+
+    expect_gt(
+      nrow(out$summary),
+      0
+    )
+
+    expect_gt(
+      length(out$occupancy_models),
+      0
+    )
+
+    expect_true(
+      length(out$retained_iterations) > 0
     )
 
   }

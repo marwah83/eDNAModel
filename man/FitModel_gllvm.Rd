@@ -85,6 +85,23 @@ model. Choose 1 or 2 for residual species associations (default 1).}
 \item{gllvm_warn_separation}{Warn when augmented occupancy is constant for an OTU.
 Defaults to FALSE to preserve the stochastic updating chain.}
 
+\item{gllvm_auto_exclude}{Logical. If TRUE, automatically exclude
+OTUs with insufficient variation in their latent occupancy states
+from the GLLVM occupancy fit. Excluded OTUs remain in the other
+components of the hierarchical model.}
+
+\item{gllvm_min_occupied_sites}{Non-negative integer specifying the
+minimum number of occupied and unoccupied sites required for an
+OTU to be included in the GLLVM. An OTU is excluded when either
+count is less than or equal to this threshold. A value of 0
+excludes only OTUs with constant occupancy states.}
+
+\item{gllvm_excluded_prior}{Numeric vector of length two containing
+the positive Beta prior parameters (a, b) used to smooth occupancy
+probabilities for OTUs excluded from the GLLVM. The smoothed
+estimate is (n_occupied + a) / (n_sites + a + b).
+The default is c(1, 1).}
+
 \item{verbose}{Logical; print progress during fitting.}
 }
 \value{

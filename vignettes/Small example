@@ -1,0 +1,419 @@
+---
+title: "Exploring eDNAModel Outputs: Joint Model and GLLVM"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Exploring eDNAModel Outputs: Joint Model and GLLVM}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5)
+```
+
+## Overview
+
+This tutorial introduces the main output of `FitModel_joint()` and `FitModel_gllvm()` separately. It demonstrates occupancy and detection visualizations and, for the GLLVM, latent-variable (LV) ordination. The examples use a small synthetic community, not real eDNA data. Model fitting is **optional** during vignette building because optimization can take time. To execute the fitted-model sections, change `eval=FALSE` to `eval=TRUE` in the fitting and downstream plotting chunks.
+
+```{r packages}
+library(eDNAModel)
+library(phyloseq)
+```
+
+## Small simulated example
+
+We simulate 15 sites, 3 samples per site, and 8 taxa. Each sample has one count per taxon. The occupancy state is defined at the site level; capture occurs at the sample level.
+
+```{r simulate}
+set.seed(2026)
+n_sites <- 15L
+n_samples_site <- 3L
+n_taxa <- 8L
+sites <- sprintf("Site%02d", seq_len(n_sites))
+taxa <- sprintf("OTU%02d", seq_len(n_taxa))
+sample_ids <- sprintf("Sample%03d", seq_len(n_sites * n_samples_site))
+sample_site <- rep(sites, each = n_samples_site)
+psi_true <- seq(0.40, 0.85, length.out = n_taxa)
+p_true <- seq(0.50, 0.85, length.out = n_taxa)
+lambda_true <- seq(2, 7, length.out = n_taxa)
+Z <- matrix(rbinom(n_sites * n_taxa, 1, rep(psi_true, each = n_sites)),
+            nrow = n_sites, dimnames = list(sites, taxa))
+Y <- matrix(0L, length(sample_ids), n_taxa,
+            dimnames = list(sample_ids, taxa))
+for (i in seq_len(n_sites)) {
+  for (j in seq_len(n_samples_site)) {
+    idx <- (i - 1L) * n_samples_site + j
+    A <- rbinom(n_taxa, 1, Z[i, ] * p_true)
+    Y[idx, ] <- rpois(n_taxa, A * lambda_true)
+  }
+}
+metadata <- data.frame(Site = sample_site, Name = sample_ids,
+                       row.names = sample_ids)
+ps_small <- phyloseq(otu_table(Y, taxa_are_rows = FALSE),
+                     sample_data(metadata))
+c(sites = n_sites, samples = nsamples(ps_small), taxa = ntaxa(ps_small),
+  zero_fraction = mean(Y == 0))
+```
+
+## Observed detections
+
+A positive count indicates a detection, but a zero does not necessarily indicate true absence. These are **observed detection frequencies**, not model-estimated capture probabilities.
+
+```{r observed-detection}
+detection_by_taxon <- colMeans(Y > 0)
+barplot(detection_by_taxon, ylim = c(0, 1), las = 2,
+        ylab = "Fraction of samples with positive counts",
+        main = "Observed detection frequency by taxon")
+```
+
+## 1. FitModel_joint(): fit and inspect results
+
+The model below includes OTU-specific random intercepts for occupancy and capture, allowing different fitted probabilities for each OTU. The simulation already uses different true probabilities by taxon. We request the joint precision matrix to calculate approximate conditional Wald 95% intervals that account for covariance between the fixed intercept and each OTU random effect. With only 15 sites, estimates and intervals may be unstable; this is an instructional example.
+
+```{r fit-joint, eval=TRUE}
+tm_joint <- system.time({
+  fit_joint <- FitModel_joint(
+    phyloseq = ps_small,
+    site_col = "Site", sample_col = "Name", replicate_col = NULL,
+    otu_col = "OTU", count_col = "y",
+    occupancy_formula = ~ 1,
+    capture_formula = ~ 1,
+    abundance_formula = ~ 1,
+    abundance_family = "poisson",
+    random_occ_otu = TRUE,
+    random_capture_otu = TRUE,
+    random_abund_otu = FALSE,
+    random_sample = FALSE,
+    random_sample_otu = FALSE,
+    min_species_sum = 1,
+    min_detection_replicates = 1,
+    gradient_tol = 1e-3,
+    max_restarts = 1L,
+    get_report_covariance = FALSE,
+    get_joint_precision = TRUE,
+    verbose = FALSE
+  )
+})
+```
+
+Inspect the returned object before selecting its output components. Their names can change as the package develops.
+
+```{r joint-output, eval=FALSE}
+print(names(fit_joint))
+str(fit_joint, max.level = 1)
+if (!is.null(fit_joint$summary)) print(utils::head(fit_joint$summary))
+print(tm_joint)
+```
+
+### Joint model: OTU-specific occupancy and capture caterpillar plots (95% CI)
+
+The fitted occupancy and capture probabilities differ across OTUs because both model stages include OTU-specific random intercepts. The following intervals are **approximate conditional Wald 95% intervals** calculated on the logit scale and transformed to the probability scale. They use the joint precision matrix, including covariance between each fixed intercept and its OTU random effect. They are **not bootstrap intervals or Bayesian credible intervals**, and their calibration may be poor for this very small example.
+
+```{r joint-caterpillar, eval=TRUE, fig.width=8, fig.height=5}
+library(ggplot2)
+library(Matrix)
+
+obj <- fit_joint$tmb_object
+if (is.null(obj) || is.null(fit_joint$sdreport)) {
+  stop("FitModel_joint did not return tmb_object and sdreport.")
+}
+pars <- obj$env$parList(obj$env$last.par.best)
+otus <- as.character(fit_joint$retained_otus)
+fe <- fit_joint$fixed_effects
+if (!all(c("parameter", "Estimate") %in% names(fe))) {
+  stop("Unexpected fixed_effects structure: inspect fit_joint$fixed_effects.")
+}
+get_beta <- function(name) {
+  x <- as.numeric(fe$Estimate[fe$parameter == name])
+  if (length(x) != 1L || !is.finite(x)) {
+    stop("Cannot identify fitted intercept: ", name)
+  }
+  x
+}
+beta_occ <- get_beta("beta_occ")
+beta_cap <- get_beta("beta_cap")
+b_occ <- as.numeric(pars$b_occ_otu)
+b_cap <- as.numeric(pars$b_cap_otu)
+if (length(otus) == 0L || length(b_occ) != length(otus) ||
+    length(b_cap) != length(otus)) {
+  stop("OTU random effects do not match retained OTUs; inspect parList().")
+}
+
+Q <- fit_joint$sdreport$jointPrecision
+if (is.null(Q)) {
+  stop("jointPrecision unavailable. Fit with get_joint_precision = TRUE and check sdreport diagnostics.")
+}
+pnames <- rownames(Q)
+if (is.null(pnames)) stop("jointPrecision lacks parameter names.")
+idx_occ_fixed <- which(pnames == "beta_occ")
+idx_cap_fixed <- which(pnames == "beta_cap")
+idx_occ_otu <- which(pnames == "b_occ_otu")
+idx_cap_otu <- which(pnames == "b_cap_otu")
+if (length(idx_occ_fixed) != 1L || length(idx_cap_fixed) != 1L ||
+    length(idx_occ_otu) != length(otus) ||
+    length(idx_cap_otu) != length(otus)) {
+  stop("Required fixed/random blocks not found in jointPrecision. Inspect rownames(Q).")
+}
+
+# Compute only the covariance entries needed for each intercept + OTU effect.
+selected <- unique(c(idx_occ_fixed, idx_cap_fixed, idx_occ_otu, idx_cap_otu))
+E <- Matrix::sparseMatrix(
+  i = selected, j = seq_along(selected), x = 1,
+  dims = c(nrow(Q), length(selected))
+)
+V <- tryCatch(
+  as.matrix(Matrix::crossprod(E, Matrix::solve(Matrix::forceSymmetric(Q), E))),
+  error = function(e) stop("Unable to invert selected joint precision entries: ", conditionMessage(e))
+)
+pos <- function(idx) match(idx, selected)
+o <- pos(idx_occ_fixed)
+c_idx <- pos(idx_cap_fixed)
+var_occ <- vapply(pos(idx_occ_otu), function(j) {
+  V[o, o] + V[j, j] + 2 * V[o, j]
+}, numeric(1))
+var_cap <- vapply(pos(idx_cap_otu), function(j) {
+  V[c_idx, c_idx] + V[j, j] + 2 * V[c_idx, j]
+}, numeric(1))
+if (any(!is.finite(c(var_occ, var_cap))) || any(c(var_occ, var_cap) < 0)) {
+  stop("Invalid conditional predictor variances; check model convergence and Hessian.")
+}
+
+zcrit <- stats::qnorm(0.975)
+eta_occ <- beta_occ + b_occ
+eta_cap <- beta_cap + b_cap
+otu_probabilities <- data.frame(
+  OTU = otus,
+  psi_mean = stats::plogis(eta_occ),
+  psi_lwr = stats::plogis(eta_occ - zcrit * sqrt(var_occ)),
+  psi_upr = stats::plogis(eta_occ + zcrit * sqrt(var_occ)),
+  p_mean = stats::plogis(eta_cap),
+  p_lwr = stats::plogis(eta_cap - zcrit * sqrt(var_cap)),
+  p_upr = stats::plogis(eta_cap + zcrit * sqrt(var_cap))
+)
+print(otu_probabilities)
+
+plot_joint_ci <- function(dat, estimate, lower, upper, title, colour) {
+  d <- data.frame(
+    OTU = dat$OTU,
+    estimate = dat[[estimate]],
+    lower = dat[[lower]],
+    upper = dat[[upper]]
+  )
+  d$OTU <- factor(d$OTU, levels = d$OTU[order(d$estimate)])
+  ggplot(d, aes(x = estimate, y = OTU)) +
+    geom_errorbar(aes(xmin = lower, xmax = upper),
+                  orientation = "y", width = 0.2,
+                  linewidth = 0.7, colour = colour) +
+    geom_point(size = 2.8, colour = colour) +
+    scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    labs(title = title,
+         subtitle = "Points: fitted probability; bars: approximate 95% CI",
+         x = "Fitted probability", y = "OTU") +
+    theme_minimal(base_size = 12)
+}
+
+print(plot_joint_ci(otu_probabilities, "psi_mean", "psi_lwr", "psi_upr",
+                    "Joint model: occupancy by OTU", "darkgreen"))
+print(plot_joint_ci(otu_probabilities, "p_mean", "p_lwr", "p_upr",
+                    "Joint model: capture by OTU", "steelblue"))
+```
+
+The intervals are computed for the fitted **intercept plus each OTU random effect**. They are not uncertainty intervals for a population-average probability. If the model does not converge or the joint precision matrix is unavailable, do not report these intervals as valid; increase the simulated sample size or improve the fit before interpreting them.
+
+## 2. FitModel_gllvm(): fit and inspect results
+
+This call requires the updated `FitModel_gllvm()` implementation with `num_lv` and GLLVM diagnostic controls. The small iteration count is for illustration, not convergence assessment.
+
+```{r fit-gllvm, eval=TRUE}
+required_args <- c("num_lv", "gllvm_n_init", "gllvm_gradient_tol",
+                   "gllvm_strict", "gllvm_auto_exclude")
+missing_args <- setdiff(required_args,
+                        names(formals(eDNAModel::FitModel_gllvm)))
+if (length(missing_args)) {
+  stop("Update eDNAModel first; missing arguments: ",
+       paste(missing_args, collapse = ", "))
+}
+set.seed(2026)
+tm_gllvm <- system.time({
+  fit_gllvm <- FitModel_gllvm(
+    phyloseq = ps_small,
+    site_col = "Site", sample_col = "Name", replicate_col = NULL,
+    otu_col = "OTU", count_col = "y",
+    occupancy_covars = NULL,
+    abundance_rhs = (1 | OTU),
+    abundance_family = "poisson",
+    min_species_sum = 1,
+    min_detection_replicates = 1,
+    n_iter = 20, burn_in = 5,
+    num_lv_c = 0, num_lv = 2,
+    gllvm_n_init = 2,
+    gllvm_gradient_tol = 1e-3,
+    gllvm_strict = FALSE,
+    gllvm_condition_tol = 1e8,
+    gllvm_eigen_tol = 1e-8,
+    gllvm_warn_separation = TRUE,
+    gllvm_auto_exclude = TRUE,
+    gllvm_min_occupied_sites = 1,
+    gllvm_excluded_prior = c(1, 1),
+    verbose = FALSE
+  )
+})
+```
+
+```{r gllvm-output, eval=FALSE}
+print(names(fit_gllvm))
+str(fit_gllvm, max.level = 1)
+if (!is.null(fit_gllvm$gllvm_diagnostics)) print(fit_gllvm$gllvm_diagnostics)
+if (!is.null(fit_gllvm$gllvm_excluded_otus)) print(fit_gllvm$gllvm_excluded_otus)
+print(tm_gllvm)
+```
+
+### GLLVM occupancy and detection caterpillar plots
+
+The updated function returns retained occupancy predictors in `psi_list` on the **logit** scale, and detection predictors in `p_detect_list` on the **complementary log-log** scale. The intervals below are the empirical 2.5%–97.5% ranges across the retained predictions, **not confidence or Bayesian credible intervals**.
+
+```{r gllvm-caterpillar, eval=TRUE, fig.width=8, fig.height=6}
+library(dplyr)
+library(ggplot2)
+
+summarise_predictions <- function(draw_list, transform, otu_col = "OTU") {
+  if (is.null(draw_list) || !length(draw_list))
+    stop("No retained prediction data available.")
+  d <- dplyr::bind_rows(draw_list)
+  if (!all(c("eta", otu_col) %in% names(d)))
+    stop("Expected eta and OTU columns; inspect the returned list.")
+  d$probability <- transform(d$eta)
+  d <- d[is.finite(d$probability), , drop = FALSE]
+  if (!nrow(d)) stop("No finite predictions.")
+  d %>%
+    group_by(.data[[otu_col]]) %>%
+    summarise(
+      estimate = mean(.data$probability),
+      lower = unname(quantile(.data$probability, 0.025)),
+      upper = unname(quantile(.data$probability, 0.975)),
+      .groups = "drop"
+    ) %>%
+    rename(OTU = all_of(otu_col))
+}
+
+plot_gllvm_caterpillar <- function(d, title) {
+  d$OTU <- factor(d$OTU, levels = d$OTU[order(d$estimate)])
+  ggplot(d, aes(x = estimate, y = OTU)) +
+    geom_segment(aes(x = lower, xend = upper, yend = OTU),
+                 linewidth = 0.8) +
+    geom_point(size = 2.5) +
+    scale_x_continuous(limits = c(0, 1)) +
+    labs(title = title,
+         subtitle = "Point: mean; line: empirical 2.5–97.5% range",
+         x = "Estimated probability", y = "OTU") +
+    theme_minimal(base_size = 12)
+}
+
+occupancy_summary <- summarise_predictions(
+  fit_gllvm$psi_list, stats::plogis
+)
+detection_summary <- summarise_predictions(
+  fit_gllvm$p_detect_list,
+  function(eta) -expm1(-exp(eta))
+)
+
+print(plot_gllvm_caterpillar(occupancy_summary,
+                              "GLLVM: occupancy by OTU"))
+print(plot_gllvm_caterpillar(detection_summary,
+                              "GLLVM: detection by OTU"))
+```
+
+### GLLVM latent-variable (LV) plots
+
+This example uses `num_lv = 2` to plot site scores and OTU loadings together on LV1 and LV2. The output includes identifier columns, which must be kept separate from numeric latent-variable columns. Excluded OTUs may lack estimated loadings.
+
+```{r gllvm-lv, eval=TRUE, fig.width=8, fig.height=6}
+library(ggplot2)
+library(ggrepel)
+
+# The function returns data frames with identifier columns (Site/OTU)
+# and numeric latent-variable columns (LV1, LV2).
+site_df <- as.data.frame(fit_gllvm$mean_lv_sites)
+species_df <- as.data.frame(fit_gllvm$mean_lv_species)
+
+if (!all(c("LV1", "LV2") %in% names(site_df)) ||
+    !all(c("LV1", "LV2") %in% names(species_df))) {
+  stop("LV1 and LV2 were not returned. Check GLLVM fit, exclusions, and num_lv = 2.")
+}
+
+# Preserve identifiers rather than converting them to numeric.
+if (!("Site" %in% names(site_df))) {
+  site_df$Site <- rownames(site_df)
+}
+if (!("OTU" %in% names(species_df))) {
+  species_df$OTU <- rownames(species_df)
+}
+
+# Explicitly select and validate numeric LV columns.
+for (nm in c("LV1", "LV2")) {
+  if (!is.numeric(site_df[[nm]]) || !is.numeric(species_df[[nm]])) {
+    stop("Expected numeric latent-variable column: ", nm)
+  }
+}
+
+site_df <- site_df[is.finite(site_df$LV1) & is.finite(site_df$LV2), , drop = FALSE]
+species_df <- species_df[
+  is.finite(species_df$LV1) & is.finite(species_df$LV2), , drop = FALSE
+]
+if (!nrow(site_df) || !nrow(species_df)) {
+  stop("No finite site scores or OTU loadings to plot.")
+}
+
+site_range <- max(abs(as.matrix(site_df[, c("LV1", "LV2"), drop = FALSE])))
+species_range <- max(abs(as.matrix(species_df[, c("LV1", "LV2"), drop = FALSE])))
+arrow_scale <- if (site_range > 0 && species_range > 0) {
+  0.8 * site_range / species_range
+} else {
+  1
+}
+
+species_df$LV1_plot <- species_df$LV1 * arrow_scale
+species_df$LV2_plot <- species_df$LV2 * arrow_scale
+
+p_lv <- ggplot() +
+  geom_point(data = site_df, aes(x = LV1, y = LV2),
+             color = "steelblue", size = 3, alpha = 0.8) +
+  ggrepel::geom_text_repel(data = site_df,
+                           aes(x = LV1, y = LV2, label = Site),
+                           color = "steelblue4", size = 3) +
+  geom_segment(data = species_df,
+               aes(x = 0, y = 0, xend = LV1_plot, yend = LV2_plot),
+               arrow = grid::arrow(length = grid::unit(0.2, "cm")),
+               color = "firebrick", linewidth = 0.6) +
+  ggrepel::geom_text_repel(data = species_df,
+                           aes(x = LV1_plot, y = LV2_plot, label = OTU),
+                           color = "firebrick4", size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60") +
+  coord_equal() +
+  labs(title = "Two-Dimensional GLLVM Biplot",
+       subtitle = "Site scores and scaled OTU latent-variable loadings",
+       x = "Latent Variable 1 (LV1)",
+       y = "Latent Variable 2 (LV2)") +
+  theme_bw(base_size = 12)
+
+print(p_lv)
+```
+
+**Interpretation:** Positive and negative LV1 scores indicate opposite positions along the fitted latent community gradient. The overall sign of an LV is arbitrary; it should not be interpreted as a directional ecological effect without further analysis. Averaging latent scores across stochastic fits is meaningful only when the axes have been aligned consistently.
+
+## Notes on interpretation
+
+- **Occupancy plot:** probability a taxon is present at a site; use a site-by-taxon heatmap if estimates vary by site.
+- **Capture plot:** conditional probability of capture, given presence; this is not identical to the probability of a positive Poisson count.
+- **Observed detection plot:** fraction of samples with nonzero observed counts, shown above; it is descriptive, not a fitted probability.
+- **GLLVM LV plot:** displays residual community structure after accounting for the occupancy fixed effects. Axes may change sign or rotate between fits.
+- **Excluded taxa:** inspect GLLVM-only exclusions before interpreting community ordination.
+
+The GLLVM plotting code uses the output field names documented in the existing eDNAModel GLLVM vignette. Verify these fields and their scales against the version installed on your server before interpreting plots. Joint-model plots use fitted point estimates; uncertainty intervals are not supplied without validated covariance estimates.
+
+## Session information
+
+```{r session-info}
+utils::sessionInfo()
+```

@@ -20,7 +20,11 @@ importFrom(dplyr,
   mutate,
   pull,
   select,
-  summarise
+  summarise,
+  ggplot2, 
+  methods,
+  pROC,
+  rlang
 )
 importFrom(gllvm,gllvm)
 importFrom(glmmTMB,

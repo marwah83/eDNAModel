@@ -1,150 +1,133 @@
 #' Prepare Long Format Data from a Phyloseq Object
 #'
-#' Converts a `phyloseq` object into a tidy long-format data frame for modeling.
-#' This function performs **data restructuring only** and does not apply any
-#' filtering of taxa. All filtering should be handled explicitly in downstream
-#' modeling functions such as \code{\link{FitModel}}.
+#' Converts a phyloseq object into a tidy long-format data frame.
+#' No taxon filtering is performed.
 #'
-#' @param physeq_obj A `phyloseq` object containing OTU (or ASV) abundance table
-#' and sample metadata.
-#' @param site_col Character. Column name in \code{sample_data} representing the
-#' sampling site variable. This variable is copied into the output as \code{Site}.
-#' @param nested_cols Optional character vector. Column names in
-#' \code{sample_data} to be combined into a nested grouping factor
-#' (\code{SampleRep}). Used for hierarchical or repeated-measures designs.
-#' Default is \code{NULL}, in which case original sample names are used.
+#' @param physeq_obj A phyloseq object containing an OTU table
+#'   and sample metadata.
+#' @param site_col Character. Name of the site-level variable
+#'   in sample_data.
+#' @param nested_cols Optional character vector of metadata
+#'   columns used to construct a nested grouping identifier.
 #'
-#' @return A list with two elements:
+#' @return A list containing:
 #' \describe{
-#'   \item{physeq}{The original `phyloseq` object (with an added \code{SampleRep}
-#'   column in \code{sample_data}).}
-#'   \item{long_df}{A long-format \code{data.frame} with one row per
-#'   \code{SampleRep × OTU}. Columns include:
-#'   \itemize{
-#'     \item \code{SampleRep}: sample or nested replicate identifier
-#'     \item \code{OTU}: taxon identifier
-#'     \item \code{y}: observed counts/abundance
-#'     \item \code{Site}: site-level grouping variable derived from \code{site_col}
-#'     \item all original sample metadata variables
-#'   }}
+#'   \item{physeq}{The phyloseq object with SampleRep added.}
+#'   \item{long_df}{Long-format data with SampleRep, OTU,
+#'   y, Site, and sample metadata.}
 #' }
 #'
-#' @details
-#' This function reshapes a `phyloseq` object into a long (tidy) format suitable
-#' for hierarchical modeling frameworks such as occupancy–detection or
-#' zero-inflated models.
-#'
-#' Key steps:
-#' \itemize{
-#'   \item Constructs a \code{SampleRep} variable:
-#'     \itemize{
-#'       \item If \code{nested_cols} are provided, they are combined using
-#'       \code{interaction()} to define nested or repeated-measures structure.
-#'       \item Otherwise, original sample names are used.
-#'     }
-#'   \item Converts the OTU table into long format using \code{pivot_longer()}.
-#'   \item Merges OTU counts with sample metadata via \code{SampleRep}.
-#'   \item Creates a \code{Site} column from \code{site_col}.
-#'   \item Ensures consistent data types for modeling (factor OTUs, numeric counts).
-#' }
-#'
-#' \strong{Important:}
-#' This function does \emph{not} perform any filtering of taxa (e.g., by abundance
-#' or prevalence). This design ensures transparency and allows users to control
-#' filtering explicitly in modeling functions such as \code{\link{FitModel}}.
-#'
-#' @examples
-#' \dontrun{
-#' data(GlobalPatterns)
-#'
-#' long_data <- prepare_long_data(
-#'   physeq_obj = GlobalPatterns,
-#'   site_col = "SampleType",
-#'   nested_cols = c("SampleType")
-#' )
-#' }
-#'
-#' @seealso \code{\link{FitModel}} for applying filtering and hierarchical modeling.
-#'
-#' @importFrom phyloseq sample_data taxa_are_rows otu_table sample_names
-#' @importFrom dplyr left_join mutate
-#' @importFrom tidyr pivot_longer
+#' @importFrom phyloseq sample_data sample_names
+#' @importFrom phyloseq otu_table taxa_are_rows
 #' @importFrom tibble rownames_to_column
+#' @importFrom tidyr pivot_longer
+#' @importFrom dplyr left_join mutate
+#' @importFrom rlang .data
+#'
 #' @export
-prepare_long_data <- function(physeq_obj,
-                              site_col,
-                              nested_cols = NULL) {
-  
-    
-    sample_meta <- as.data.frame(phyloseq::sample_data(physeq_obj), stringsAsFactors = FALSE)
-    # -------------------------------
-    # Extract metadata
-    # -------------------------------
-   
-    if (!(site_col %in% names(sample_meta))) {
-      stop("site_col not found in sample_data.")
-    }
-    
-    # -------------------------------
-    # Create SampleRep
-    # 
-    # -------------------------------
-    if (!is.null(nested_cols)) {
-      
-      if (!all(nested_cols %in% names(sample_meta))) {
-        stop("Some nested_cols not found in sample_data.")
-      }
-      
-      phyloseq::sample_data(physeq_obj)$SampleRep <-
-        do.call(interaction, sample_meta[, nested_cols, drop = FALSE])
-      
-    } else {
-      phyloseq::sample_data(physeq_obj)$SampleRep <- sample_names(physeq_obj)
-      
-    }
-    
-    # -------------------------------
-    # Metadata
-    # -------------------------------
-    meta_df <- as.data.frame(phyloseq::sample_data(physeq_obj), stringsAsFactors = FALSE)
-    meta_df$SampleRep <- rownames(meta_df)
-    
-    
-    # -------------------------------
-    # OTU matrix → long
-    # -------------------------------
-    otu_mat <- as(otu_table(physeq_obj), "matrix")
-    
-    # OTU matrix to long format
-    
-    if (taxa_are_rows(physeq_obj)) {
-       
-        otu_mat <- t(otu_mat)
-      }
-      
-      
-      otu_long <- as.data.frame(otu_mat) |>
-        tibble::rownames_to_column("SampleRep") |>
-        tidyr::pivot_longer(-SampleRep, names_to = "OTU", values_to = "y")
-      
-      # -------------------------------
-      # Merge
-      # 
-      # -------------------------------
-      long_df <- dplyr::left_join(otu_long, meta_df, by = "SampleRep") |>
-       
-        dplyr::mutate(
-          OTU = factor(OTU),
-          y   = as.numeric(y),
-          Site = .data[[site_col]]
-        )
-      
-      # -------------------------------
-      # Return
-      # -------------------------------
-      return(list(
-        physeq = physeq_obj,
-        long_df = long_df
+prepare_long_data <- function(
+    physeq_obj,
+    site_col,
+    nested_cols = NULL
+) {
 
-        ))
+  # ----------------------------------------------------------
+  # 1. Extract sample metadata
+  # ----------------------------------------------------------
+
+  sample_meta <- as.data.frame(
+    phyloseq::sample_data(physeq_obj),
+    stringsAsFactors = FALSE
+  )
+
+  if (!(site_col %in% names(sample_meta))) {
+    stop("site_col not found in sample_data.")
+  }
+
+  # Preserve original sample identifiers
+  sample_meta$SampleID <- rownames(sample_meta)
+
+  # ----------------------------------------------------------
+  # 2. Construct SampleRep
+  # ----------------------------------------------------------
+
+  if (!is.null(nested_cols)) {
+
+    if (!all(nested_cols %in% names(sample_meta))) {
+      stop("Some nested_cols not found in sample_data.")
+    }
+
+    sample_meta$SampleRep <- as.character(
+      do.call(
+        interaction,
+        c(
+          sample_meta[, nested_cols, drop = FALSE],
+          list(drop = TRUE, sep = "_")
+        )
+      )
+    )
+
+  } else {
+
+    sample_meta$SampleRep <- sample_meta$SampleID
+
+  }
+
+  # ----------------------------------------------------------
+  # 3. Update phyloseq metadata
+  # ----------------------------------------------------------
+
+  phyloseq::sample_data(physeq_obj)$SampleRep <-
+    sample_meta$SampleRep
+
+  # ----------------------------------------------------------
+  # 4. Extract OTU matrix
+  # ----------------------------------------------------------
+
+  otu_mat <- as(
+    phyloseq::otu_table(physeq_obj),
+    "matrix"
+  )
+
+  if (phyloseq::taxa_are_rows(physeq_obj)) {
+    otu_mat <- t(otu_mat)
+  }
+
+  # ----------------------------------------------------------
+  # 5. Convert OTU matrix to long format
+  # ----------------------------------------------------------
+
+  otu_long <- as.data.frame(otu_mat) |>
+    tibble::rownames_to_column("SampleID") |>
+    tidyr::pivot_longer(
+      cols = -tidyselect::all_of("SampleID"),
+      names_to = "OTU",
+      values_to = "y"
+    )
+
+  # ----------------------------------------------------------
+  # 6. Merge with sample metadata
+  # ----------------------------------------------------------
+
+  long_df <- dplyr::left_join(
+    otu_long,
+    sample_meta,
+    by = "SampleID"
+  ) |>
+    dplyr::mutate(
+      OTU = factor(.data$OTU),
+      y = as.numeric(.data$y),
+      Site = .data[[site_col]]
+    )
+
+  # ----------------------------------------------------------
+  # 7. Return results
+  # ----------------------------------------------------------
+
+  return(
+    list(
+      physeq = physeq_obj,
+      long_df = long_df
+    )
+  )
 }

@@ -1,1 +1,39 @@
-[]
+[
+    {
+        "file": "/Users/marwahsoliman/Documents/eDNAModel/src/eDNAModel.cpp",
+        "file_last_write": 1788451424.0,
+        "definitions": [
+            {
+                "usr": "c:@FT@>1#Tlog_invlogit#t0.0#S0_#",
+                "kind": 6,
+                "parent_name": "",
+                "name": "log_invlogit(Type)",
+                "file": "/Users/marwahsoliman/Documents/eDNAModel/src/eDNAModel.cpp",
+                "line": 10,
+                "column": 6,
+                "hidden": false
+            },
+            {
+                "usr": "c:@FT@>1#Tlog1m_invlogit#t0.0#S0_#",
+                "kind": 6,
+                "parent_name": "",
+                "name": "log1m_invlogit(Type)",
+                "file": "/Users/marwahsoliman/Documents/eDNAModel/src/eDNAModel.cpp",
+                "line": 18,
+                "column": 6,
+                "hidden": false
+            },
+            {
+                "usr": "c:@ST>1#T@objective_function@F@operator()#",
+                "kind": 7,
+                "parent_name": "objective_function<Type>",
+                "name": "operator()",
+                "file": "/Users/marwahsoliman/Documents/eDNAModel/src/eDNAModel.cpp",
+                "line": 72,
+                "column": 32,
+                "hidden": false
+            }
+        ],
+        "hidden": false
+    }
+]

@@ -7,75 +7,24 @@
 prepare_long_data(physeq_obj, site_col, nested_cols = NULL)
 }
 \arguments{
-\item{physeq_obj}{A `phyloseq` object containing OTU (or ASV) abundance table
+\item{physeq_obj}{A phyloseq object containing an OTU table
 and sample metadata.}
 
-\item{site_col}{Character. Column name in \code{sample_data} representing the
-sampling site variable. This variable is copied into the output as \code{Site}.}
+\item{site_col}{Character. Name of the site-level variable
+in sample_data.}
 
-\item{nested_cols}{Optional character vector. Column names in
-\code{sample_data} to be combined into a nested grouping factor
-(\code{SampleRep}). Used for hierarchical or repeated-measures designs.
-Default is \code{NULL}, in which case original sample names are used.}
+\item{nested_cols}{Optional character vector of metadata
+columns used to construct a nested grouping identifier.}
 }
 \value{
-A list with two elements:
+A list containing:
 \describe{
-  \item{physeq}{The original `phyloseq` object (with an added \code{SampleRep}
-  column in \code{sample_data}).}
-  \item{long_df}{A long-format \code{data.frame} with one row per
-  \code{SampleRep × OTU}. Columns include:
-  \itemize{
-    \item \code{SampleRep}: sample or nested replicate identifier
-    \item \code{OTU}: taxon identifier
-    \item \code{y}: observed counts/abundance
-    \item \code{Site}: site-level grouping variable derived from \code{site_col}
-    \item all original sample metadata variables
-  }}
+  \item{physeq}{The phyloseq object with SampleRep added.}
+  \item{long_df}{Long-format data with SampleRep, OTU,
+  y, Site, and sample metadata.}
 }
 }
 \description{
-Converts a `phyloseq` object into a tidy long-format data frame for modeling.
-This function performs **data restructuring only** and does not apply any
-filtering of taxa. All filtering should be handled explicitly in downstream
-modeling functions such as \code{\link{FitModel_joint}}.
-}
-\details{
-This function reshapes a `phyloseq` object into a long (tidy) format suitable
-for hierarchical modeling frameworks such as occupancy–detection or
-zero-inflated models.
-
-Key steps:
-\itemize{
-  \item Constructs a \code{SampleRep} variable:
-    \itemize{
-      \item If \code{nested_cols} are provided, they are combined using
-      \code{interaction()} to define nested or repeated-measures structure.
-      \item Otherwise, original sample names are used.
-    }
-  \item Converts the OTU table into long format using \code{pivot_longer()}.
-  \item Merges OTU counts with sample metadata via \code{SampleRep}.
-  \item Creates a \code{Site} column from \code{site_col}.
-  \item Ensures consistent data types for modeling (factor OTUs, numeric counts).
-}
-
-\strong{Important:}
-This function does \emph{not} perform any filtering of taxa (e.g., by abundance
-or prevalence). This design ensures transparency and allows users to control
-filtering explicitly in modeling functions such as \code{\link{FitModel_joint}}.
-}
-\examples{
-\dontrun{
-data(GlobalPatterns)
-
-long_data <- prepare_long_data(
-  physeq_obj = GlobalPatterns,
-  site_col = "SampleType",
-  nested_cols = c("SampleType")
-)
-}
-
-}
-\seealso{
-\code{\link{FitModel_joint}} for applying filtering and hierarchical modeling.
+Converts a phyloseq object into a tidy long-format data frame.
+No taxon filtering is performed.
 }

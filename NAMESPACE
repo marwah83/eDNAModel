@@ -41,6 +41,7 @@ importFrom(reshape2,
   acast,
   melt
 )
+importFrom(rlang,.data)
 importFrom(stats,
   model.matrix,
   nlminb,

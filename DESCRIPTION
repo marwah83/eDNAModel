@@ -28,7 +28,8 @@ Imports:
     tidyr,
     tibble,
     reshape2,
-    pROC
+    pROC,
+    tidyselect
 LinkingTo:
     TMB,
     RcppEigen

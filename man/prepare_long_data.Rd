@@ -38,7 +38,7 @@ A list with two elements:
 Converts a `phyloseq` object into a tidy long-format data frame for modeling.
 This function performs **data restructuring only** and does not apply any
 filtering of taxa. All filtering should be handled explicitly in downstream
-modeling functions such as \code{\link{FitModel}}.
+modeling functions such as \code{\link{FitModel_joint}}.
 }
 \details{
 This function reshapes a `phyloseq` object into a long (tidy) format suitable
@@ -62,7 +62,7 @@ Key steps:
 \strong{Important:}
 This function does \emph{not} perform any filtering of taxa (e.g., by abundance
 or prevalence). This design ensures transparency and allows users to control
-filtering explicitly in modeling functions such as \code{\link{FitModel}}.
+filtering explicitly in modeling functions such as \code{\link{FitModel_joint}}.
 }
 \examples{
 \dontrun{
@@ -77,5 +77,5 @@ long_data <- prepare_long_data(
 
 }
 \seealso{
-\code{\link{FitModel}} for applying filtering and hierarchical modeling.
+\code{\link{FitModel_joint}} for applying filtering and hierarchical modeling.
 }

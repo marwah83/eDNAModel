@@ -49,4 +49,4 @@ importFrom(stats,
 )
 importFrom(tibble,rownames_to_column)
 importFrom(tidyr,pivot_longer)
-useDynLib(eDNAModel)
+useDynLib(eDNAModel, .registration = TRUE)

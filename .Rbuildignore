@@ -13,3 +13,4 @@
 ^check$
 ^FitModel_vs_joint_simulation\.rds$
 ^phyloseq_filtered\.RDS$
+^dev$

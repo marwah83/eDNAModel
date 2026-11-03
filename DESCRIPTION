@@ -39,7 +39,8 @@ Suggests:
     testthat (>= 3.0.0),
     covr,
     rmarkdown,
-    pheatmap
+    pheatmap,
+    ggrepel
 VignetteBuilder: knitr
 Depends:
     R (>= 4.1.0)

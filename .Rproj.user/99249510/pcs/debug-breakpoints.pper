@@ -1,51 +1,5 @@
 {
     "debugBreakpointsState": {
-        "breakpoints": [
-            {
-                "id": 3,
-                "path": "~/Library/Mobile Documents/com~apple~CloudDocs/Desktop/Desktop - Marwah’s MacBook Pro/marwahsoliman/Desktop/george_project.R",
-                "line_number": 252,
-                "function_steps": "",
-                "function_name": "toplevel",
-                "state": 1,
-                "editor_state": 1,
-                "editor_line_number": 252,
-                "is_pending_debug_completion": false,
-                "needs_updated_steps": false,
-                "type": 1,
-                "is_package_breakpoint": false,
-                "package_name": ""
-            },
-            {
-                "id": 4,
-                "path": "~/Documents/eDNAModel/R/functions_TMB/extract_TMB_results.R",
-                "line_number": 18,
-                "function_steps": "",
-                "function_name": "extract_TMB_results",
-                "state": 2,
-                "editor_state": 2,
-                "editor_line_number": 18,
-                "is_pending_debug_completion": false,
-                "needs_updated_steps": false,
-                "type": 0,
-                "is_package_breakpoint": false,
-                "package_name": ""
-            },
-            {
-                "id": 5,
-                "path": "~/Desktop/code_Glenn.R",
-                "line_number": 82,
-                "function_steps": "",
-                "function_name": "toplevel",
-                "state": 1,
-                "editor_state": 1,
-                "editor_line_number": 82,
-                "is_pending_debug_completion": false,
-                "needs_updated_steps": false,
-                "type": 1,
-                "is_package_breakpoint": false,
-                "package_name": ""
-            }
-        ]
+        "breakpoints": []
     }
 }

@@ -19,16 +19,13 @@ Imports:
     Matrix,
     gllvm,
     phyloseq,
-    methods,
     dplyr,
     glmmTMB,
     stats,
     rlang,
-    ggplot2,
     tidyr,
     tibble,
     reshape2,
-    pROC,
     tidyselect
 LinkingTo:
     TMB,
@@ -40,7 +37,9 @@ Suggests:
     covr,
     rmarkdown,
     pheatmap,
-    ggrepel
+    ggrepel,
+    ggplot2,
+    pROC
 VignetteBuilder: knitr
 Depends:
     R (>= 4.1.0)

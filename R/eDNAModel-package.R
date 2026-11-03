@@ -1,6 +1,6 @@
 #' eDNAModel
 #'
-#' @useDynLib eDNAModel
+#' @useDynLib eDNAModel, .registration = TRUE
 #' @importFrom TMB MakeADFun sdreport
 #'
 #' @keywords internal

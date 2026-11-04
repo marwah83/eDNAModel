@@ -43,7 +43,11 @@ library(eDNAModel)
 
 The package distinguishes three processes:
 
-1. **Occupancy:** whether OTU *k* is present at site *i*, represented by a latent state \(Z_{ik} \sim \mathrm{Bernoulli}(\psi_{ik})\).
+1. **Occupancy:** whether OTU *k* is present at site *i*, represented by a latent state 
+
+```math
+Z_{ik} \sim \mathrm{Bernoulli}(\psi_{ik})
+```
 2. **Capture:** whether an OTU present at a site is captured or detected in a replicate sample.
 3. **Abundance:** variation in observed sequence counts, modelled using a supported count distribution.
 
@@ -170,11 +174,28 @@ See `?FitModel_joint` for all supported arguments and returned components.
 
 `FitModel_gllvm()` incorporates a GLLVM into the occupancy component to represent residual multivariate variation among OTUs. In a general GLLVM occupancy formulation,
 
-\[
-\operatorname{logit}(\psi_{ik}) = \mathbf{x}_i^\top\boldsymbol\beta_k + \mathbf{u}_i^\top\boldsymbol\lambda_k,
-\]
+### Generalized Linear Latent Variable Model (GLLVM)
 
-where \(\mathbf{x}_i\) contains measured site-level covariates, \(\mathbf{u}_i\) contains latent site scores, and \(\boldsymbol\lambda_k\) contains OTU-specific loadings. Latent variables can reveal residual community patterns not explained by the measured predictors.
+The `eDNAModel` package incorporates a Generalized Linear Latent Variable Model (GLLVM) into the occupancy component to represent residual multivariate variation among OTUs.
+
+In a general GLLVM occupancy formulation,
+
+$$
+\mathrm{logit}(\psi_{ik}) =
+\mathbf{x}_i^{\top}\boldsymbol{\beta}_k +
+\mathbf{u}_i^{\top}\boldsymbol{\lambda}_k
+$$
+
+where:
+
+- $\psi_{ik}$ is the occupancy probability of OTU $k$ at site $i$.
+- $\mathbf{x}_i$ is the vector of measured site-level covariates.
+- $\boldsymbol{\beta}_k$ is the vector of OTU-specific regression coefficients.
+- $\mathbf{u}_i$ is the vector of latent site scores.
+- $\boldsymbol{\lambda}_k$ is the vector of OTU-specific latent factor loadings.
+
+The latent variables capture residual associations among OTUs that are not explained by the measured environmental predictors. This allows the GLLVM to identify underlying community patterns and dependencies among OTUs beyond those explained by the observed environmental covariates.
+
 
 ### Fit a model
 

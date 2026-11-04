@@ -169,11 +169,30 @@ See `?FitModel_joint` for all supported arguments and returned components.
 ## 2. `FitModel_gllvm()`: Hierarchical model with latent variables
 
 `FitModel_gllvm()` incorporates a GLLVM into the occupancy component to represent residual multivariate variation among OTUs. In a general GLLVM occupancy formulation,
+### Generalized Linear Latent Variable Model (GLLVM)
+
+The `eDNAModel` package incorporates a Generalized Linear Latent
+Variable Model (GLLVM) into the occupancy component to represent
+residual multivariate variation among OTUs.
+
+In a general GLLVM occupancy formulation,
+
 $$
-\[
-\operatorname{logit}(\psi_{ik}) = \mathbf{x}_i^\top\boldsymbol\beta_k + \mathbf{u}_i^\top\boldsymbol\lambda_k,
-\]
+\operatorname{logit}(\psi_{ik}) =
+\mathbf{x}_i^\top \boldsymbol{\beta}_k +
+\mathbf{u}_i^\top \boldsymbol{\lambda}_k
 $$
+
+where:
+
+- $\psi_{ik}$ is the occupancy probability of OTU $k$ at site $i$.
+- $\mathbf{x}_i$ contains measured site-level covariates.
+- $\boldsymbol{\beta}_k$ contains OTU-specific regression coefficients.
+- $\mathbf{u}_i$ contains latent site scores.
+- $\boldsymbol{\lambda}_k$ contains OTU-specific latent factor loadings.
+
+The latent variables capture residual associations among OTUs
+that are not explained by the measured environmental predictors.
 where \(\mathbf{x}_i\) contains measured site-level covariates, \(\mathbf{u}_i\) contains latent site scores, and \(\boldsymbol\lambda_k\) contains OTU-specific loadings. Latent variables can reveal residual community patterns not explained by the measured predictors.
 
 ### Fit a model

@@ -2,7 +2,7 @@
 % Please edit documentation in R/FitModel_gllvm.R
 \name{FitModel_gllvm}
 \alias{FitModel_gllvm}
-\title{Fit a Multispecies 3-Level Occupancy–Detection–Abundance Model using GLLVM and GLMM}
+\title{Fit a Multispecies Three-Level Occupancy–Detection–Abundance Model}
 \usage{
 FitModel_gllvm(
   phyloseq,
@@ -35,201 +35,375 @@ FitModel_gllvm(
 )
 }
 \arguments{
-\item{phyloseq}{A \code{phyloseq} object containing count data and sample metadata.}
+\item{phyloseq}{A \code{phyloseq} object containing taxon counts
+and sample metadata.}
 
-\item{site_col}{Character string identifying sites (occupancy level).}
+\item{site_col}{Character string identifying the site column.}
 
-\item{sample_col}{Character string identifying biological samples (capture level).}
+\item{sample_col}{Character string identifying biological samples.
+Defaults to \code{"Name"}.}
 
-\item{replicate_col}{Character or \code{NULL} identifying PCR replicates (abundance level).}
+\item{replicate_col}{Character string identifying PCR replicates,
+or \code{NULL} when no explicit replicate identifier is used.}
 
-\item{otu_col}{Character string identifying taxa/species column.}
+\item{otu_col}{Character string identifying the taxon column.
+Defaults to \code{"OTU"}.}
 
-\item{count_col}{Character string identifying the response/count variable.}
+\item{count_col}{Character string identifying the observed count
+variable. Defaults to \code{"y"}.}
 
-\item{abundance_rhs}{Right-hand side of the abundance model, e.g.
-\code{(1 | taxon)} or \code{offset(log(total_reads)) + (1 | taxon)}.}
+\item{abundance_rhs}{Right-hand side of the abundance model, or a
+complete formula with response matching \code{count_col}.
+For example, \code{(1 | OTU)} or
+\code{y ~ offset(log(total_reads)) + (1 | OTU)}.}
 
-\item{capture_formula}{Formula for capture model (response must be \code{a_sim}).}
+\item{capture_formula}{Formula for the capture model, with response
+\code{a_sim}. By default, a binomial random-intercept model
+with a taxon-specific random effect is used.}
 
-\item{occupancy_covars}{Optional character vector of site-level covariates.}
+\item{occupancy_covars}{Optional character vector of site-level
+occupancy covariates. Covariate values must be constant within
+each site.}
 
-\item{min_species_sum}{Minimum total count required to retain a taxon.}
+\item{min_species_sum}{Minimum total count required to retain
+a taxon. Defaults to 50.}
 
-\item{min_detection_replicates}{Minimum number of detections required per taxon.}
+\item{min_detection_replicates}{Minimum number of observations
+exceeding \code{abundance_threshold} required to retain a taxon.
+Defaults to 1.}
 
-\item{abundance_threshold}{Threshold defining detection (default = 1).}
+\item{abundance_threshold}{Count threshold used to define an
+observed detection. Detection occurs when the count is strictly
+greater than this threshold. Defaults to 1.}
 
-\item{n_iter}{Number of EM-like iterations.}
+\item{n_iter}{Number of stochastic model-fitting iterations.
+Defaults to 50.}
 
-\item{burn_in}{Number of initial iterations discarded.}
+\item{burn_in}{Number of initial iterations excluded from
+summary calculations. Must be smaller than \code{n_iter}.
+Defaults to 10.}
 
-\item{abundance_family}{One of \code{"poisson"}, \code{"nbinom"}, \code{"zip"}, \code{"zinb"}.}
+\item{abundance_family}{Abundance distribution. One of
+\code{"poisson"}, \code{"nbinom"}, \code{"zip"}, or
+\code{"zinb"}. Defaults to \code{"poisson"}.}
 
-\item{num_lv_c}{Number of constrained latent variables (currently must be 0;
-constrained latent-variable estimation is not implemented in this wrapper).}
+\item{num_lv_c}{Number of constrained latent variables.
+Currently must equal 0 because constrained latent-variable
+estimation is not implemented in this wrapper.}
 
-\item{num_lv}{Number of unconstrained latent variables in the GLLVM occupancy
-model. Choose 1 or 2 for residual species associations (default 1).}
+\item{num_lv}{Number of unconstrained latent variables in the
+GLLVM occupancy model. Defaults to 1. Larger values increase
+model complexity and may lead to numerical instability.}
 
-\item{gllvm_n_init}{Number of GLLVM initial fits (default 10).}
+\item{gllvm_n_init}{Number of GLLVM initialization attempts.
+Defaults to 10.}
 
-\item{gllvm_gradient_tol}{Diagnostic threshold for maximum absolute gradient.}
+\item{gllvm_gradient_tol}{Positive numerical tolerance for the
+maximum absolute gradient. Defaults to \code{1e-3}.}
 
-\item{gllvm_strict}{If TRUE, skip iterations failing optimizer/gradient diagnostics.}
+\item{gllvm_strict}{Logical. If \code{TRUE}, skip iterations
+failing the implemented numerical acceptance criteria.
+If \code{FALSE}, record diagnostic failures but allow
+subsequent stochastic updates. Defaults to \code{FALSE}.}
 
-\item{gllvm_condition_tol}{Hessian condition-number diagnostic threshold (default 1e8).}
+\item{gllvm_condition_tol}{Hessian condition-number threshold
+used to identify ill-conditioned fits. Defaults to \code{1e8}.}
 
-\item{gllvm_eigen_tol}{Relative eigenvalue threshold for near-zero eigenvalues.}
+\item{gllvm_eigen_tol}{Positive relative eigenvalue threshold
+used to classify near-zero or negative eigenvalues.
+Defaults to \code{1e-8}.}
 
-\item{gllvm_warn_separation}{Warn when augmented occupancy is constant for an OTU.
-Defaults to FALSE to preserve the stochastic updating chain.}
+\item{gllvm_warn_separation}{Logical. If \code{TRUE}, warn when
+an OTU is universally present or absent in the current
+augmented occupancy matrix. Defaults to \code{FALSE}.}
 
-\item{gllvm_auto_exclude}{Logical. If TRUE, automatically exclude
-OTUs with insufficient variation in their latent occupancy states
-from the GLLVM occupancy fit. Excluded OTUs remain in the other
-components of the hierarchical model.}
+\item{gllvm_auto_exclude}{Logical. If \code{TRUE}, exclude OTUs
+with insufficient variation in their augmented occupancy
+states from the GLLVM fit. Excluded OTUs remain in the
+downstream capture and abundance components.
+Defaults to \code{TRUE}.}
 
-\item{gllvm_min_occupied_sites}{Non-negative integer specifying the
-minimum number of occupied and unoccupied sites required for an
-OTU to be included in the GLLVM. An OTU is excluded when either
-count is less than or equal to this threshold. A value of 0
-excludes only OTUs with constant occupancy states.}
+\item{gllvm_min_occupied_sites}{Non-negative integer specifying
+the occupancy screening threshold. An OTU is excluded from
+the GLLVM when its number of occupied sites or unoccupied
+sites is less than or equal to this threshold.
+A value of 0 excludes constant occupancy columns.
+Defaults to 0.}
 
-\item{gllvm_excluded_prior}{Numeric vector of length two containing
-the positive Beta prior parameters (a, b) used to smooth occupancy
-probabilities for OTUs excluded from the GLLVM. The smoothed
-estimate is (n_occupied + a) / (n_sites + a + b).
-The default is c(1, 1).}
+\item{gllvm_excluded_prior}{Numeric vector of length two
+containing positive Beta smoothing parameters \eqn{(a,b)}
+for OTUs excluded from the GLLVM. Defaults to
+\code{c(1, 1)}.}
 
-\item{verbose}{Logical; print progress during fitting.}
+\item{verbose}{Logical. If \code{TRUE}, print progress and
+diagnostic information. Defaults to \code{TRUE}.}
 }
 \value{
 A list containing:
 \describe{
-  \item{summary}{Posterior summaries at the site-by-taxon level for:
-    occupancy (\code{psi_*}), capture (\code{capture_*}),
-    abundance (\code{lambda_*}), and detection (\code{p_detect_*}).}
-  \item{capture}{Sample-level capture summaries.}
-  \item{capture_site}{Capture summaries aggregated to the site level.}
-  \item{psi_list, capture_list, lambda_list, p_detect_list}{Per-iteration linear predictors.}
-  \item{occupancy_models}{List of fitted GLLVM occupancy models.}
-  \item{capture_models}{List of fitted GLMM capture models.}
-  \item{abundance_models}{List of fitted GLMM abundance models.}
-  \item{reduced_data, sample_data, long_df}{Processed hierarchical datasets.}
-  \item{lv_sites, lv_species}{Latent variable coordinates from the GLLVM.}
-  \item{mean_lv_sites, mean_lv_species}{Posterior mean latent variables.}
-  \item{filter_summary}{Filtering information for retained taxa.}
-  \item{diagnostic_AIC}{Per-iteration model diagnostics.}
+  \item{summary}{Site-by-taxon summaries for occupancy
+    (\code{psi_*}), capture (\code{capture_*}), abundance
+    (\code{lambda_*}), and detection (\code{p_detect_*}).}
+  \item{capture}{Biological sample-level capture summaries.}
+  \item{capture_site}{Site-level aggregated capture summaries.}
+  \item{psi_list}{Per-iteration occupancy linear predictors.}
+  \item{capture_list}{Per-iteration capture linear predictors.}
+  \item{lambda_list}{Per-iteration abundance linear predictors.}
+  \item{p_detect_list}{Per-iteration detection linear predictors.}
+  \item{occupancy_models}{Fitted GLLVM occupancy models.}
+  \item{capture_models}{Fitted capture GLMMs.}
+  \item{abundance_models}{Fitted abundance GLMMs.}
+  \item{reduced_data}{Site-by-taxon augmented occupancy data.}
+  \item{sample_data}{Biological sample-by-taxon capture data.}
+  \item{long_df}{Processed long-format count data.}
+  \item{lv_sites}{Site latent-variable estimates.}
+  \item{lv_species}{Taxon latent-variable loadings.}
+  \item{mean_lv_sites}{Mean site latent-variable coordinates.}
+  \item{mean_lv_species}{Mean taxon latent-variable loadings.}
+  \item{filter_summary}{Taxon filtering information.}
+  \item{diagnostic_AIC}{Per-iteration model fit statistics.}
+  \item{gllvm_diagnostics}{Per-iteration GLLVM numerical diagnostics.}
+  \item{gllvm_separation}{OTU separation diagnostics.}
+  \item{gllvm_excluded_otus}{OTUs excluded from the GLLVM
+    component at each iteration.}
+  \item{occupancy_model_iterations}{Iteration identifiers
+    corresponding to fitted occupancy models.}
+  \item{gllvm_settings}{GLLVM fitting and diagnostic settings.}
+  \item{iteration_success}{Logical vector identifying
+    computationally successful iterations.}
+  \item{retained_iterations}{Iteration identifiers retained
+    after burn-in.}
+  \item{abundance_formula}{Formula used for the abundance model.}
+  \item{capture_formula}{Formula used for the capture model.}
+  \item{note}{Additional interpretation notes.}
 }
 }
 \description{
-This function fits a hierarchical three-level model for eDNA / microbiome data
-stored as a \code{phyloseq} object. The model separates:
+Fits an approximate hierarchical occupancy–detection–abundance model
+for multispecies eDNA or microbiome count data stored in a
+\code{phyloseq} object.
+
+The model distinguishes three hierarchical levels:
+\itemize{
+  \item \strong{Site level (Z):} latent taxon occupancy.
+  \item \strong{Biological sample level (A):} latent taxon capture.
+  \item \strong{PCR replicate level (Y):} observed sequence counts.
+}
+
+Site-level occupancy is modeled using a binomial generalized linear
+latent variable model (GLLVM). Capture and abundance are modeled
+using generalized linear mixed models fitted with \code{glmmTMB}.
+
+Latent occupancy and capture states are updated iteratively using
+a stochastic data-augmentation procedure.
 }
 \details{
-\itemize{
-  \item \strong{Site level (Z)}: true presence/absence of each taxon
-  \item \strong{Biological sample level (A)}: capture / detection process
-  \item \strong{PCR replicate level (Y)}: observed counts
-}
+\strong{Hierarchical model}
 
-Occupancy is modeled at the site-by-taxon level using a binomial
-Generalized Linear Latent Variable Model (GLLVM), while capture and
-abundance are modeled using GLMMs via \code{glmmTMB}.
+Let \eqn{i} index sites, \eqn{j} biological samples,
+\eqn{k} PCR replicates, and \eqn{m} taxa.
 
+The latent site occupancy state is
+\deqn{Z_{im} \sim \mathrm{Bernoulli}(\psi_{im}).}
 
-The model defines a three-level hierarchical structure:
-
+Conditional on site occupancy, the biological sample capture
+state is
 \deqn{
-Z_{i,m} \sim \mathrm{Bernoulli}(\psi_{i,m})
+A_{ijm} \mid Z_{im}
+\sim \mathrm{Bernoulli}(Z_{im}p_{ijm}).
 }
 
+Conditional on capture, observed counts follow the selected
+abundance distribution. In the Poisson case,
 \deqn{
- A_{i,j,m} | Z_{i,m} \sim \mathrm{Bernoulli}(p_{i,j,m} \cdot Z_{i,m})
+Y_{ijkm} \mid A_{ijm}=1
+\sim \mathrm{Poisson}(\lambda_{ijkm}).
 }
 
+Structural zeros arise when \eqn{A_{ijm}=0}.
+
+\strong{Observed detection}
+
+The observed site-level detection indicator is
 \deqn{
- Y_{i,j,k,m} | A_{i,j,m} \sim \mathrm{Count}(\lambda_{i,j,k,m} \cdot A_{i,j,m}))
+z^{obs}_{im}
+= I\left(\max_{j,k}Y_{ijkm}>c\right),
 }
+where \eqn{c} is \code{abundance_threshold}.
 
-where:
-\itemize{
-  \item \(i\): site,
-  \item \(j\): biological sample,
-  \item \(k\): PCR replicate,
-  \item \(m\): taxon.
-}
+\strong{Occupancy model}
 
-Observed occupancy is defined as:
-
+The GLLVM models taxon-specific occupancy probabilities using
+site-level covariates and latent variables:
 \deqn{
-z^{obs}_{i,m} = I\left(\max_{j,k} Y_{i,j,k,m} > c\right)
+\mathrm{logit}(\psi_{im})
+= \alpha_m + X_i^\top\beta_m
++ u_i^\top\theta_m.
 }
 
-where \(c =\) \code{abundance_threshold}.
+Here, \eqn{u_i} denotes site latent variables and
+\eqn{\theta_m} denotes taxon-specific loadings.
+When no occupancy covariates are supplied, the model uses
+taxon intercepts and latent variables.
 
-The occupancy model is:
+\strong{Automatic OTU screening}
 
+At each iteration, the augmented occupancy matrix is examined
+for taxa with insufficient variation.
+
+When \code{gllvm_auto_exclude = TRUE}, such taxa are excluded
+from the GLLVM fitting matrix, but are not removed from the
+hierarchical dataset.
+
+Their occupancy probabilities are approximated using
+Beta-Binomial smoothing:
 \deqn{
-\mathrm{logit}(\psi_{i,m}) = X_i \beta_m + \text{latent variables}
+\widehat{\psi}_m
+= \frac{n_{occupied,m}+a}{n_{sites,m}+a+b}.
 }
 
-The capture model is:
+These probabilities are conditional approximations, not
+joint GLLVM estimates.
 
+\strong{Capture model}
+
+Capture probabilities are modeled using a binomial GLMM:
 \deqn{
-\mathrm{logit}(p_{i,j,m}) = W_{i,j} \gamma_m
+\mathrm{logit}(p_{ijm})
+= W_{ijm}^{\top}\gamma + b_m,
 }
+where the random-effects structure is determined by
+\code{capture_formula}.
 
-The abundance model defines \eqn{\lambda}, which induces a detection probability:
+\strong{Abundance model}
 
+Conditional on capture, the abundance model is fitted using
+\code{glmmTMB}, supporting Poisson, negative-binomial,
+zero-inflated Poisson, and zero-inflated negative-binomial
+distributions.
+
+Optional offsets, such as
+\code{offset(log(total_reads))}, can account for differences
+in sequencing depth.
+
+\strong{Detection probabilities}
+
+For an abundance distribution with zero-count probability
+\eqn{P_0}, the probability of at least one read is
+\deqn{p_{detect}=1-P_0.}
+
+For a Poisson distribution,
+\deqn{P_0=\exp(-\lambda).}
+
+For a negative-binomial distribution with mean \eqn{\lambda}
+and size parameter \eqn{\theta},
 \deqn{
- p_{\mathrm{detect}} = 1 - P(Y = 0 | A = 1)
+P_0=\left(\frac{\theta}{\theta+\lambda}\right)^\theta.
 }
 
-Detection is computed internally using the complementary log-log link:
+For zero-inflated distributions with structural-zero
+probability \eqn{\pi},
+\deqn{P_0=\pi+(1-\pi)P_{0,count}.}
 
-\deqn{
-\eta = \log\left(-\log(P(Y = 0))\right)
+When zero probabilities are combined over PCR replicates,
+the sample-level probability of no reads is calculated
+from the product of replicate-level zero probabilities,
+conditional on the fitted model.
+
+The complementary log-log transformation may be used for
+the probability of at least one detection:
+\deqn{\eta=\log(-\log(P_0)).}
+
+Detection probabilities are derived from fitted abundance
+parameters; they are not fitted as an independent GLMM.
 }
+\section{Stochastic estimation algorithm}{
 
-and transformed back to the natural scale.
+The function uses an iterative, EM-like data-augmentation
+procedure rather than full joint Bayesian inference.
 
-\strong{Important:}
-\itemize{
-  \item \code{p_detect} is a deterministic function of the abundance model
-  \item No standard error is directly estimated for \code{p_detect}
-}
-}
-\section{EM-like algorithm}{
-
-The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 \enumerate{
-  \item Fit GLLVM occupancy model for \(Z\)
-  \item Fit GLMM capture model for \(A | Z = 1\)
-  \item Fit GLMM abundance model for \(Y | A = 1\)
-  \item Update latent \(A\) via posterior sampling
-  \item Update latent \(Z\) via posterior sampling
+  \item Construct the current augmented site-by-taxon
+    occupancy matrix.
+  \item Screen OTUs and fit the binomial GLLVM.
+  \item Obtain occupancy probabilities for all retained OTUs.
+  \item Fit the capture GLMM conditional on occupied sites.
+  \item Fit the abundance GLMM conditional on captured samples.
+  \item Derive zero-count and detection probabilities.
+  \item Update latent capture and occupancy states using
+    stochastic conditional sampling.
+  \item Repeat and summarize retained iterations after burn-in.
 }
 }
 
-\section{Model features}{
+\section{Numerical convergence diagnostics}{
+
+Each GLLVM fit is assessed using optimizer status,
+maximum absolute gradient, Hessian eigenvalues, covariance
+eigenvalues, and Hessian condition number.
+
+The returned \code{gllvm_diagnostics} data frame includes:
+\itemize{
+  \item \code{optimizer_converged}: optimizer convergence flag.
+  \item \code{max_abs_gradient}: largest absolute gradient.
+  \item \code{hessian_min_eigen}: minimum Hessian eigenvalue.
+  \item \code{hessian_negative_eigen}: number of materially
+    negative Hessian eigenvalues.
+  \item \code{hessian_near_zero_eigen}: number of near-zero
+    Hessian eigenvalues.
+  \item \code{covariance_min_eigen}: minimum covariance eigenvalue.
+  \item \code{covariance_negative_eigen}: number of materially
+    negative covariance eigenvalues.
+  \item \code{covariance_near_zero_eigen}: number of near-zero
+    covariance eigenvalues.
+  \item \code{hessian_condition_number}: estimated Hessian
+    condition number.
+  \item \code{hessian_ill_conditioned}: indicator that the
+    condition number exceeds \code{gllvm_condition_tol}.
+  \item \code{hessian_positive_definite}: whether the
+    Hessian has strictly positive eigenvalues.
+  \item \code{numerical_ok}: overall numerical acceptance flag.
+}
+
+Optimizer convergence alone does not guarantee a well-conditioned
+Hessian or reliable standard errors.
+
+For example, increasing the number of latent variables may
+cause weak identifiability in datasets with few sites or taxa.
+}
+
+\section{Iteration retention}{
+
+The returned \code{iteration_success} vector identifies iterations
+that completed the required estimation steps.
+
+The \code{retained_iterations} vector identifies successful
+iterations retained after burn-in.
+
+When \code{gllvm_strict = FALSE}, an iteration may be retained
+even when \code{numerical_ok = FALSE}.
+
+Users should inspect both computational success and numerical
+diagnostics before interpreting the fitted model.
+}
+
+\section{Interpretation and limitations}{
 
 \itemize{
-  \item Fully general (no hard-coded taxon or response names)
-  \item Three-level hierarchy (Z → A → Y)
-  \item Latent ecological structure via GLLVM
-  \item Flexible abundance families (Poisson, NB, ZIP, ZINB)
-  \item Supports offsets (e.g. \code{offset(log(total_reads))})
-}
-}
-
-\section{Caveats}{
-
-\itemize{
-  \item Approximate inference (not full joint likelihood)
-  \item Detection depends on abundance model specification
-  \item Large \eqn{\lambda} implies near-certain detection
+  \item The procedure provides approximate hierarchical inference
+    rather than a full joint likelihood or posterior distribution.
+  \item Iteration-based intervals should not automatically be
+    interpreted as calibrated Bayesian credible intervals.
+  \item Occupancy estimates for automatically excluded OTUs
+    are based on Beta-Binomial smoothing.
+  \item Detection probabilities depend on the fitted abundance
+    distribution and its parameters.
+  \item Numerical instability may arise from sparse taxa,
+    separation, overparameterization, or weak identifiability.
+  \item Latent-variable signs and orientations may differ across
+    iterations; averaging latent coordinates requires appropriate
+    alignment.
+  \item Large abundance means can imply near-certain detection.
 }
 }
 
@@ -237,19 +411,27 @@ The algorithm follows a Monte Carlo EM (data augmentation) scheme:
 \dontrun{
 fit <- FitModel_gllvm(
   phyloseq = ps,
-  site_col = "site_month",
+  site_col = "Site",
   sample_col = "Name",
-  replicate_col = "Replicate",
-  otu_col = "Taxon",
-  count_col = "count",
-  abundance_rhs = y ~ (1 | Taxon),
-  capture_formula = a_sim ~ 1 + (1 | Taxon),
-  abundance_family = "nbinom",
+  replicate_col = NULL,
+  otu_col = "OTU",
+  count_col = "y",
+  abundance_rhs = (1 | OTU),
+  capture_formula = a_sim ~ 1 + (1 | OTU),
+  abundance_family = "poisson",
   n_iter = 10,
-  burn_in = 2
+  burn_in = 2,
+  num_lv = 1,
+  gllvm_n_init = 10,
+  gllvm_gradient_tol = 1e-3,
+  gllvm_strict = FALSE,
+  gllvm_auto_exclude = TRUE,
+  gllvm_min_occupied_sites = 1
 )
 
 head(fit$summary)
+fit$gllvm_diagnostics
+fit$retained_iterations
 }
 
 }

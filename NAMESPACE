@@ -37,10 +37,7 @@ importFrom(phyloseq,
   sample_names,
   taxa_are_rows
 )
-importFrom(reshape2,
-  acast,
-  melt
-)
+importFrom(reshape2,acast)
 importFrom(rlang,.data)
 importFrom(stats,
   model.matrix,

@@ -43,7 +43,11 @@ library(eDNAModel)
 
 The package distinguishes three processes:
 
-1. **Occupancy:** whether OTU *k* is present at site *i*, represented by a latent state \(Z_{ik} \sim \mathrm{Bernoulli}(\psi_{ik})\).
+1. **Occupancy:** whether OTU *k* is present at site *i*, represented by a latent state 
+$$
+Z_{ik} \sim \mathrm{Bernoulli}(\psi_{ik})
+$$
+.
 2. **Capture:** whether an OTU present at a site is captured or detected in a replicate sample.
 3. **Abundance:** variation in observed sequence counts, modelled using a supported count distribution.
 

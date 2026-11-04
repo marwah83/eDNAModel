@@ -169,7 +169,6 @@ See `?FitModel_joint` for all supported arguments and returned components.
 ## 2. `FitModel_gllvm()`: Hierarchical model with latent variables
 
 `FitModel_gllvm()` incorporates a GLLVM into the occupancy component to represent residual multivariate variation among OTUs. In a general GLLVM occupancy formulation,
-### Generalized Linear Latent Variable Model (GLLVM)
 
 ### Generalized Linear Latent Variable Model (GLLVM)
 

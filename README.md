@@ -170,10 +170,10 @@ See `?FitModel_joint` for all supported arguments and returned components.
 
 `FitModel_gllvm()` incorporates a GLLVM into the occupancy component to represent residual multivariate variation among OTUs. In a general GLLVM occupancy formulation,
 
-\[
+```r\[
 \operatorname{logit}(\psi_{ik}) = \mathbf{x}_i^\top\boldsymbol\beta_k + \mathbf{u}_i^\top\boldsymbol\lambda_k,
 \]
-
+```
 where \(\mathbf{x}_i\) contains measured site-level covariates, \(\mathbf{u}_i\) contains latent site scores, and \(\boldsymbol\lambda_k\) contains OTU-specific loadings. Latent variables can reveal residual community patterns not explained by the measured predictors.
 
 ### Fit a model

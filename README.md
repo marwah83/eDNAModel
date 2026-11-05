@@ -116,7 +116,7 @@ out_joint <- FitModel_joint(
   site_col = "Name",
   sample_col = "SampleID",
   replicate_col = "Replicate",
-  occupancy_formula = ~ Samplingmonth,
+  occupancy_formula = ~ 1,
   capture_formula = ~ 1,
   abundance_formula = ~ 1,
   abundance_family = "poisson",

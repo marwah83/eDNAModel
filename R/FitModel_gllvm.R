@@ -1432,6 +1432,13 @@ FitModel_gllvm <- function(
     
     if (ncol(X_cov) == 0) {
       X_cov <- NULL
+    } else {
+      # model.matrix() retains row positions but may assign numeric row names.
+      # The GLLVM requires matching site identifiers in y and X.
+      rownames(X_cov) <- z_sites
+      if (anyNA(X_cov) || any(!is.finite(X_cov))) {
+        stop("Occupancy design matrix contains missing/non-finite values.")
+      }
     }
   }
   
@@ -1525,6 +1532,8 @@ FitModel_gllvm <- function(
   names(gllvm_separation) <- as.character(seq_len(n_iter))
   gllvm_excluded_otus <- vector("list", n_iter)
   names(gllvm_excluded_otus) <- as.character(seq_len(n_iter))
+  gllvm_fit_warnings <- vector("list", n_iter)
+  names(gllvm_fit_warnings) <- as.character(seq_len(n_iter))
   
   
   matrix_eigen_diagnostic <- function(M, tolerance = gllvm_eigen_tol) {
@@ -1643,6 +1652,11 @@ FitModel_gllvm <- function(
       next
     }
     z_gllvm <- z_matrix[, included, drop = FALSE]
+    # Verify covariate identity rather than silently relabeling rows.
+    if (!is.null(X_cov)) {
+      stopifnot(nrow(X_cov) == nrow(z_gllvm),
+                identical(rownames(X_cov), rownames(z_gllvm)))
+    }
     if (verbose && length(excluded)) {
       message(sprintf(
         "GLLVM iteration %d: excluding %d OTUs from GLLVM only: %s",
@@ -1654,20 +1668,25 @@ FitModel_gllvm <- function(
     # 20.2 GLLVM occupancy model
     # ----------------------------------------------------------
     
+    fit_warnings <- character()
     model_occupancy <- tryCatch(
-      
-      gllvm::gllvm(
-        y = z_gllvm,
-        X = X_cov,
-        family = "binomial",
-        num.lv = num_lv,
-        method = "VA",
-        control.start = list(
-          n.init = gllvm_n_init,
-          starting.val = "res"
-        )
+      withCallingHandlers(
+        gllvm::gllvm(
+          y = z_gllvm,
+          X = X_cov,
+          family = "binomial",
+          num.lv = num_lv,
+          method = "VA",
+          control.start = list(
+            n.init = gllvm_n_init,
+            starting.val = "res"
+          )
+        ),
+        warning = function(w) {
+          fit_warnings <<- c(fit_warnings, conditionMessage(w))
+          invokeRestart("muffleWarning")
+        }
       ),
-      
       error = function(e) {
         
         message(
@@ -1681,6 +1700,7 @@ FitModel_gllvm <- function(
       }
     )
     
+    gllvm_fit_warnings[[i]] <- unique(fit_warnings)
     if (is.null(model_occupancy)) {
       next
     }
@@ -1736,14 +1756,25 @@ FitModel_gllvm <- function(
     # numerical_ok retains the original optimizer/gradient criterion.
     # Ill-conditioning is separately recorded, not used to silently reject
     # stochastic updates or alter the estimator.
+    # Missing Hessian/covariance information is not evidence of a bad fit.
+    # Conversely, an observed negative eigenvalue or ill-conditioned Hessian
+    # is a genuine reason to flag the iteration.
+    hessian_bad <- (is.finite(hess_diag["negative"]) &&
+                      hess_diag["negative"] > 0) ||
+      (is.finite(hess_diag["near_zero"]) &&
+         hess_diag["near_zero"] > 0) ||
+      identical(hessian_pd, FALSE) ||
+      (is.finite(hessian_condition) &&
+         hessian_condition > gllvm_condition_tol)
+    covariance_bad <- is.finite(cov_diag["negative"]) &&
+      cov_diag["negative"] > 0
+    se_warning <- any(grepl(
+      "negative variance|not converged|not positive definite|non-positive definite",
+      fit_warnings, ignore.case = TRUE
+    ))
     numerical_ok <- isTRUE(optimizer_ok) && is.finite(max_gradient) &&
       max_gradient <= gllvm_gradient_tol &&
-      is.finite(hess_diag["negative"]) && hess_diag["negative"] == 0 &&
-      is.finite(cov_diag["negative"]) && cov_diag["negative"] == 0 &&
-      isTRUE(hessian_pd) &&
-      is.finite(hessian_condition) &&
-      hessian_condition <= gllvm_condition_tol &&
-      is.finite(hess_diag["near_zero"]) && hess_diag["near_zero"] == 0
+      !hessian_bad && !covariance_bad && !se_warning
     
     gllvm_diagnostics$optimizer_converged[i] <- optimizer_ok
     gllvm_diagnostics$max_abs_gradient[i] <- max_gradient
@@ -1765,12 +1796,13 @@ FitModel_gllvm <- function(
       ))
     }
     if (!numerical_ok) {
-      warning(sprintf(
-        "GLLVM numerical diagnostics flagged iteration %d (optimizer=%s, max gradient=%s).",
-        i, as.character(optimizer_ok), format(max_gradient, digits = 4)
-      ), call. = FALSE)
-      # Skipping stochastic iterations changes the algorithm. Enable only
-      # when explicitly requested; by default record and continue.
+      if (verbose) message(sprintf(
+        "GLLVM iteration %d flagged: optimizer=%s; max gradient=%s; Hessian issue=%s; covariance issue=%s; SE warning=%s",
+        i, as.character(optimizer_ok), format(max_gradient, digits = 4),
+        hessian_bad, covariance_bad, se_warning
+      ))
+      # Strict mode rejects the iteration. Non-strict mode keeps the
+      # stochastic update but retains an explicit diagnostic flag.
       if (gllvm_strict) next
     }
     
@@ -1995,7 +2027,7 @@ FitModel_gllvm <- function(
       !anyDuplicated(colnames(psi_prob)),
       all(is.finite(psi_prob))
     )
-
+    
     psi_long <- expand.grid(
       rownames(psi_prob),
       colnames(psi_prob),
@@ -2004,7 +2036,7 @@ FitModel_gllvm <- function(
     )
     names(psi_long) <- c(site_col, otu_col)
     psi_long$psi_prob <- as.vector(psi_prob)
-
+    
     # Use a local character-key copy so reduced_data retains its
     # original factor columns for subsequent model operations.
     reduced_keys <- reduced_data[, site_keys, drop = FALSE]
@@ -2012,11 +2044,11 @@ FitModel_gllvm <- function(
       reduced_keys[[key]] <- as.character(reduced_keys[[key]])
       psi_long[[key]] <- as.character(psi_long[[key]])
     }
-
+    
     if (anyDuplicated(psi_long[, site_keys, drop = FALSE])) {
       stop(sprintf("Iteration %d: duplicate occupancy prediction keys.", i))
     }
-
+    
     missing_keys <- dplyr::anti_join(
       dplyr::distinct(reduced_keys),
       dplyr::distinct(psi_long[, site_keys, drop = FALSE]),
@@ -2029,14 +2061,14 @@ FitModel_gllvm <- function(
       ), call. = FALSE)
       next
     }
-
+    
     psi_long$psi_prob <- pmin(
       pmax(as.numeric(psi_long$psi_prob), 1e-6),
       1 - 1e-6
     )
     psi_long$eta <- stats::qlogis(psi_long$psi_prob)
     psi_list[[i]] <- psi_long[, c(site_col, otu_col, "eta"), drop = FALSE]
-
+    
     # ----------------------------------------------------------
     # 20.6 Add current Z state to sample data
     # ----------------------------------------------------------
@@ -2571,7 +2603,7 @@ FitModel_gllvm <- function(
       ), call. = FALSE)
       next
     }
-
+    
     # ----------------------------------------------------------
     # 20.18 Update latent Z
     # ----------------------------------------------------------
@@ -2739,6 +2771,15 @@ FitModel_gllvm <- function(
       length(keep_requested),
       " post-burn-in iterations were fully successful."
     )
+  }
+  
+  flagged <- which(!is.na(gllvm_diagnostics$numerical_ok) &
+                     !gllvm_diagnostics$numerical_ok)
+  if (length(flagged)) {
+    warning(sprintf(
+      "GLLVM numerical diagnostics flagged %d of %d attempted fits; inspect $gllvm_diagnostics and $gllvm_fit_warnings (iterations: %s).",
+      length(flagged), n_iter, paste(flagged, collapse = ", ")
+    ), call. = FALSE)
   }
   
   # ============================================================
@@ -3209,6 +3250,9 @@ FitModel_gllvm <- function(
     gllvm_excluded_otus =
       gllvm_excluded_otus,
     
+    gllvm_fit_warnings =
+      gllvm_fit_warnings,
+    
     # Maps retained list positions back to original iteration numbers.
     occupancy_model_iterations =
       keep,
@@ -3248,3 +3292,6 @@ FitModel_gllvm <- function(
     )
   )
 }
+                         
+    
+   
